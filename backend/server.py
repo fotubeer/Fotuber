@@ -299,6 +299,10 @@ class SiteSettingsIn(BaseModel):
     google_maps_url: Optional[str] = None
     google_maps_embed: Optional[str] = None
     notification_recipients: Optional[str] = None  # comma-separated phone list
+    msg_new_appointment: Optional[str] = None
+    msg_approved: Optional[str] = None
+    msg_cancelled: Optional[str] = None
+    msg_reminder: Optional[str] = None
     hero_image_url: Optional[str] = None
 
 
@@ -347,6 +351,11 @@ async def on_startup():
             "facebook": "",
             "google_maps_url": "",
             "google_maps_embed": "",
+            "notification_recipients": "",
+            "msg_new_appointment": "Merhaba {ad}, {tarih} {saat} için {hizmet} randevu talebiniz alındı. Ekibimiz sizi arayacak. — {marka}",
+            "msg_approved": "Merhaba {ad}, {tarih} {saat} tarihindeki {hizmet} randevunuz onaylandı. Adres: {adres}. Yol tarifi: {harita_link}. — {marka}",
+            "msg_cancelled": "Merhaba {ad}, {tarih} {saat} randevunuz iptal edilmiştir. Detay için: {telefon}. — {marka}",
+            "msg_reminder": "Merhaba {ad}, yarın {tarih} {saat} {hizmet} randevunuz var. Adres: {adres}. Yol tarifi: {harita_link}. Görüşmek üzere! — {marka}",
             "logo_id": None,
             "hero_image_url": "https://images.pexels.com/photos/5762880/pexels-photo-5762880.jpeg",
             "updated_at": now_iso(),
@@ -565,7 +574,7 @@ async def create_appointment(payload: AppointmentIn, user: dict = Depends(get_cu
     }
     await db.appointments.insert_one(doc)
 
-    # In-panel notification for the admin team + optional external send
+    # In-panel notification for the admin team
     await db.notifications.insert_one({
         "id": new_id(),
         "kind": "appointment_pending",
@@ -575,11 +584,22 @@ async def create_appointment(payload: AppointmentIn, user: dict = Depends(get_cu
         "read": False,
         "created_at": now_iso(),
     })
-    # External (SMS/WhatsApp) notify — no-op unless configured
+
+    ctx = await _build_message_context(doc)
+    settings = await db.site_settings.find_one({"id": "singleton"}, {"_id": 0}) or {}
+    # 1) External notify to ADMIN/STAFF that a new request came
     await _try_send_external_notification(
-        title="Yeni Randevu",
-        body=f"{user.get('name')} adına {service.get('name')} için {payload.date} {payload.time} talebi düştü. Panelden onaylayın: {os.environ.get('PUBLIC_URL', 'fotuber.com.tr')}/admin/randevular",
+        title="Yeni Randevu Talebi",
+        body=f"{doc.get('customer_name')} · {service.get('name')} · {doc.get('date')} {doc.get('time')}. Onaylamak için: {os.environ.get('PUBLIC_URL','')}/admin/randevular",
     )
+    # 2) Optional acknowledgment to CUSTOMER (if template present)
+    tpl = settings.get("msg_new_appointment")
+    if tpl and doc.get("customer_phone"):
+        await _try_send_external_notification(
+            title="",
+            body=_render_template(tpl, ctx),
+            to_numbers=[doc["customer_phone"]],
+        )
 
     return await _enrich_appointment(doc)
 
@@ -634,13 +654,21 @@ async def update_appointment(aid: str, payload: AppointmentAdminUpdate, admin: d
 
     updates["updated_at"] = now_iso()
     await db.appointments.update_one({"id": aid}, {"$set": updates})
-    doc = await db.appointments.find_one({"id": aid})
+    doc = await db.appointments.find_one({"id": aid}, {"_id": 0})
 
-    # Notify customer if approved
+    # Notify CUSTOMER when status changes
+    settings = await db.site_settings.find_one({"id": "singleton"}, {"_id": 0}) or {}
+    ctx = await _build_message_context(doc)
+    tpl = None
     if payload.status == "approved":
+        tpl = settings.get("msg_approved")
+    elif payload.status == "cancelled":
+        tpl = settings.get("msg_cancelled")
+    if tpl and doc.get("customer_phone"):
         await _try_send_external_notification(
-            title="Randevunuz Onaylandı",
-            body=f"{doc.get('customer_name')}, {doc.get('date')} {doc.get('time')} tarihindeki randevunuz onaylandı. Görüşmek üzere!",
+            title="",
+            body=_render_template(tpl, ctx),
+            to_numbers=[doc["customer_phone"]],
         )
     return await _enrich_appointment(doc)
 
@@ -1087,33 +1115,75 @@ def _e164(number: str) -> str:
     return "+" + digits
 
 
-async def _try_send_external_notification(title: str, body: str) -> None:
-    """Send SMS + WhatsApp via Twilio if configured. Silent if not."""
+async def _try_send_external_notification(title: str, body: str, to_numbers: Optional[list[str]] = None) -> dict:
+    """Send SMS + WhatsApp via Twilio if configured. Returns diagnostics.
+    to_numbers: list of specific phone numbers to send to. If None, uses admin/staff recipients."""
+    result = {"sent": [], "skipped": [], "errors": []}
     if not (TWILIO_SID and TWILIO_TOKEN):
-        return
-    recipients = await _get_notification_recipients()
+        result["skipped"].append("Twilio anahtarları .env'de tanımsız")
+        return result
+    recipients = to_numbers if to_numbers is not None else await _get_notification_recipients()
     if not recipients:
-        return
+        result["skipped"].append("Alıcı numara yok")
+        return result
     try:
         from twilio.rest import Client
         client = Client(TWILIO_SID, TWILIO_TOKEN)
-        msg = f"{title}\n{body}"
+        msg = f"{title}\n{body}" if title else body
         for raw in recipients:
             to = _e164(raw)
             if not to:
+                result["errors"].append(f"Geçersiz numara: {raw}")
                 continue
             if TWILIO_SMS_FROM:
                 try:
                     client.messages.create(from_=TWILIO_SMS_FROM, to=to, body=msg)
+                    result["sent"].append({"channel": "sms", "to": to})
                 except Exception as e:
+                    result["errors"].append(f"SMS→{to}: {e}")
                     logging.getLogger("fotuber").warning(f"Twilio SMS failed to {to}: {e}")
             if TWILIO_WA_FROM:
                 try:
                     client.messages.create(from_=TWILIO_WA_FROM, to=f"whatsapp:{to}", body=msg)
+                    result["sent"].append({"channel": "whatsapp", "to": to})
                 except Exception as e:
+                    result["errors"].append(f"WhatsApp→{to}: {e}")
                     logging.getLogger("fotuber").warning(f"Twilio WhatsApp failed to {to}: {e}")
     except Exception as e:
+        result["errors"].append(str(e))
         logging.getLogger("fotuber").error(f"External notification error: {e}")
+    return result
+
+
+def _render_template(tpl: str, ctx: dict) -> str:
+    if not tpl:
+        return ""
+    out = tpl
+    for k, v in ctx.items():
+        out = out.replace("{" + k + "}", str(v or ""))
+    return out
+
+
+async def _build_message_context(appointment: dict) -> dict:
+    settings = await db.site_settings.find_one({"id": "singleton"}, {"_id": 0}) or {}
+    service = await db.services.find_one({"id": appointment.get("service_id")}, {"_id": 0}) or {}
+    ad = (appointment.get("customer_name") or "").split(" ")[0] or "Değerli müşterimiz"
+    return {
+        "ad": ad,
+        "ad_soyad": appointment.get("customer_name", ""),
+        "telefon_musteri": appointment.get("customer_phone", ""),
+        "tarih": appointment.get("date", ""),
+        "saat": appointment.get("time", ""),
+        "hizmet": service.get("name", ""),
+        "kapora": f"₺{appointment.get('deposit_amount', 0):,.0f}".replace(",", "."),
+        "ucret": f"₺{appointment.get('total_amount', 0):,.0f}".replace(",", "."),
+        "marka": settings.get("business_name", "Fotuber"),
+        "telefon": settings.get("phone", ""),
+        "whatsapp": settings.get("whatsapp", ""),
+        "adres": settings.get("address", "") or "Stüdyoda buluşuyoruz",
+        "harita_link": settings.get("google_maps_url", "") or "",
+        "eposta": settings.get("email", ""),
+    }
 
 
 @api_router.get("/notifications")
@@ -1131,6 +1201,60 @@ async def mark_read(admin: dict = Depends(require_admin), notification_id: Optio
     else:
         await db.notifications.update_many({"read": False}, {"$set": {"read": True}})
     return {"ok": True}
+
+
+class ManualMessageIn(BaseModel):
+    body: str
+    to_customer: bool = True
+    extra_numbers: Optional[str] = None  # comma-separated additional phone numbers
+
+
+@api_router.post("/appointments/{aid}/send-reminder")
+async def send_reminder(aid: str, admin: dict = Depends(require_admin)):
+    """Send reminder message to the customer using msg_reminder template."""
+    doc = await db.appointments.find_one({"id": aid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Randevu bulunamadı")
+    if not doc.get("customer_phone"):
+        raise HTTPException(status_code=400, detail="Müşteri telefonu yok")
+    settings = await db.site_settings.find_one({"id": "singleton"}, {"_id": 0}) or {}
+    tpl = settings.get("msg_reminder") or "Randevunuzu hatırlatırız: {tarih} {saat} — {marka}"
+    body = _render_template(tpl, await _build_message_context(doc))
+    diag = await _try_send_external_notification(title="", body=body, to_numbers=[doc["customer_phone"]])
+    return {"ok": True, "diagnostics": diag}
+
+
+@api_router.post("/appointments/{aid}/send-message")
+async def send_custom_message(aid: str, payload: ManualMessageIn, admin: dict = Depends(require_admin)):
+    """Send a custom (admin-typed) message to the customer + optional extra numbers."""
+    doc = await db.appointments.find_one({"id": aid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Randevu bulunamadı")
+    body = _render_template(payload.body, await _build_message_context(doc))
+    to = []
+    if payload.to_customer and doc.get("customer_phone"):
+        to.append(doc["customer_phone"])
+    if payload.extra_numbers:
+        for raw in payload.extra_numbers.split(","):
+            n = raw.strip()
+            if n:
+                to.append(n)
+    if not to:
+        raise HTTPException(status_code=400, detail="En az bir alıcı gerekli")
+    diag = await _try_send_external_notification(title="", body=body, to_numbers=to)
+    return {"ok": True, "diagnostics": diag}
+
+
+@api_router.get("/notifications/health")
+async def notifications_health(admin: dict = Depends(require_admin)):
+    """Diagnostics: is Twilio configured? which channels are on?"""
+    return {
+        "twilio_configured": bool(TWILIO_SID and TWILIO_TOKEN),
+        "sms_enabled": bool(TWILIO_SMS_FROM),
+        "whatsapp_enabled": bool(TWILIO_WA_FROM),
+        "sms_from": TWILIO_SMS_FROM,
+        "whatsapp_from": TWILIO_WA_FROM,
+    }
 
 
 # ---------------------------------------------------------------------------

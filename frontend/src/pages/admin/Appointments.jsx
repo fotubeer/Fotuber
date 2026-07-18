@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle2, XCircle, Wallet, Phone } from "lucide-react";
+import { CheckCircle2, XCircle, Wallet, Phone, Bell, Send } from "lucide-react";
 import { toast } from "sonner";
 
 const statusColor = {
@@ -26,6 +27,8 @@ const AdminAppointments = () => {
   const [approving, setApproving] = useState(null);
   const [deposit, setDeposit] = useState("");
   const [paid, setPaid] = useState("");
+  const [messaging, setMessaging] = useState(null);  // {appt, body, extra}
+  const [sending, setSending] = useState(false);
 
   const load = () => {
     api.get("/appointments", { params: { status_filter: status } })
@@ -55,6 +58,39 @@ const AdminAppointments = () => {
       toast.success("Randevu iptal edildi.");
       load();
     } catch (e) { toast.error(formatApiError(e)); }
+  };
+
+  const sendReminder = async (id) => {
+    try {
+      const { data } = await api.post(`/appointments/${id}/send-reminder`);
+      const sent = data.diagnostics?.sent?.length || 0;
+      const skipped = data.diagnostics?.skipped || [];
+      const errors = data.diagnostics?.errors || [];
+      if (sent > 0) toast.success(`Hatırlatma gönderildi (${sent} kanal)`);
+      else if (skipped.length) toast.warning(`Gönderilemedi: ${skipped.join(", ")}`);
+      else if (errors.length) toast.error(errors.join(", "));
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
+  const openMessage = (appt) => setMessaging({ appt, body: "", extra: "" });
+
+  const doSendMessage = async () => {
+    if (!messaging?.body?.trim()) { toast.error("Mesaj yazın"); return; }
+    setSending(true);
+    try {
+      const { data } = await api.post(`/appointments/${messaging.appt.id}/send-message`, {
+        body: messaging.body,
+        to_customer: true,
+        extra_numbers: messaging.extra || null,
+      });
+      const sent = data.diagnostics?.sent?.length || 0;
+      const errs = data.diagnostics?.errors || [];
+      if (sent > 0) toast.success(`Mesaj gönderildi (${sent} kanal)`);
+      else if (errs.length) toast.error(errs.join(", "));
+      else toast.warning("Hiçbir yere gönderilmedi (Twilio ayarlarınızı kontrol edin)");
+      setMessaging(null);
+    } catch (e) { toast.error(formatApiError(e)); }
+    finally { setSending(false); }
   };
 
   return (
@@ -112,6 +148,14 @@ const AdminAppointments = () => {
                             <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Onayla
                           </Button>
                         )}
+                        {a.status === "approved" && (
+                          <Button size="sm" variant="outline" data-testid={`remind-btn-${a.id}`} onClick={() => sendReminder(a.id)} title="Hatırlatma gönder">
+                            <Bell className="w-3.5 h-3.5 mr-1" /> Hatırlat
+                          </Button>
+                        )}
+                        <Button size="sm" variant="outline" data-testid={`msg-btn-${a.id}`} onClick={() => openMessage(a)} title="Özel mesaj gönder">
+                          <Send className="w-3.5 h-3.5" />
+                        </Button>
                         {a.status !== "cancelled" && (
                           <Button size="sm" variant="destructive" data-testid={`cancel-btn-${a.id}`} onClick={() => cancel(a.id)}>
                             <XCircle className="w-3.5 h-3.5 mr-1" /> İptal
@@ -158,6 +202,52 @@ const AdminAppointments = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog open={!!messaging} onOpenChange={(o) => !o && setMessaging(null)}>
+        <DialogContent data-testid="custom-message-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Send className="w-5 h-5 text-blue-600" /> Özel Mesaj Gönder</DialogTitle>
+            <DialogDescription>
+              Müşteriye SMS/WhatsApp üzerinden ek bilgi (konum, hazırlık, kıyafet vb.) gönderin.
+              Şu değişkenleri kullanabilirsiniz: <code>{"{ad}"}</code> <code>{"{tarih}"}</code> <code>{"{saat}"}</code> <code>{"{adres}"}</code> <code>{"{harita_link}"}</code>
+            </DialogDescription>
+          </DialogHeader>
+          {messaging && (
+            <div className="space-y-3 text-sm">
+              <div className="rounded-lg bg-slate-50 p-3">
+                <div><b>{messaging.appt.customer_name}</b> · {messaging.appt.customer_phone}</div>
+                <div className="text-slate-500">{messaging.appt.service_name} · {messaging.appt.date} {messaging.appt.time}</div>
+              </div>
+              <div>
+                <Label className="text-xs">Mesaj Metni</Label>
+                <Textarea
+                  data-testid="custom-msg-body"
+                  rows={5}
+                  value={messaging.body}
+                  onChange={(e) => setMessaging({ ...messaging, body: e.target.value })}
+                  placeholder="Merhaba {ad}, hazırlığınızı bitirdiğinizde adresimize gelmeniz yeterli: {adres}. Yol tarifi: {harita_link}"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Ek Numaralar (opsiyonel, virgülle ayır)</Label>
+                <Input
+                  data-testid="custom-msg-extra"
+                  value={messaging.extra}
+                  onChange={(e) => setMessaging({ ...messaging, extra: e.target.value })}
+                  placeholder="05011112233"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMessaging(null)}>Vazgeç</Button>
+            <Button data-testid="custom-msg-send-btn" onClick={doSendMessage} disabled={sending} className="bg-blue-600 hover:bg-blue-700">
+              {sending ? "Gönderiliyor..." : (<><Send className="w-4 h-4 mr-2" /> Gönder</>)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Textarea import at top of file */}
     </div>
   );
 };

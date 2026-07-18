@@ -204,6 +204,44 @@ const AdminSettings = () => {
         </CardContent>
       </Card>
 
+      {/* Mesaj Şablonları */}
+      <Card className="border-slate-200">
+        <CardHeader>
+          <CardTitle className="text-base font-semibold">Mesaj Şablonları (SMS / WhatsApp)</CardTitle>
+          <p className="text-xs text-slate-500 mt-1">
+            Müşteriye otomatik giden mesajları özelleştirin. Değişkenler:{" "}
+            <code className="text-slate-800 bg-slate-100 px-1 rounded">{"{ad}"}</code>{" "}
+            <code className="text-slate-800 bg-slate-100 px-1 rounded">{"{tarih}"}</code>{" "}
+            <code className="text-slate-800 bg-slate-100 px-1 rounded">{"{saat}"}</code>{" "}
+            <code className="text-slate-800 bg-slate-100 px-1 rounded">{"{hizmet}"}</code>{" "}
+            <code className="text-slate-800 bg-slate-100 px-1 rounded">{"{marka}"}</code>{" "}
+            <code className="text-slate-800 bg-slate-100 px-1 rounded">{"{adres}"}</code>{" "}
+            <code className="text-slate-800 bg-slate-100 px-1 rounded">{"{harita_link}"}</code>{" "}
+            <code className="text-slate-800 bg-slate-100 px-1 rounded">{"{telefon}"}</code>{" "}
+            <code className="text-slate-800 bg-slate-100 px-1 rounded">{"{kapora}"}</code>{" "}
+            <code className="text-slate-800 bg-slate-100 px-1 rounded">{"{ucret}"}</code>
+          </p>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div>
+            <Label className="text-xs">1. Yeni Randevu Talebi (müşteriye "aldık" onayı)</Label>
+            <Textarea data-testid="tpl-new" rows={2} value={form.msg_new_appointment || ""} onChange={upd("msg_new_appointment")} />
+          </div>
+          <div>
+            <Label className="text-xs">2. Randevu Onaylandığında</Label>
+            <Textarea data-testid="tpl-approved" rows={3} value={form.msg_approved || ""} onChange={upd("msg_approved")} />
+          </div>
+          <div>
+            <Label className="text-xs">3. Randevu İptal Edildiğinde</Label>
+            <Textarea data-testid="tpl-cancelled" rows={2} value={form.msg_cancelled || ""} onChange={upd("msg_cancelled")} />
+          </div>
+          <div>
+            <Label className="text-xs">4. Hatırlatma Mesajı (admin butonuyla veya bir gün öncesinden)</Label>
+            <Textarea data-testid="tpl-reminder" rows={3} value={form.msg_reminder || ""} onChange={upd("msg_reminder")} />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Google Maps */}
       <Card className="border-slate-200">
         <CardHeader>
