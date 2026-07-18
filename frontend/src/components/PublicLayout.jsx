@@ -2,7 +2,9 @@ import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { Menu, X, Camera, Phone, LogOut, User } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useSettings } from "@/context/SettingsContext";
 import { Button } from "@/components/ui/button";
+import { API_BASE } from "@/lib/api";
 import FloatingContact from "@/components/FloatingContact";
 
 const navItems = [
@@ -13,22 +15,39 @@ const navItems = [
   { to: "/iletisim", label: "İletişim" },
 ];
 
+const formatPhone = (raw) => {
+  if (!raw) return "";
+  const digits = raw.replace(/\D/g, "");
+  // remove leading 90 for display
+  const local = digits.startsWith("90") ? digits.slice(2) : digits.startsWith("0") ? digits.slice(1) : digits;
+  if (local.length !== 10) return raw;
+  return `0(${local.slice(0, 3)}) ${local.slice(3, 6)} ${local.slice(6, 8)} ${local.slice(8, 10)}`;
+};
+
 export const PublicLayout = ({ children }) => {
   const [open, setOpen] = useState(false);
   const { user, logout } = useAuth();
+  const { settings } = useSettings();
   const navigate = useNavigate();
+  const logoUrl = settings?.logo_id ? `${API_BASE}/settings/logo/${settings.logo_id}` : null;
+  const brand = (settings?.business_name || "fotuber").toLowerCase();
+  const tagline = settings?.tagline || "Studio · fotuber.com.tr";
 
   return (
     <div className="theme-public bg-background text-foreground min-h-screen font-body flex flex-col">
       <header className="sticky top-0 z-40 bg-neutral-950/70 backdrop-blur-xl border-b border-neutral-900">
         <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-4">
           <Link to="/" data-testid="logo-home" className="flex items-center gap-2">
-            <span className="w-9 h-9 rounded-full border border-[#d4af37] flex items-center justify-center">
-              <Camera className="w-4 h-4 text-[#d4af37]" strokeWidth={1.5} />
-            </span>
+            {logoUrl ? (
+              <img src={logoUrl} alt={brand} className="w-10 h-10 rounded-full object-cover border border-[#d4af37]" />
+            ) : (
+              <span className="w-9 h-9 rounded-full border border-[#d4af37] flex items-center justify-center">
+                <Camera className="w-4 h-4 text-[#d4af37]" strokeWidth={1.5} />
+              </span>
+            )}
             <div className="leading-none">
-              <div className="font-serif text-2xl tracking-tight text-white">fotuber</div>
-              <div className="text-[10px] tracking-[0.3em] text-neutral-500 uppercase">studio · fotuber.com.tr</div>
+              <div className="font-serif text-2xl tracking-tight text-white">{brand}</div>
+              <div className="text-[10px] tracking-[0.3em] text-neutral-500 uppercase">{tagline}</div>
             </div>
           </Link>
 
@@ -121,7 +140,7 @@ export const PublicLayout = ({ children }) => {
       <footer className="border-t border-neutral-900 mt-24">
         <div className="max-w-7xl mx-auto px-6 py-14 grid md:grid-cols-4 gap-8">
           <div>
-            <div className="font-serif text-3xl mb-3">fotuber</div>
+            <div className="font-serif text-3xl mb-3 lowercase">{brand}</div>
             <p className="text-sm text-neutral-500 max-w-xs">Duyguların ışıkla buluştuğu stüdyo. Fotoğraf, video ve prodüksiyon hizmetleri.</p>
           </div>
           <div>
@@ -135,9 +154,9 @@ export const PublicLayout = ({ children }) => {
           <div>
             <div className="text-xs uppercase tracking-[0.2em] text-neutral-500 mb-4">İletişim</div>
             <ul className="space-y-2 text-sm text-neutral-300">
-              <li className="flex items-center gap-2"><Phone className="w-3.5 h-3.5" /> 0(501) 000 25 23</li>
-              <li>info@fotuber.com.tr</li>
-              <li>www.fotuber.com.tr</li>
+              {settings?.phone && <li className="flex items-center gap-2"><Phone className="w-3.5 h-3.5" /> {formatPhone(settings.phone)}</li>}
+              {settings?.email && <li>{settings.email}</li>}
+              {settings?.address && <li>{settings.address}</li>}
             </ul>
           </div>
           <div>
@@ -149,7 +168,7 @@ export const PublicLayout = ({ children }) => {
         </div>
         <div className="border-t border-neutral-900">
           <div className="max-w-7xl mx-auto px-6 py-6 text-xs text-neutral-500 flex justify-between">
-            <span>© {new Date().getFullYear()} Fotuber Studio. Tüm hakları saklıdır.</span>
+            <span>© {new Date().getFullYear()} {settings?.business_name || "Fotuber"}. Tüm hakları saklıdır.</span>
             <span>fotuber.com.tr</span>
           </div>
         </div>

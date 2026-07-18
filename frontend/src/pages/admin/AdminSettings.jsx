@@ -1,0 +1,177 @@
+import React, { useEffect, useRef, useState } from "react";
+import { api, formatApiError, API_BASE } from "@/lib/api";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
+import { Upload, Save, Image as ImageIcon } from "lucide-react";
+import { useSettings } from "@/context/SettingsContext";
+
+const AdminSettings = () => {
+  const { refresh } = useSettings();
+  const [form, setForm] = useState(null);
+  const [file, setFile] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const inputRef = useRef();
+
+  useEffect(() => { api.get("/settings").then((r) => setForm(r.data)); }, []);
+
+  const upd = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const { logo_id, id, updated_at, _id, ...rest } = form;
+      await api.put("/settings", rest);
+      toast.success("Site ayarları kaydedildi");
+      refresh();
+    } catch (e) { toast.error(formatApiError(e)); }
+    finally { setSaving(false); }
+  };
+
+  const uploadLogo = async () => {
+    if (!file) { toast.error("Bir logo dosyası seçin"); return; }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      await api.post("/settings/logo", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success("Logo güncellendi");
+      const { data } = await api.get("/settings");
+      setForm(data);
+      setFile(null);
+      if (inputRef.current) inputRef.current.value = "";
+      refresh();
+    } catch (e) { toast.error(formatApiError(e)); }
+    finally { setUploading(false); }
+  };
+
+  if (!form) return <div className="text-slate-500">Yükleniyor...</div>;
+
+  const logoUrl = form.logo_id ? `${API_BASE}/settings/logo/${form.logo_id}?t=${form.updated_at || ''}` : null;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight" data-testid="admin-settings-title">Site Ayarları</h1>
+        <p className="text-sm text-slate-500 mt-1">Logo, marka, hero metinleri ve iletişim bilgilerini yönetin.</p>
+      </div>
+
+      {/* Logo */}
+      <Card className="border-slate-200">
+        <CardHeader><CardTitle className="text-base font-semibold flex items-center gap-2"><ImageIcon className="w-4 h-4" /> Logo</CardTitle></CardHeader>
+        <CardContent className="flex flex-col md:flex-row gap-6 items-start">
+          <div className="w-32 h-32 rounded-2xl border border-slate-200 flex items-center justify-center bg-slate-50 overflow-hidden">
+            {logoUrl ? <img src={logoUrl} alt="Logo" className="w-full h-full object-contain" /> :
+              <span className="text-xs text-slate-400 text-center px-2">Henüz logo<br />yüklenmedi</span>}
+          </div>
+          <div className="flex-1 space-y-3">
+            <Input
+              type="file"
+              ref={inputRef}
+              data-testid="logo-upload-input"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+            />
+            <p className="text-xs text-slate-500">PNG, JPG, WEBP veya SVG. Şeffaf arkaplanlı PNG önerilir (kare oran).</p>
+            <Button data-testid="logo-upload-btn" onClick={uploadLogo} disabled={uploading || !file} className="bg-slate-900 hover:bg-slate-800">
+              <Upload className="w-4 h-4 mr-2" /> {uploading ? "Yükleniyor..." : "Logoyu Yükle"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Marka */}
+      <Card className="border-slate-200">
+        <CardHeader><CardTitle className="text-base font-semibold">Marka</CardTitle></CardHeader>
+        <CardContent className="grid md:grid-cols-2 gap-4">
+          <div>
+            <Label className="text-xs">İşletme Adı</Label>
+            <Input data-testid="setting-business-name" value={form.business_name || ""} onChange={upd("business_name")} />
+          </div>
+          <div>
+            <Label className="text-xs">Tagline (küçük yazı)</Label>
+            <Input data-testid="setting-tagline" value={form.tagline || ""} onChange={upd("tagline")} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Hero */}
+      <Card className="border-slate-200">
+        <CardHeader><CardTitle className="text-base font-semibold">Ana Sayfa Hero</CardTitle></CardHeader>
+        <CardContent className="grid md:grid-cols-2 gap-4">
+          <div>
+            <Label className="text-xs">Başlık — 1. bölüm</Label>
+            <Input data-testid="setting-hero-title" value={form.hero_title || ""} onChange={upd("hero_title")} />
+            <p className="text-[11px] text-slate-500 mt-1">Örn: "Anlar, "</p>
+          </div>
+          <div>
+            <Label className="text-xs">Başlık — vurgulu kelime (altın)</Label>
+            <Input data-testid="setting-hero-accent" value={form.hero_title_accent || ""} onChange={upd("hero_title_accent")} />
+          </div>
+          <div className="md:col-span-2">
+            <Label className="text-xs">Alt başlık</Label>
+            <Input data-testid="setting-hero-subtitle" value={form.hero_subtitle || ""} onChange={upd("hero_subtitle")} />
+          </div>
+          <div className="md:col-span-2">
+            <Label className="text-xs">Açıklama Paragrafı</Label>
+            <Textarea data-testid="setting-hero-intro" rows={3} value={form.hero_intro || ""} onChange={upd("hero_intro")} />
+          </div>
+          <div className="md:col-span-2">
+            <Label className="text-xs">Hero Arka Plan Görsel URL'si</Label>
+            <Input data-testid="setting-hero-image" value={form.hero_image_url || ""} onChange={upd("hero_image_url")} placeholder="https://..." />
+            {form.hero_image_url && (
+              <img src={form.hero_image_url} alt="Hero" className="mt-2 h-24 rounded border border-slate-200 object-cover" />
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* İletişim */}
+      <Card className="border-slate-200">
+        <CardHeader><CardTitle className="text-base font-semibold">İletişim Bilgileri</CardTitle></CardHeader>
+        <CardContent className="grid md:grid-cols-2 gap-4">
+          <div>
+            <Label className="text-xs">Telefon (görüntüleme)</Label>
+            <Input data-testid="setting-phone" value={form.phone || ""} onChange={upd("phone")} placeholder="05010002523" />
+          </div>
+          <div>
+            <Label className="text-xs">WhatsApp (uluslararası, + olmadan)</Label>
+            <Input data-testid="setting-whatsapp" value={form.whatsapp || ""} onChange={upd("whatsapp")} placeholder="905010002523" />
+          </div>
+          <div>
+            <Label className="text-xs">E-posta</Label>
+            <Input data-testid="setting-email" value={form.email || ""} onChange={upd("email")} />
+          </div>
+          <div>
+            <Label className="text-xs">Instagram (opsiyonel)</Label>
+            <Input data-testid="setting-instagram" value={form.instagram || ""} onChange={upd("instagram")} placeholder="@fotuber" />
+          </div>
+          <div className="md:col-span-2">
+            <Label className="text-xs">Adres / Konum Metni</Label>
+            <Input data-testid="setting-address" value={form.address || ""} onChange={upd("address")} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Hakkımızda */}
+      <Card className="border-slate-200">
+        <CardHeader><CardTitle className="text-base font-semibold">Hakkımızda Metni</CardTitle></CardHeader>
+        <CardContent>
+          <Textarea data-testid="setting-about" rows={6} value={form.about_text || ""} onChange={upd("about_text")} placeholder="Şirketinizi kısaca anlatın..." />
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end sticky bottom-4">
+        <Button data-testid="settings-save-btn" onClick={save} disabled={saving} size="lg" className="bg-slate-900 hover:bg-slate-800 shadow-lg">
+          <Save className="w-4 h-4 mr-2" /> {saving ? "Kaydediliyor..." : "Tüm Ayarları Kaydet"}
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+export default AdminSettings;

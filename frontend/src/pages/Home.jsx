@@ -4,8 +4,9 @@ import { motion } from "framer-motion";
 import { ArrowRight, Sparkles, Award, Camera, Video, Mic, MonitorPlay } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, galleryFileUrl } from "@/lib/api";
+import { useSettings } from "@/context/SettingsContext";
 
-const HERO_IMG = "https://images.pexels.com/photos/5762880/pexels-photo-5762880.jpeg";
+const DEFAULT_HERO = "https://images.pexels.com/photos/5762880/pexels-photo-5762880.jpeg";
 
 const HIGHLIGHTS = [
   { icon: Camera, title: "Profesyonel Ekipman", desc: "Full-frame kameralar, sinema lensleri ve stüdyo aydınlatması." },
@@ -17,6 +18,13 @@ const HIGHLIGHTS = [
 const Home = () => {
   const [services, setServices] = useState([]);
   const [gallery, setGallery] = useState([]);
+  const { settings } = useSettings();
+  const heroImg = settings?.hero_image_url || DEFAULT_HERO;
+  const heroTitle = settings?.hero_title || "Anlar, ";
+  const heroAccent = settings?.hero_title_accent || "ışıkla";
+  const heroSubtitle = settings?.hero_subtitle || "ölümsüzleşir.";
+  const heroIntro = settings?.hero_intro || "Düğün ve nişan çekimlerinden podcast prodüksiyonuna, stüdyo portresinden klip yapımına — Fotuber ile her ana özenle, sinematik bir bakışla dokunuyoruz.";
+  const tagline = settings?.tagline || "Fotuber Studio · fotuber.com.tr";
 
   useEffect(() => {
     api.get("/services").then((r) => setServices(r.data)).catch(() => {});
@@ -29,7 +37,7 @@ const Home = () => {
       <section className="relative min-h-[92vh] overflow-hidden">
         <div
           className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${HERO_IMG})` }}
+          style={{ backgroundImage: `url(${heroImg})` }}
         />
         <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black" />
         <div className="absolute inset-0 bg-grain" />
@@ -42,7 +50,7 @@ const Home = () => {
               transition={{ duration: 0.9 }}
               className="uppercase tracking-[0.4em] text-xs text-[#d4af37] mb-6"
             >
-              Fotuber Studio · fotuber.com.tr
+              {tagline}
             </motion.div>
             <motion.h1
               initial={{ opacity: 0, y: 32 }}
@@ -50,7 +58,7 @@ const Home = () => {
               transition={{ duration: 1.1, delay: 0.15 }}
               className="hero-title text-6xl md:text-7xl lg:text-[7.5rem] text-white mb-8"
             >
-              Anlar, <em>ışıkla</em><br />ölümsüzleşir.
+              {heroTitle}<em>{heroAccent}</em><br />{heroSubtitle}
             </motion.h1>
             <motion.p
               initial={{ opacity: 0 }}
@@ -58,8 +66,7 @@ const Home = () => {
               transition={{ duration: 0.9, delay: 0.4 }}
               className="text-lg text-neutral-300 max-w-xl mb-10 leading-relaxed"
             >
-              Düğün ve nişan çekimlerinden podcast prodüksiyonuna, stüdyo portresinden klip yapımına
-              — Fotuber ile her ana özenle, sinematik bir bakışla dokunuyoruz.
+              {heroIntro}
             </motion.p>
             <motion.div
               initial={{ opacity: 0, y: 12 }}

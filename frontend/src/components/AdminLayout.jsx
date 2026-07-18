@@ -2,25 +2,31 @@ import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, CalendarDays, CalendarClock, Users, Wallet,
-  ImageIcon, Camera, LogOut, Menu, X, Package,
+  ImageIcon, Camera, LogOut, Menu, X, Package, Settings, Coins,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useSettings } from "@/context/SettingsContext";
 import { Button } from "@/components/ui/button";
+import { API_BASE } from "@/lib/api";
 
 const items = [
   { to: "/admin/dashboard", label: "Genel Bakış", icon: LayoutDashboard },
   { to: "/admin/randevular", label: "Randevular", icon: CalendarDays },
   { to: "/admin/takvim", label: "Takvim & Kapatma", icon: CalendarClock },
   { to: "/admin/finans", label: "Finans", icon: Wallet },
+  { to: "/admin/nakit-akisi", label: "Nakit Akışı", icon: Coins, ownerOnly: true },
   { to: "/admin/hizmetler", label: "Hizmetler", icon: Package },
   { to: "/admin/galeri", label: "Galeri", icon: ImageIcon },
   { to: "/admin/personel", label: "Personel", icon: Users },
+  { to: "/admin/ayarlar", label: "Site Ayarları", icon: Settings, ownerOnly: true },
 ];
 
 export const AdminLayout = ({ children }) => {
   const { user, logout } = useAuth();
+  const { settings } = useSettings();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const logoUrl = settings?.logo_id ? `${API_BASE}/settings/logo/${settings.logo_id}` : null;
 
   React.useEffect(() => { document.body.classList.add("admin"); return () => document.body.classList.remove("admin"); }, []);
 
@@ -30,11 +36,15 @@ export const AdminLayout = ({ children }) => {
       <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-200 transform transition-transform ${open ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
         <div className="h-16 border-b border-slate-200 flex items-center px-6">
           <Link to="/admin/dashboard" className="flex items-center gap-2" data-testid="admin-logo-home">
-            <span className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center">
-              <Camera className="w-4 h-4 text-[#d4af37]" strokeWidth={2} />
-            </span>
+            {logoUrl ? (
+              <img src={logoUrl} alt={settings?.business_name || "Logo"} className="w-9 h-9 rounded-full object-cover" />
+            ) : (
+              <span className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center">
+                <Camera className="w-4 h-4 text-[#d4af37]" strokeWidth={2} />
+              </span>
+            )}
             <div className="leading-none">
-              <div className="text-lg font-semibold tracking-tight">fotuber</div>
+              <div className="text-lg font-semibold tracking-tight lowercase">{settings?.business_name || "fotuber"}</div>
               <div className="text-[10px] tracking-[0.2em] uppercase text-slate-500">Yönetim Paneli</div>
             </div>
           </Link>

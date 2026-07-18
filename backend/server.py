@@ -279,6 +279,33 @@ class StaffIn(BaseModel):
     hired_at: Optional[str] = None
 
 
+class SiteSettingsIn(BaseModel):
+    business_name: Optional[str] = None
+    tagline: Optional[str] = None
+    hero_title: Optional[str] = None
+    hero_title_accent: Optional[str] = None
+    hero_subtitle: Optional[str] = None
+    hero_intro: Optional[str] = None
+    about_text: Optional[str] = None
+    phone: Optional[str] = None
+    whatsapp: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    instagram: Optional[str] = None
+    hero_image_url: Optional[str] = None
+
+
+class TransactionIn(BaseModel):
+    kind: Literal["income", "expense"]
+    amount: float = Field(gt=0)
+    payment_method: Literal["cash", "card", "transfer"]
+    category: Optional[str] = ""
+    description: Optional[str] = ""
+    date: str  # YYYY-MM-DD
+    appointment_id: Optional[str] = None
+    staff_id: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
@@ -289,6 +316,27 @@ async def on_startup():
     await db.blocked_slots.create_index([("date", 1), ("time", 1)], unique=True)
     await db.gallery.create_index([("category", 1), ("created_at", -1)])
     init_storage()
+
+    # Seed default site settings if missing
+    if await db.site_settings.count_documents({}) == 0:
+        await db.site_settings.insert_one({
+            "id": "singleton",
+            "business_name": "Fotuber",
+            "tagline": "Studio · fotuber.com.tr",
+            "hero_title": "Anlar, ",
+            "hero_title_accent": "ışıkla",
+            "hero_subtitle": "ölümsüzleşir.",
+            "hero_intro": "Düğün ve nişan çekimlerinden podcast prodüksiyonuna, stüdyo portresinden klip yapımına — Fotuber ile her ana özenle, sinematik bir bakışla dokunuyoruz.",
+            "about_text": "Fotuber, düğün ve nişan çekimlerinden podcast prodüksiyonuna, stüdyo portresinden klip yapımına ve karaoke etkinliklerine kadar geniş bir hizmet yelpazesi sunan modern bir prodüksiyon stüdyosudur.",
+            "phone": "05010002523",
+            "whatsapp": "905010002523",
+            "email": "info@fotuber.com.tr",
+            "address": "fotuber.com.tr · Randevu ile ziyaret",
+            "instagram": "",
+            "logo_id": None,
+            "hero_image_url": "https://images.pexels.com/photos/5762880/pexels-photo-5762880.jpeg",
+            "updated_at": now_iso(),
+        })
 
     # Seed admin
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@fotuber.com.tr").lower()
@@ -363,9 +411,10 @@ async def register(payload: RegisterInput, response: Response):
 
 @api_router.post("/auth/login")
 async def login(payload: LoginInput, response: Response):
-    email = payload.email.lower()
+    email = payload.email.strip().lower()
+    password = payload.password
     user = await db.users.find_one({"email": email})
-    if not user or not verify_password(payload.password, user.get("password_hash", "")):
+    if not user or not verify_password(password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="E-posta veya şifre hatalı")
     access = create_access_token(user["id"], email, user["role"])
     refresh = create_refresh_token(user["id"])
@@ -752,6 +801,212 @@ async def download_gallery_file(item_id: str):
 async def delete_gallery(item_id: str, admin: dict = Depends(require_admin)):
     await db.gallery.update_one({"id": item_id}, {"$set": {"is_deleted": True}})
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Site Settings (branding, contact, hero)
+# ---------------------------------------------------------------------------
+@api_router.get("/settings")
+async def get_settings():
+    doc = await db.site_settings.find_one({"id": "singleton"}, {"_id": 0})
+    return doc or {}
+
+
+@api_router.put("/settings")
+async def update_settings(payload: SiteSettingsIn, admin: dict = Depends(require_admin)):
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    updates["updated_at"] = now_iso()
+    await db.site_settings.update_one({"id": "singleton"}, {"$set": updates}, upsert=True)
+    return await db.site_settings.find_one({"id": "singleton"}, {"_id": 0})
+
+
+@api_router.post("/settings/logo")
+async def upload_logo(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+    ext = (file.filename or "png").split(".")[-1].lower()
+    content_type = file.content_type or "image/png"
+    logo_id = new_id()
+    path = f"{APP_NAME}/branding/logo-{logo_id}.{ext}"
+    data = await file.read()
+    put_object(path, data, content_type)
+
+    await db.site_assets.insert_one({
+        "id": logo_id,
+        "storage_path": path,
+        "content_type": content_type,
+        "kind": "logo",
+        "created_at": now_iso(),
+    })
+    await db.site_settings.update_one(
+        {"id": "singleton"},
+        {"$set": {"logo_id": logo_id, "updated_at": now_iso()}},
+        upsert=True,
+    )
+    return {"logo_id": logo_id}
+
+
+@api_router.get("/settings/logo/{logo_id}")
+async def download_logo(logo_id: str):
+    doc = await db.site_assets.find_one({"id": logo_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Logo bulunamadı")
+    data, ct = get_object(doc["storage_path"])
+    return StarletteResponse(
+        content=data,
+        media_type=doc.get("content_type", ct),
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cash Flow / Transactions (owner-admin only)
+# ---------------------------------------------------------------------------
+@api_router.post("/transactions")
+async def create_transaction(payload: TransactionIn, admin: dict = Depends(require_admin)):
+    doc = payload.model_dump()
+    doc["id"] = new_id()
+    doc["created_at"] = now_iso()
+    doc["created_by"] = admin.get("id")
+    await db.transactions.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/transactions")
+async def list_transactions(
+    admin: dict = Depends(require_admin),
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    kind: Optional[str] = None,
+    method: Optional[str] = None,
+    limit: int = 500,
+):
+    q: dict = {}
+    if kind:
+        q["kind"] = kind
+    if method:
+        q["payment_method"] = method
+    if date_from or date_to:
+        rng = {}
+        if date_from:
+            rng["$gte"] = date_from
+        if date_to:
+            rng["$lte"] = date_to
+        q["date"] = rng
+    items = await db.transactions.find(q, {"_id": 0}).sort([("date", -1), ("created_at", -1)]).to_list(limit)
+    return items
+
+
+@api_router.put("/transactions/{tid}")
+async def update_transaction(tid: str, payload: TransactionIn, admin: dict = Depends(require_admin)):
+    res = await db.transactions.update_one({"id": tid}, {"$set": payload.model_dump()})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
+    return await db.transactions.find_one({"id": tid}, {"_id": 0})
+
+
+@api_router.delete("/transactions/{tid}")
+async def delete_transaction(tid: str, admin: dict = Depends(require_admin)):
+    await db.transactions.delete_one({"id": tid})
+    return {"ok": True}
+
+
+@api_router.get("/transactions/summary")
+async def transaction_summary(admin: dict = Depends(require_admin)):
+    """Return daily (last 7 days), weekly (last 4 weeks), monthly (last 6 months) aggregates,
+    plus payment-method breakdown for today/week/month."""
+    today = datetime.now(timezone.utc).date()
+
+    def date_range(days_back: int) -> list[str]:
+        return [(today - timedelta(days=i)).isoformat() for i in range(days_back - 1, -1, -1)]
+
+    all_docs = await db.transactions.find({}, {"_id": 0}).to_list(5000)
+
+    def money(rows, kind):
+        return sum(float(r.get("amount", 0) or 0) for r in rows if r.get("kind") == kind)
+
+    def by_method(rows):
+        out = {"cash": 0.0, "card": 0.0, "transfer": 0.0}
+        for r in rows:
+            m = r.get("payment_method")
+            if m in out:
+                sign = 1 if r.get("kind") == "income" else -1
+                out[m] += sign * float(r.get("amount", 0) or 0)
+        return out
+
+    # daily series (last 7 days)
+    day_list = date_range(7)
+    daily_series = []
+    for d in day_list:
+        rows = [r for r in all_docs if r.get("date") == d]
+        daily_series.append({
+            "date": d,
+            "income": money(rows, "income"),
+            "expense": money(rows, "expense"),
+            "net": money(rows, "income") - money(rows, "expense"),
+        })
+
+    # weekly series (last 4 weeks) — group by ISO week
+    def week_key(d_str):
+        y, m, dd = map(int, d_str.split("-"))
+        return datetime(y, m, dd).isocalendar()[:2]  # (year, week)
+
+    week_series = []
+    current_week = today.isocalendar()[:2]
+    weeks = []
+    for i in range(3, -1, -1):
+        anchor = today - timedelta(weeks=i)
+        weeks.append(anchor.isocalendar()[:2])
+    for wk in weeks:
+        rows = [r for r in all_docs if r.get("date") and week_key(r["date"]) == wk]
+        week_series.append({
+            "label": f"H{wk[1]}",
+            "income": money(rows, "income"),
+            "expense": money(rows, "expense"),
+            "net": money(rows, "income") - money(rows, "expense"),
+        })
+
+    # monthly series (last 6 months)
+    month_series = []
+    for i in range(5, -1, -1):
+        anchor = (today.replace(day=1) - timedelta(days=1 * 30 * i))
+        ym = f"{anchor.year}-{anchor.month:02d}"
+        rows = [r for r in all_docs if r.get("date", "")[:7] == ym]
+        month_series.append({
+            "label": ym,
+            "income": money(rows, "income"),
+            "expense": money(rows, "expense"),
+            "net": money(rows, "income") - money(rows, "expense"),
+        })
+
+    today_rows = [r for r in all_docs if r.get("date") == today.isoformat()]
+    week_start = (today - timedelta(days=today.weekday())).isoformat()
+    week_rows = [r for r in all_docs if r.get("date", "") >= week_start]
+    month_start = today.replace(day=1).isoformat()
+    month_rows = [r for r in all_docs if r.get("date", "") >= month_start]
+
+    return {
+        "today": {
+            "income": money(today_rows, "income"),
+            "expense": money(today_rows, "expense"),
+            "net": money(today_rows, "income") - money(today_rows, "expense"),
+            "by_method": by_method(today_rows),
+        },
+        "week": {
+            "income": money(week_rows, "income"),
+            "expense": money(week_rows, "expense"),
+            "net": money(week_rows, "income") - money(week_rows, "expense"),
+            "by_method": by_method(week_rows),
+        },
+        "month": {
+            "income": money(month_rows, "income"),
+            "expense": money(month_rows, "expense"),
+            "net": money(month_rows, "income") - money(month_rows, "expense"),
+            "by_method": by_method(month_rows),
+        },
+        "daily_series": daily_series,
+        "week_series": week_series,
+        "month_series": month_series,
+    }
 
 
 # ---------------------------------------------------------------------------
