@@ -253,6 +253,7 @@ class AppointmentIn(BaseModel):
     date: str  # YYYY-MM-DD
     time: str  # HH:MM (opening one-hour slot)
     notes: Optional[str] = ""
+    contract_accepted: bool = False
 
 
 class AppointmentAdminUpdate(BaseModel):
@@ -303,6 +304,12 @@ class SiteSettingsIn(BaseModel):
     msg_approved: Optional[str] = None
     msg_cancelled: Optional[str] = None
     msg_reminder: Optional[str] = None
+    contract_terms: Optional[str] = None
+    discount_active: Optional[bool] = None
+    discount_percent: Optional[float] = None
+    discount_expiry_days: Optional[int] = None
+    discount_heading: Optional[str] = None
+    discount_subtitle: Optional[str] = None
     hero_image_url: Optional[str] = None
 
 
@@ -356,6 +363,12 @@ async def on_startup():
             "msg_approved": "Merhaba {ad}, {tarih} {saat} tarihindeki {hizmet} randevunuz onaylandı. Adres: {adres}. Yol tarifi: {harita_link}. — {marka}",
             "msg_cancelled": "Merhaba {ad}, {tarih} {saat} randevunuz iptal edilmiştir. Detay için: {telefon}. — {marka}",
             "msg_reminder": "Merhaba {ad}, yarın {tarih} {saat} {hizmet} randevunuz var. Adres: {adres}. Yol tarifi: {harita_link}. Görüşmek üzere! — {marka}",
+            "contract_terms": "Bu alana Fotuber Studio hizmet sözleşmesinin maddelerini yazınız.\n\n1. Randevu ve Kapora: ...\n2. İptal ve İade Koşulları: ...\n3. Fikri Mülkiyet Hakları: ...\n4. Görüntülerin Kullanımı ve KVKK: ...\n5. Diğer Koşullar: ...\n\n(Metni Site Ayarları > Sözleşme Metni alanından güncelleyebilirsiniz.)",
+            "discount_active": True,
+            "discount_percent": 10.0,
+            "discount_expiry_days": 60,
+            "discount_heading": "Sosyal medyada takip et, %10 indirim kazan",
+            "discount_subtitle": "Instagram ve YouTube hesaplarımızı takip ederek özel indirim kodunuzu anında alın. Kod, stüdyoya bizzat geldiğinizde geçerli olur.",
             "logo_id": None,
             "hero_image_url": "https://images.pexels.com/photos/5762880/pexels-photo-5762880.jpeg",
             "updated_at": now_iso(),
@@ -543,6 +556,9 @@ async def create_appointment(payload: AppointmentIn, user: dict = Depends(get_cu
     if user.get("role") != "customer":
         raise HTTPException(status_code=403, detail="Sadece müşteriler randevu oluşturabilir")
 
+    if not payload.contract_accepted:
+        raise HTTPException(status_code=400, detail="Randevu oluşturmak için sözleşme maddelerini kabul etmelisiniz")
+
     if payload.time not in SLOTS:
         raise HTTPException(status_code=400, detail="Geçersiz saat dilimi")
 
@@ -556,6 +572,7 @@ async def create_appointment(payload: AppointmentIn, user: dict = Depends(get_cu
     if not service:
         raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
 
+    now = now_iso()
     doc = {
         "id": new_id(),
         "user_id": user["id"],
@@ -570,7 +587,12 @@ async def create_appointment(payload: AppointmentIn, user: dict = Depends(get_cu
         "deposit_amount": 0,
         "total_amount": service.get("price", 0),
         "paid_amount": 0,
-        "created_at": now_iso(),
+        "origin": "online",
+        "contract_accepted": True,
+        "contract_accepted_at": now,
+        "physical_contract_needed": True,  # they still need to sign in-person / confirm
+        "contract_file_id": None,
+        "created_at": now,
     }
     await db.appointments.insert_one(doc)
 
@@ -676,6 +698,116 @@ async def update_appointment(aid: str, payload: AppointmentAdminUpdate, admin: d
 @api_router.delete("/appointments/{aid}")
 async def delete_appointment(aid: str, admin: dict = Depends(require_admin)):
     await db.appointments.delete_one({"id": aid})
+    return {"ok": True}
+
+
+# ---- Contract file upload (signed physical contract) ----
+class WalkinAppointmentIn(BaseModel):
+    customer_name: str
+    customer_phone: str
+    customer_email: Optional[str] = ""
+    service_id: str
+    date: str
+    time: str
+    deposit_amount: float = 0
+    total_amount: Optional[float] = None
+    paid_amount: float = 0
+    notes: Optional[str] = ""
+    auto_approve: bool = True
+
+
+@api_router.post("/appointments/walkin")
+async def create_walkin_appointment(payload: WalkinAppointmentIn, admin: dict = Depends(require_admin)):
+    """Admin creates a face-to-face appointment for a walk-in customer."""
+    if payload.time not in SLOTS:
+        raise HTTPException(status_code=400, detail="Geçersiz saat dilimi")
+    if await db.appointments.find_one({"date": payload.date, "time": payload.time, "status": "approved"}):
+        raise HTTPException(status_code=409, detail="Bu saat dolu")
+    if await db.blocked_slots.find_one({"date": payload.date, "time": payload.time}):
+        raise HTTPException(status_code=409, detail="Bu saat kapalı")
+
+    service = await db.services.find_one({"id": payload.service_id}, {"_id": 0})
+    if not service:
+        raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
+
+    now = now_iso()
+    doc = {
+        "id": new_id(),
+        "user_id": None,
+        "customer_name": payload.customer_name,
+        "customer_phone": payload.customer_phone,
+        "customer_email": payload.customer_email or "",
+        "service_id": payload.service_id,
+        "date": payload.date,
+        "time": payload.time,
+        "notes": payload.notes or "",
+        "status": "approved" if payload.auto_approve else "pending",
+        "deposit_amount": payload.deposit_amount,
+        "total_amount": payload.total_amount if payload.total_amount is not None else service.get("price", 0),
+        "paid_amount": payload.paid_amount,
+        "origin": "walkin",
+        "contract_accepted": True,  # signed in-person
+        "contract_accepted_at": now,
+        "physical_contract_needed": False,
+        "contract_file_id": None,
+        "created_at": now,
+        "approved_at": now if payload.auto_approve else None,
+    }
+    await db.appointments.insert_one(doc)
+    return await _enrich_appointment(doc)
+
+
+@api_router.post("/appointments/{aid}/contract")
+async def upload_contract(aid: str, file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+    appt = await db.appointments.find_one({"id": aid})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Randevu bulunamadı")
+    ext = (file.filename or "bin").split(".")[-1].lower()
+    content_type = file.content_type or "application/octet-stream"
+    file_id = new_id()
+    path = f"{APP_NAME}/contracts/{aid}/{file_id}.{ext}"
+    data = await file.read()
+    put_object(path, data, content_type)
+
+    await db.contracts.insert_one({
+        "id": file_id,
+        "appointment_id": aid,
+        "storage_path": path,
+        "content_type": content_type,
+        "size": len(data),
+        "original_filename": file.filename,
+        "uploaded_by": admin.get("id"),
+        "created_at": now_iso(),
+    })
+    await db.appointments.update_one(
+        {"id": aid},
+        {"$set": {"contract_file_id": file_id, "physical_contract_needed": False, "updated_at": now_iso()}},
+    )
+    return {"contract_file_id": file_id}
+
+
+@api_router.get("/appointments/{aid}/contract")
+async def download_contract(aid: str, admin: dict = Depends(require_admin)):
+    appt = await db.appointments.find_one({"id": aid})
+    if not appt or not appt.get("contract_file_id"):
+        raise HTTPException(status_code=404, detail="Bu randevu için sözleşme yüklenmemiş")
+    doc = await db.contracts.find_one({"id": appt["contract_file_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Sözleşme dosyası kayıp")
+    data, ct = get_object(doc["storage_path"])
+    return StarletteResponse(
+        content=data,
+        media_type=doc.get("content_type", ct),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@api_router.delete("/appointments/{aid}/contract")
+async def delete_contract(aid: str, admin: dict = Depends(require_admin)):
+    await db.appointments.update_one(
+        {"id": aid},
+        {"$set": {"contract_file_id": None, "physical_contract_needed": True}},
+    )
     return {"ok": True}
 
 
@@ -1255,6 +1387,304 @@ async def notifications_health(admin: dict = Depends(require_admin)):
         "sms_from": TWILIO_SMS_FROM,
         "whatsapp_from": TWILIO_WA_FROM,
     }
+
+
+# ---------------------------------------------------------------------------
+# Discount Codes (follow-us-for-discount workflow)
+# ---------------------------------------------------------------------------
+import random
+import string
+
+
+class DiscountRequestIn(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    phone: str = Field(min_length=7, max_length=20)
+    platforms_followed: list[str] = Field(default_factory=list)  # ["instagram","youtube",...]
+
+
+class PortfolioIn(BaseModel):
+    title: str
+    description: Optional[str] = ""
+    client_name: Optional[str] = ""
+    category: Optional[str] = "sosyal-medya"  # sosyal-medya, klip, reklam-filmi, ürün-çekimi
+    external_url: Optional[str] = ""
+    active: bool = True
+
+
+class ClientIn(BaseModel):
+    name: str
+    industry: Optional[str] = ""
+    website: Optional[str] = ""
+    testimonial: Optional[str] = ""
+    active: bool = True
+
+
+def _generate_code(length: int = 6) -> str:
+    letters = string.ascii_uppercase.replace("O", "").replace("I", "")
+    digits = string.digits.replace("0", "").replace("1", "")
+    return "FTB-" + "".join(random.choice(letters + digits) for _ in range(length))
+
+
+@api_router.post("/discount-codes/request")
+async def request_discount_code(payload: DiscountRequestIn):
+    settings = await db.site_settings.find_one({"id": "singleton"}, {"_id": 0}) or {}
+    if not settings.get("discount_active", True):
+        raise HTTPException(status_code=400, detail="İndirim kampanyası şu an aktif değil")
+    if not payload.platforms_followed:
+        raise HTTPException(status_code=400, detail="En az bir sosyal medya hesabını takip ettiğinizi işaretleyin")
+
+    # de-duplicate — same phone + last 30 days => return existing pending code
+    existing = await db.discount_codes.find_one(
+        {"phone": payload.phone, "status": "issued"},
+        sort=[("issued_at", -1)],
+    )
+    if existing:
+        existing.pop("_id", None)
+        return existing
+
+    percent = float(settings.get("discount_percent", 10))
+    expiry_days = int(settings.get("discount_expiry_days", 60))
+    now = datetime.now(timezone.utc)
+    expires = (now + timedelta(days=expiry_days)).isoformat()
+
+    # Generate unique code
+    for _ in range(20):
+        code = _generate_code()
+        if not await db.discount_codes.find_one({"code": code}):
+            break
+    else:
+        raise HTTPException(status_code=500, detail="Kod üretilemedi, tekrar deneyin")
+
+    doc = {
+        "id": new_id(),
+        "code": code,
+        "name": payload.name,
+        "phone": payload.phone,
+        "platforms_followed": payload.platforms_followed,
+        "discount_percent": percent,
+        "status": "issued",  # issued -> redeemed / expired
+        "issued_at": now.isoformat(),
+        "expires_at": expires,
+        "redeemed_at": None,
+        "redeemed_by": None,
+        "appointment_id": None,
+    }
+    await db.discount_codes.insert_one(doc)
+    doc.pop("_id", None)
+
+    # In-panel + WhatsApp/SMS to admin
+    await db.notifications.insert_one({
+        "id": new_id(),
+        "kind": "discount_issued",
+        "title": "Yeni indirim kodu talebi",
+        "message": f"{payload.name} ({payload.phone}) → {code} · %{int(percent)}",
+        "code_id": doc["id"],
+        "read": False,
+        "created_at": now.isoformat(),
+    })
+    await _try_send_external_notification(
+        title="Yeni İndirim Kodu",
+        body=f"{payload.name} sosyal medyada takip etti, %{int(percent)} kod aldı: {code}. Takip edilen: {', '.join(payload.platforms_followed)}.",
+    )
+    # Send code to customer via WhatsApp/SMS
+    marka = settings.get("business_name", "Fotuber")
+    body = f"Merhaba {payload.name.split(' ')[0]}, takibiniz için teşekkürler! %{int(percent)} indirim kodunuz: {code} . Kod, stüdyoya bizzat geldiğinizde geçerli olur. — {marka}"
+    await _try_send_external_notification(title="", body=body, to_numbers=[payload.phone])
+
+    return doc
+
+
+@api_router.get("/discount-codes")
+async def list_discount_codes(
+    admin: dict = Depends(require_admin),
+    status_filter: Optional[str] = None,
+):
+    q: dict = {}
+    if status_filter:
+        q["status"] = status_filter
+    items = await db.discount_codes.find(q, {"_id": 0}).sort("issued_at", -1).to_list(500)
+    return items
+
+
+class RedeemIn(BaseModel):
+    appointment_id: Optional[str] = None
+    note: Optional[str] = None
+
+
+@api_router.post("/discount-codes/{cid}/redeem")
+async def redeem_discount_code(cid: str, payload: RedeemIn, admin: dict = Depends(require_admin)):
+    doc = await db.discount_codes.find_one({"id": cid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Kod bulunamadı")
+    if doc.get("status") != "issued":
+        raise HTTPException(status_code=400, detail="Bu kod daha önce kullanılmış veya süresi dolmuş")
+    if doc.get("expires_at") and doc["expires_at"] < datetime.now(timezone.utc).isoformat():
+        await db.discount_codes.update_one({"id": cid}, {"$set": {"status": "expired"}})
+        raise HTTPException(status_code=400, detail="Kodun süresi doldu")
+    await db.discount_codes.update_one(
+        {"id": cid},
+        {"$set": {
+            "status": "redeemed",
+            "redeemed_at": now_iso(),
+            "redeemed_by": admin.get("id"),
+            "appointment_id": payload.appointment_id,
+            "redeem_note": payload.note or "",
+        }},
+    )
+    return {"ok": True}
+
+
+@api_router.delete("/discount-codes/{cid}")
+async def delete_discount_code(cid: str, admin: dict = Depends(require_admin)):
+    await db.discount_codes.delete_one({"id": cid})
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Fotuber Medya — B2B Portfolio + Clients
+# ---------------------------------------------------------------------------
+PORTFOLIO_CATEGORIES = [
+    {"slug": "sosyal-medya", "name": "Sosyal Medya Yönetimi"},
+    {"slug": "klip", "name": "Klip / Reels"},
+    {"slug": "reklam-filmi", "name": "Reklam Filmi"},
+    {"slug": "urun-cekimi", "name": "Ürün Çekimi"},
+    {"slug": "kurumsal", "name": "Kurumsal Tanıtım"},
+]
+
+
+@api_router.get("/portfolio/categories")
+async def portfolio_categories():
+    return PORTFOLIO_CATEGORIES
+
+
+@api_router.get("/portfolio")
+async def list_portfolio(category: Optional[str] = None):
+    q: dict = {"active": True}
+    if category:
+        q["category"] = category
+    items = await db.portfolio.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return items
+
+
+@api_router.post("/portfolio")
+async def create_portfolio(
+    title: str = Form(...),
+    description: str = Form(""),
+    client_name: str = Form(""),
+    category: str = Form("sosyal-medya"),
+    external_url: str = Form(""),
+    file: Optional[UploadFile] = File(None),
+    admin: dict = Depends(require_admin),
+):
+    doc = {
+        "id": new_id(),
+        "title": title,
+        "description": description,
+        "client_name": client_name,
+        "category": category,
+        "external_url": external_url,
+        "active": True,
+        "media_id": None,
+        "media_type": None,
+        "content_type": None,
+        "created_at": now_iso(),
+    }
+    if file is not None:
+        ext = (file.filename or "bin").split(".")[-1].lower()
+        content_type = file.content_type or "application/octet-stream"
+        media_type = "video" if content_type.startswith("video") else "image"
+        media_id = new_id()
+        path = f"{APP_NAME}/portfolio/{media_id}.{ext}"
+        data = await file.read()
+        put_object(path, data, content_type)
+        await db.portfolio_media.insert_one({
+            "id": media_id, "storage_path": path, "content_type": content_type,
+            "created_at": now_iso(),
+        })
+        doc.update({"media_id": media_id, "media_type": media_type, "content_type": content_type})
+    await db.portfolio.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/portfolio/media/{media_id}")
+async def portfolio_media(media_id: str):
+    doc = await db.portfolio_media.find_one({"id": media_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Medya bulunamadı")
+    data, ct = get_object(doc["storage_path"])
+    return StarletteResponse(
+        content=data,
+        media_type=doc.get("content_type", ct),
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@api_router.delete("/portfolio/{pid}")
+async def delete_portfolio(pid: str, admin: dict = Depends(require_admin)):
+    await db.portfolio.delete_one({"id": pid})
+    return {"ok": True}
+
+
+# ---- Clients (with logo upload) ----
+@api_router.get("/clients")
+async def list_clients():
+    items = await db.clients.find({"active": True}, {"_id": 0}).sort("name", 1).to_list(500)
+    return items
+
+
+@api_router.post("/clients")
+async def create_client(
+    name: str = Form(...),
+    industry: str = Form(""),
+    website: str = Form(""),
+    testimonial: str = Form(""),
+    logo: Optional[UploadFile] = File(None),
+    admin: dict = Depends(require_admin),
+):
+    doc = {
+        "id": new_id(),
+        "name": name,
+        "industry": industry,
+        "website": website,
+        "testimonial": testimonial,
+        "active": True,
+        "logo_id": None,
+        "created_at": now_iso(),
+    }
+    if logo is not None:
+        ext = (logo.filename or "png").split(".")[-1].lower()
+        content_type = logo.content_type or "image/png"
+        logo_id = new_id()
+        path = f"{APP_NAME}/clients/logo-{logo_id}.{ext}"
+        data = await logo.read()
+        put_object(path, data, content_type)
+        await db.client_logos.insert_one({
+            "id": logo_id, "storage_path": path, "content_type": content_type, "created_at": now_iso(),
+        })
+        doc["logo_id"] = logo_id
+    await db.clients.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/clients/logo/{logo_id}")
+async def client_logo(logo_id: str):
+    doc = await db.client_logos.find_one({"id": logo_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Logo bulunamadı")
+    data, ct = get_object(doc["storage_path"])
+    return StarletteResponse(
+        content=data,
+        media_type=doc.get("content_type", ct),
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@api_router.delete("/clients/{cid}")
+async def delete_client(cid: str, admin: dict = Depends(require_admin)):
+    await db.clients.delete_one({"id": cid})
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

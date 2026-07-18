@@ -3,10 +3,12 @@ import { Link, useNavigate } from "react-router-dom";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { useSettings } from "@/context/SettingsContext";
 import { toast } from "sonner";
-import { Phone, MessageCircle, Info, Check, Clock } from "lucide-react";
+import { Phone, MessageCircle, Info, Check, Clock, FileText, ChevronDown, ChevronUp } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 function isoDate(d) {
@@ -18,6 +20,7 @@ function isoDate(d) {
 
 const Booking = () => {
   const { user } = useAuth();
+  const { settings } = useSettings();
   const navigate = useNavigate();
   const [services, setServices] = useState([]);
   const [selectedService, setSelectedService] = useState(null);
@@ -25,6 +28,8 @@ const Booking = () => {
   const [slots, setSlots] = useState([]);
   const [time, setTime] = useState(null);
   const [notes, setNotes] = useState("");
+  const [contractAccepted, setContractAccepted] = useState(false);
+  const [contractOpen, setContractOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => { api.get("/services").then((r) => setServices(r.data)); }, []);
@@ -46,6 +51,7 @@ const Booking = () => {
     }
     if (!selectedService) { toast.error("Bir hizmet seçin"); return; }
     if (!time) { toast.error("Bir saat seçin"); return; }
+    if (!contractAccepted) { toast.error("Devam etmek için sözleşme maddelerini kabul etmelisiniz"); return; }
     setSubmitting(true);
     try {
       await api.post("/appointments", {
@@ -53,8 +59,9 @@ const Booking = () => {
         date: dateStr,
         time,
         notes,
+        contract_accepted: true,
       });
-      toast.success("Randevu talebiniz alındı. Ekibimiz sizi arayacak.");
+      toast.success("Randevu talebiniz alındı. Sözleşmeyi ıslak imza için sizi arayacağız.");
       navigate("/randevularim");
     } catch (e) {
       toast.error(formatApiError(e));
@@ -160,6 +167,58 @@ const Booking = () => {
               className="bg-neutral-950 border-neutral-800 text-neutral-200 min-h-[100px]"
             />
           </div>
+
+          {/* Sözleşme */}
+          <div>
+            <div className="text-sm uppercase tracking-[0.25em] text-neutral-500 mb-4 flex items-center gap-2">
+              <FileText className="w-3.5 h-3.5" /> 5 · Sözleşme
+            </div>
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-950 overflow-hidden">
+              <button
+                type="button"
+                data-testid="contract-toggle"
+                onClick={() => setContractOpen((o) => !o)}
+                className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-neutral-900 transition-colors"
+              >
+                <div>
+                  <div className="text-sm font-medium">Hizmet Sözleşmesi Metnini Oku</div>
+                  <div className="text-xs text-neutral-500 mt-0.5">Randevu oluşturmak için maddeleri kabul etmeniz gerekir.</div>
+                </div>
+                {contractOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+              <AnimatePresence>
+                {contractOpen && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="overflow-hidden"
+                  >
+                    <div
+                      data-testid="contract-text"
+                      className="max-h-72 overflow-y-auto px-5 py-4 border-t border-neutral-800 text-sm text-neutral-300 whitespace-pre-wrap leading-relaxed"
+                    >
+                      {settings?.contract_terms || "Sözleşme metni henüz tanımlanmadı."}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <label className="flex items-start gap-3 px-5 py-4 border-t border-neutral-800 cursor-pointer">
+                <Checkbox
+                  data-testid="contract-accept-checkbox"
+                  checked={contractAccepted}
+                  onCheckedChange={(v) => setContractAccepted(!!v)}
+                  className="mt-0.5 border-neutral-700 data-[state=checked]:bg-[#d4af37] data-[state=checked]:text-black data-[state=checked]:border-[#d4af37]"
+                />
+                <span className="text-xs text-neutral-300 leading-relaxed">
+                  <span className="text-[#d4af37]">*</span> Yukarıdaki <b>Hizmet Sözleşmesi</b> maddelerini
+                  okudum, anladım ve kabul ediyorum. Ekibin sözleşmenin ıslak imzalı örneğini
+                  tamamlamak üzere beni aramasını onaylıyorum.
+                </span>
+              </label>
+            </div>
+          </div>
         </div>
 
         {/* Right: summary */}
@@ -201,11 +260,16 @@ const Booking = () => {
             <Button
               data-testid="submit-booking-btn"
               onClick={submit}
-              disabled={submitting}
-              className="w-full mt-6 rounded-full bg-[#d4af37] hover:bg-[#b5952f] text-black h-11"
+              disabled={submitting || !contractAccepted}
+              className="w-full mt-6 rounded-full bg-[#d4af37] hover:bg-[#b5952f] text-black h-11 disabled:opacity-50"
             >
               {submitting ? "Gönderiliyor..." : <><Check className="w-4 h-4 mr-2" /> Randevu Talebini Gönder</>}
             </Button>
+            {!contractAccepted && (
+              <p className="mt-2 text-xs text-[#d4af37]/80 text-center">
+                Sözleşme maddelerini kabul edin
+              </p>
+            )}
 
             {!user && (
               <p className="mt-3 text-xs text-neutral-500 text-center">

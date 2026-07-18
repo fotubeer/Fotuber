@@ -289,6 +289,26 @@ const AdminSettings = () => {
         </CardContent>
       </Card>
 
+      {/* Sözleşme Metni */}
+      <Card className="border-slate-200">
+        <CardHeader>
+          <CardTitle className="text-base font-semibold">Hizmet Sözleşmesi Metni</CardTitle>
+          <p className="text-xs text-slate-500 mt-1">
+            Online randevu formunda müşteriye gösterilecek ve onayı istenecek sözleşme maddeleri.
+            Boş satırla paragraflar ayırabilirsiniz. Bu metin kabul edilmeden müşteri randevu oluşturamaz.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Textarea
+            data-testid="setting-contract"
+            rows={16}
+            value={form.contract_terms || ""}
+            onChange={upd("contract_terms")}
+            className="font-mono text-xs"
+          />
+        </CardContent>
+      </Card>
+
       <div className="flex justify-end sticky bottom-4">
         <Button data-testid="settings-save-btn" onClick={save} disabled={saving} size="lg" className="bg-slate-900 hover:bg-slate-800 shadow-lg">
           <Save className="w-4 h-4 mr-2" /> {saving ? "Kaydediliyor..." : "Tüm Ayarları Kaydet"}

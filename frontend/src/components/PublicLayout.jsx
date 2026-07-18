@@ -11,7 +11,9 @@ import FloatingContact from "@/components/FloatingContact";
 const navItems = [
   { to: "/", label: "Ana Sayfa" },
   { to: "/hizmetler", label: "Hizmetler" },
+  { to: "/fotuber-medya", label: "Fotuber Medya" },
   { to: "/galeri", label: "Galeri" },
+  { to: "/indirim-kodu", label: "İndirim Kodu", accent: true },
   { to: "/hakkimizda", label: "Hakkımızda" },
   { to: "/iletisim", label: "İletişim" },
 ];
@@ -59,7 +61,9 @@ export const PublicLayout = ({ children }) => {
                 to={n.to}
                 data-testid={`nav-${n.to.replace('/', '') || 'home'}`}
                 className={({ isActive }) =>
-                  `text-sm tracking-wide link-underline ${isActive ? "text-[#d4af37]" : "text-neutral-300 hover:text-white"}`
+                  `text-sm tracking-wide link-underline ${
+                    isActive ? "text-[#d4af37]" : (n.accent ? "text-[#d4af37]/80 hover:text-[#d4af37]" : "text-neutral-300 hover:text-white")
+                  }`
                 }
               >
                 {n.label}

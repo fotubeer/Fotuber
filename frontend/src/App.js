@@ -29,6 +29,11 @@ import AdminServices from "@/pages/admin/AdminServices";
 import AdminGallery from "@/pages/admin/AdminGallery";
 import AdminSettings from "@/pages/admin/AdminSettings";
 import AdminTransactions from "@/pages/admin/AdminTransactions";
+import AdminDiscountCodes from "@/pages/admin/AdminDiscountCodes";
+import AdminFotuberMedya from "@/pages/admin/AdminFotuberMedya";
+
+import DiscountCode from "@/pages/DiscountCode";
+import FotuberMedya from "@/pages/FotuberMedya";
 
 const P = ({ children }) => <PublicLayout>{children}</PublicLayout>;
 const AdminGuard = ({ children }) => (
@@ -49,6 +54,8 @@ function App() {
               <Route path="/iletisim" element={<P><Contact /></P>} />
               <Route path="/galeri" element={<P><Gallery /></P>} />
               <Route path="/randevu" element={<P><Booking /></P>} />
+              <Route path="/indirim-kodu" element={<P><DiscountCode /></P>} />
+              <Route path="/fotuber-medya" element={<P><FotuberMedya /></P>} />
               <Route path="/giris" element={<P><Login /></P>} />
               <Route path="/kayit" element={<P><Register /></P>} />
               <Route path="/personel-girisi" element={<StaffLogin />} />
@@ -73,6 +80,8 @@ function App() {
               <Route path="/admin/personel" element={<AdminGuard><Staff /></AdminGuard>} />
               <Route path="/admin/galeri" element={<AdminGuard><AdminGallery /></AdminGuard>} />
               <Route path="/admin/ayarlar" element={<AdminGuard><AdminSettings /></AdminGuard>} />
+              <Route path="/admin/indirim-kodlari" element={<AdminGuard><AdminDiscountCodes /></AdminGuard>} />
+              <Route path="/admin/fotuber-medya" element={<AdminGuard><AdminFotuberMedya /></AdminGuard>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
