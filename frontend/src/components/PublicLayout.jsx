@@ -108,14 +108,30 @@ export const PublicLayout = ({ children }) => {
             )}
           </div>
 
-          <button
-            data-testid="mobile-menu-toggle"
-            className="lg:hidden text-white"
-            onClick={() => setOpen((o) => !o)}
-            aria-label="Menü"
-          >
-            {open ? <X /> : <Menu />}
-          </button>
+          {/* Persistent mobile access to admin/staff area (right next to hamburger) */}
+          <div className="lg:hidden flex items-center gap-2">
+            {user && user.role === "admin" ? (
+              <Link to="/admin/dashboard" data-testid="mobile-admin-panel-btn" title="Yönetim Paneli">
+                <span className="w-9 h-9 rounded-full bg-slate-900 text-white flex items-center justify-center border border-slate-700">
+                  <LayoutDashboard className="w-4 h-4" />
+                </span>
+              </Link>
+            ) : !user ? (
+              <Link to="/personel-girisi" data-testid="mobile-staff-login-btn" title="Personel Girişi">
+                <span className="w-9 h-9 rounded-full border border-[#d4af37] text-[#d4af37] flex items-center justify-center">
+                  <ShieldCheck className="w-4 h-4" />
+                </span>
+              </Link>
+            ) : null}
+            <button
+              data-testid="mobile-menu-toggle"
+              className="text-white"
+              onClick={() => setOpen((o) => !o)}
+              aria-label="Menü"
+            >
+              {open ? <X /> : <Menu />}
+            </button>
+          </div>
         </div>
 
         {open && (
