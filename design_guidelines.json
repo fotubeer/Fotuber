@@ -1,0 +1,153 @@
+{
+  "project_overview": {
+    "name": "Fotuber",
+    "domain": "fotuber.com.tr",
+    "type": "hybrid_fullstack",
+    "description": "Smart appointment and staff management system for a photography/video studio. Features a public marketing interface and a protected admin panel.",
+    "language": "Turkish"
+  },
+  "design_philosophy": {
+    "public_site": "Premium, deep, and creative. Archetype 5: Luxury. Emphasizes visual storytelling with a dark, moody aesthetic. Contrast and large typography are key.",
+    "admin_dashboard": "Archetype 4: Swiss & High-Contrast. Bright, functional, and data-dense. Distinct from the public site to signal a professional work environment."
+  },
+  "typography": {
+    "strategy": "The 'Old Money Tech' variant adapted for luxury photography.",
+    "fonts": {
+      "headings": {
+        "family": "Cormorant Garamond, serif",
+        "weight": "Light or SemiBold",
+        "usage": "Hero titles, section headers, elegant large text.",
+        "import": "@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600&display=swap');"
+      },
+      "body": {
+        "family": "Manrope, sans-serif",
+        "weight": "400, 500",
+        "usage": "Body text, small labels, and all Admin Dashboard text.",
+        "import": "@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&display=swap');"
+      },
+      "admin_headings": {
+        "family": "Outfit, sans-serif",
+        "weight": "600",
+        "usage": "Dashboard widgets and page titles.",
+        "import": "@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600&display=swap');"
+      }
+    },
+    "hierarchy": {
+      "h1": "text-5xl sm:text-6xl tracking-tight",
+      "h2": "text-3xl sm:text-4xl tracking-tight",
+      "h3": "text-xl sm:text-2xl",
+      "body": "text-base leading-relaxed",
+      "labels": "text-xs tracking-[0.2em] uppercase"
+    }
+  },
+  "colors": {
+    "public_site": {
+      "background": "#0a0a0a",
+      "surface": "#171717",
+      "primary": "#d4af37",
+      "primary_hover": "#b5952f",
+      "text_primary": "#ffffff",
+      "text_secondary": "#a3a3a3",
+      "border": "#262626"
+    },
+    "admin_dashboard": {
+      "background": "#f8fafc",
+      "surface": "#ffffff",
+      "primary": "#0f172a",
+      "primary_hover": "#1e293b",
+      "accent": "#2563eb",
+      "text_primary": "#0f172a",
+      "text_secondary": "#64748b",
+      "border": "#e2e8f0",
+      "status_success": "#22c55e",
+      "status_pending": "#f59e0b",
+      "status_error": "#ef4444"
+    }
+  },
+  "layouts": {
+    "public_site": {
+      "hero": "Full height (min-h-screen) with background image, dark overlay (bg-black/40). Text left-aligned or centered with asymmetrical decorative elements.",
+      "services_grid": "Bento Grid Mode A (Tetris). Mix of tall, wide, and square cards. Generous gaps (gap-8).",
+      "booking_flow": "Step-by-step layout. Clear progress indicators. Centered narrow container for form inputs to maintain focus.",
+      "calendar": "Interactive grid. Booked slots MUST be clearly disabled (opacity-50, cursor-not-allowed, line-through or greyed out). Open slots highlight on hover."
+    },
+    "admin_dashboard": {
+      "structure": "Sidebar navigation (w-64) + Main content area.",
+      "dashboard_grid": "High Density Grid (Mode B). gap-6. Cards for revenue, pending bookings, today's schedule.",
+      "table": "Dense data table for staff and bookings. Sticky headers, hover rows."
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "Pill-shaped (rounded-full) or subtle radius (rounded-lg). High contrast. Hover triggers subtle scale and brightness change.",
+      "whatsapp": "Fixed floating button bottom right. Bright green (#25D366)."
+    },
+    "surfaces": {
+      "public_cards": "Glassmorphism. backdrop-blur-xl bg-white/5 border border-white/10.",
+      "admin_cards": "Solid white, flat, 1px border (border-slate-200), no shadow default, subtle shadow on hover."
+    },
+    "calendar_slot": {
+      "available": "border border-primary text-primary hover:bg-primary hover:text-black transition-colors",
+      "booked": "bg-neutral-800 text-neutral-500 cursor-not-allowed border-none",
+      "admin_booked": "bg-slate-100 text-slate-400 cursor-not-allowed"
+    }
+  },
+  "motion": {
+    "page_transitions": "Fade and slight slide up (framer-motion).",
+    "hover_states": "Buttons scale up (1.02) and change brightness. Images in Bento grid scale up slowly on hover (group-hover).",
+    "calendar": "Staggered fade-in for available time slots."
+  },
+  "icons": {
+    "library": "lucide-react",
+    "usage": "Use stroke-width 1.5 for elegance in public site. Use stroke-width 2 for clarity in Admin."
+  },
+  "media": {
+    "images": {
+      "hero": {
+        "url": "https://images.pexels.com/photos/5762880/pexels-photo-5762880.jpeg",
+        "description": "Moody DSLR camera setup in studio"
+      },
+      "service_wedding": {
+        "url": "https://images.unsplash.com/photo-1596457221755-b96bc3a6df18?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzl8MHwxfHNlYXJjaHwxfHx3ZWRkaW5nJTIwY291cGxlJTIwcGhvdG9ncmFwaHl8ZW58MHx8fHwxNzg0NDExNzI5fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Wedding couple photography"
+      },
+      "service_portrait": {
+        "url": "https://images.pexels.com/photos/23991042/pexels-photo-23991042.jpeg",
+        "description": "Elegant portrait model"
+      },
+      "service_product": {
+        "url": "https://images.unsplash.com/photo-1697301439938-46e2b8ff74da?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NjZ8MHwxfHNlYXJjaHwzfHxwcm9kdWN0JTIwcGhvdG9ncmFwaHklMjBzZXR1cHxlbnwwfHx8fDE3ODQ0MTE3Mjl8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Product photography setup"
+      },
+      "service_family": {
+        "url": "https://images.pexels.com/photos/37409083/pexels-photo-37409083.jpeg",
+        "description": "Family portrait studio"
+      }
+    }
+  },
+  "specific_requirements": {
+    "contact_info": "Phone: 0(501) 000 25 23. Must be prominent in the 'Urgent Service' message and floating buttons.",
+    "urgent_message": "Next to blocked calendar slots, display: 'Bu saatte acil bir hizmete mi ihtiyacınız var?' with WhatsApp and Phone CTA.",
+    "deposit_workflow": "Client booking status defaults to 'Beklemede' (Pending). Displays custom message about deposit (kapora). Admin can change status to 'Onaylandı' (Approved) which blocks the slot on public calendar.",
+    "admin_features": "Revenue charts (use Recharts), deposit tracking, staff management list."
+  },
+  "instructions_to_main_agent": [
+    "Ensure all text is in Turkish as requested.",
+    "Implement Shadcn UI for the Admin dashboard heavily (Tables, Cards, Dialogs, Select, Calendar).",
+    "For the public site, rely on custom HTML/Tailwind for the layout to achieve the 'Luxury' archetype, but you can use Shadcn for forms/modals.",
+    "Create a toggle or distinct routing for Public Site (Dark) and Admin (Light). e.g., `/` is dark, `/admin` is light.",
+    "Use 'framer-motion' for scroll animations on the public site.",
+    "Add data-testid attributes to all interactive elements."
+  ],
+  "universal_guidelines_for_main_agent": [
+    "You tend to converge toward generic, 'on distribution' outputs. Avoid this.",
+    "Do not use dark colors as gradients. Use solid colors or subtle textures.",
+    "Never use AI assistant emoji characters like 🤖🧠💭.",
+    "Use 2-3x more spacing than feels comfortable.",
+    "DO NOT center align the app container. No `.App { text-align: center; }`.",
+    "DO NOT apply universal transition (transition: all).",
+    "Use 'sonner' for toasts.",
+    "Prioritize pre-existing components in src/components/ui.",
+    "DO NOT use a fully transparent background for headers/navs if content scrolls under it. Use backdrop-blur with a semi-transparent color."
+  ]
+}
