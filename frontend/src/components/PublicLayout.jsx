@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Menu, X, Camera, Phone, LogOut, User } from "lucide-react";
+import { Menu, X, Camera, Phone, LogOut, User, Instagram, Youtube, Facebook, Music2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { Button } from "@/components/ui/button";
 import { API_BASE } from "@/lib/api";
+import { instagramUrl, youtubeUrl, tiktokUrl, facebookUrl } from "@/lib/social";
 import FloatingContact from "@/components/FloatingContact";
 
 const navItems = [
@@ -158,6 +159,33 @@ export const PublicLayout = ({ children }) => {
               {settings?.email && <li>{settings.email}</li>}
               {settings?.address && <li>{settings.address}</li>}
             </ul>
+            <div className="flex items-center gap-2 mt-4">
+              {instagramUrl(settings?.instagram) && (
+                <a href={instagramUrl(settings.instagram)} target="_blank" rel="noopener noreferrer" title="Instagram" className="w-8 h-8 rounded-full border border-neutral-800 flex items-center justify-center hover:border-[#d4af37] hover:text-[#d4af37]">
+                  <Instagram className="w-3.5 h-3.5" />
+                </a>
+              )}
+              {instagramUrl(settings?.instagram_secondary) && (
+                <a href={instagramUrl(settings.instagram_secondary)} target="_blank" rel="noopener noreferrer" title="Instagram" className="w-8 h-8 rounded-full border border-neutral-800 flex items-center justify-center hover:border-[#d4af37] hover:text-[#d4af37]">
+                  <Instagram className="w-3.5 h-3.5" />
+                </a>
+              )}
+              {youtubeUrl(settings?.youtube) && (
+                <a href={youtubeUrl(settings.youtube)} target="_blank" rel="noopener noreferrer" title="YouTube" className="w-8 h-8 rounded-full border border-neutral-800 flex items-center justify-center hover:border-[#d4af37] hover:text-[#d4af37]">
+                  <Youtube className="w-3.5 h-3.5" />
+                </a>
+              )}
+              {tiktokUrl(settings?.tiktok) && (
+                <a href={tiktokUrl(settings.tiktok)} target="_blank" rel="noopener noreferrer" title="TikTok" className="w-8 h-8 rounded-full border border-neutral-800 flex items-center justify-center hover:border-[#d4af37] hover:text-[#d4af37]">
+                  <Music2 className="w-3.5 h-3.5" />
+                </a>
+              )}
+              {facebookUrl(settings?.facebook) && (
+                <a href={facebookUrl(settings.facebook)} target="_blank" rel="noopener noreferrer" title="Facebook" className="w-8 h-8 rounded-full border border-neutral-800 flex items-center justify-center hover:border-[#d4af37] hover:text-[#d4af37]">
+                  <Facebook className="w-3.5 h-3.5" />
+                </a>
+              )}
+            </div>
           </div>
           <div>
             <div className="text-xs uppercase tracking-[0.2em] text-neutral-500 mb-4">Randevu</div>

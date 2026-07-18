@@ -147,13 +147,78 @@ const AdminSettings = () => {
             <Input data-testid="setting-email" value={form.email || ""} onChange={upd("email")} />
           </div>
           <div>
-            <Label className="text-xs">Instagram (opsiyonel)</Label>
-            <Input data-testid="setting-instagram" value={form.instagram || ""} onChange={upd("instagram")} placeholder="@fotuber" />
+            <Label className="text-xs">İşletme Adresi</Label>
+            <Input data-testid="setting-address" value={form.address || ""} onChange={upd("address")} placeholder="Örn: Cumhuriyet Cad. No:12, Şişli / İstanbul" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Sosyal Medya */}
+      <Card className="border-slate-200">
+        <CardHeader>
+          <CardTitle className="text-base font-semibold">Sosyal Medya Hesapları</CardTitle>
+          <p className="text-xs text-slate-500 mt-1">Kullanıcı adı (@fotuber) veya tam URL girebilirsiniz.</p>
+        </CardHeader>
+        <CardContent className="grid md:grid-cols-2 gap-4">
+          <div>
+            <Label className="text-xs">Instagram (Ana Hesap)</Label>
+            <Input data-testid="setting-instagram" value={form.instagram || ""} onChange={upd("instagram")} placeholder="@fotuber veya https://instagram.com/fotuber" />
+          </div>
+          <div>
+            <Label className="text-xs">Instagram (İkinci Hesap - opsiyonel)</Label>
+            <Input data-testid="setting-instagram-2" value={form.instagram_secondary || ""} onChange={upd("instagram_secondary")} placeholder="@fotuber.studio" />
+          </div>
+          <div>
+            <Label className="text-xs">YouTube</Label>
+            <Input data-testid="setting-youtube" value={form.youtube || ""} onChange={upd("youtube")} placeholder="https://youtube.com/@fotuber veya @fotuber" />
+          </div>
+          <div>
+            <Label className="text-xs">TikTok (opsiyonel)</Label>
+            <Input data-testid="setting-tiktok" value={form.tiktok || ""} onChange={upd("tiktok")} placeholder="@fotuber" />
           </div>
           <div className="md:col-span-2">
-            <Label className="text-xs">Adres / Konum Metni</Label>
-            <Input data-testid="setting-address" value={form.address || ""} onChange={upd("address")} />
+            <Label className="text-xs">Facebook (opsiyonel)</Label>
+            <Input data-testid="setting-facebook" value={form.facebook || ""} onChange={upd("facebook")} placeholder="https://facebook.com/fotuber" />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Google Maps */}
+      <Card className="border-slate-200">
+        <CardHeader>
+          <CardTitle className="text-base font-semibold">Google Haritalar Konumu</CardTitle>
+          <p className="text-xs text-slate-500 mt-1">Google Maps üzerinden işletmenizi bulun → Paylaş → "Bir harita yerleştir" sekmesindeki HTML kodundaki <b>src="..."</b> bağlantısını kopyalayıp buraya yapıştırın. Veya sadece paylaşım linkini yapıştırabilirsiniz.</p>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div>
+            <Label className="text-xs">Google Maps Paylaşım URL'si (yol tarifi butonu için)</Label>
+            <Input data-testid="setting-gmaps-url" value={form.google_maps_url || ""} onChange={upd("google_maps_url")} placeholder="https://maps.app.goo.gl/xxxxx" />
+          </div>
+          <div>
+            <Label className="text-xs">Google Maps Embed URL'si (site içi harita için)</Label>
+            <Textarea
+              data-testid="setting-gmaps-embed"
+              rows={3}
+              value={form.google_maps_embed || ""}
+              onChange={upd("google_maps_embed")}
+              placeholder='https://www.google.com/maps/embed?pb=... veya tüm iframe HTML kodu'
+              className="font-mono text-xs"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              iframe HTML kodunun tamamını yapıştırırsanız da otomatik olarak URL çıkartılır.
+            </p>
+          </div>
+          {form.google_maps_embed && (
+            <div className="border border-slate-200 rounded-lg overflow-hidden aspect-video max-w-lg">
+              <iframe
+                title="Google Maps önizleme"
+                src={(form.google_maps_embed.match(/src="([^"]+)"/) || [null, form.google_maps_embed])[1]}
+                className="w-full h-full"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
 

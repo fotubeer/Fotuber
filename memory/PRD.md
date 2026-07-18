@@ -40,3 +40,12 @@ Fotoğraf/video stüdyosu için full-stack web uygulaması: halka açık marka s
 - P2: Çoklu personelli randevu ataması
 - P2: KVKK sayfası ve gizlilik politikası içerik sayfaları
 - P2: SEO meta + og:image + sitemap.xml
+
+## Update — 2026-02-18 (iteration 2 & 3)
+- ✅ **Site Ayarları** (`/admin/ayarlar`): Logo yükleme, marka (isim + tagline), hero başlıkları, hero arka plan görsel URL'si, iletişim (telefon/whatsapp/email/adres), hakkımızda metni — hepsi live siteyi güncelliyor (SettingsContext ile).
+- ✅ **Nakit Akışı** (`/admin/nakit-akisi`): Gelir/gider hareket girişi. Nakit/kart/havale bazlı Bugün-Bu Hafta-Bu Ay büyük stat kartları + günlük (7 gün), haftalık (4 hafta), aylık (6 ay) bar grafiği + ödeme yöntemi dağılımı. Sadece admin görebilir ("Sadece Yetkili Admin" rozeti).
+- ✅ **Sosyal medya**: Instagram (ana + ikinci), YouTube, TikTok, Facebook alanları. Admin panelden yönetilir, footer'da ikon olarak, iletişim sayfasında rozet olarak görüntülenir. Kullanıcı `@handle` veya tam URL girebilir — sistem otomatik normalleştirir.
+- ✅ **Google Haritalar**: Adres alanı + iframe embed URL + paylaşım URL'si. İletişim sayfasında "Yol Tarifi Al" butonu ve site içi harita gösterimi. iframe HTML kodu yapıştırıldığında src otomatik çıkarılır.
+- ✅ Login trim whitespace ile daha esnek.
+- ✅ Backend: 30/30 test PASS (16 yeni + 14 regression).
+

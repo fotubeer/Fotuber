@@ -292,6 +292,12 @@ class SiteSettingsIn(BaseModel):
     email: Optional[str] = None
     address: Optional[str] = None
     instagram: Optional[str] = None
+    instagram_secondary: Optional[str] = None
+    youtube: Optional[str] = None
+    tiktok: Optional[str] = None
+    facebook: Optional[str] = None
+    google_maps_url: Optional[str] = None
+    google_maps_embed: Optional[str] = None
     hero_image_url: Optional[str] = None
 
 
@@ -333,6 +339,12 @@ async def on_startup():
             "email": "info@fotuber.com.tr",
             "address": "fotuber.com.tr · Randevu ile ziyaret",
             "instagram": "",
+            "instagram_secondary": "",
+            "youtube": "",
+            "tiktok": "",
+            "facebook": "",
+            "google_maps_url": "",
+            "google_maps_embed": "",
             "logo_id": None,
             "hero_image_url": "https://images.pexels.com/photos/5762880/pexels-photo-5762880.jpeg",
             "updated_at": now_iso(),
