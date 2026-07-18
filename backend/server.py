@@ -298,6 +298,7 @@ class SiteSettingsIn(BaseModel):
     facebook: Optional[str] = None
     google_maps_url: Optional[str] = None
     google_maps_embed: Optional[str] = None
+    notification_recipients: Optional[str] = None  # comma-separated phone list
     hero_image_url: Optional[str] = None
 
 
@@ -321,6 +322,7 @@ async def on_startup():
     await db.appointments.create_index([("date", 1), ("time", 1)])
     await db.blocked_slots.create_index([("date", 1), ("time", 1)], unique=True)
     await db.gallery.create_index([("category", 1), ("created_at", -1)])
+    await db.notifications.create_index([("created_at", -1)])
     init_storage()
 
     # Seed default site settings if missing
@@ -562,6 +564,23 @@ async def create_appointment(payload: AppointmentIn, user: dict = Depends(get_cu
         "created_at": now_iso(),
     }
     await db.appointments.insert_one(doc)
+
+    # In-panel notification for the admin team + optional external send
+    await db.notifications.insert_one({
+        "id": new_id(),
+        "kind": "appointment_pending",
+        "title": "Yeni randevu talebi",
+        "message": f"{user.get('name')} · {service.get('name')} · {payload.date} {payload.time}",
+        "appointment_id": doc["id"],
+        "read": False,
+        "created_at": now_iso(),
+    })
+    # External (SMS/WhatsApp) notify — no-op unless configured
+    await _try_send_external_notification(
+        title="Yeni Randevu",
+        body=f"{user.get('name')} adına {service.get('name')} için {payload.date} {payload.time} talebi düştü. Panelden onaylayın: {os.environ.get('PUBLIC_URL', 'fotuber.com.tr')}/admin/randevular",
+    )
+
     return await _enrich_appointment(doc)
 
 
@@ -616,6 +635,13 @@ async def update_appointment(aid: str, payload: AppointmentAdminUpdate, admin: d
     updates["updated_at"] = now_iso()
     await db.appointments.update_one({"id": aid}, {"$set": updates})
     doc = await db.appointments.find_one({"id": aid})
+
+    # Notify customer if approved
+    if payload.status == "approved":
+        await _try_send_external_notification(
+            title="Randevunuz Onaylandı",
+            body=f"{doc.get('customer_name')}, {doc.get('date')} {doc.get('time')} tarihindeki randevunuz onaylandı. Görüşmek üzere!",
+        )
     return await _enrich_appointment(doc)
 
 
@@ -1019,6 +1045,92 @@ async def transaction_summary(admin: dict = Depends(require_admin)):
         "week_series": week_series,
         "month_series": month_series,
     }
+
+
+# ---------------------------------------------------------------------------
+# Notifications (in-panel bell) + External notify (Twilio-ready)
+# ---------------------------------------------------------------------------
+TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
+TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+TWILIO_SMS_FROM = os.environ.get("TWILIO_SMS_FROM", "")
+TWILIO_WA_FROM = os.environ.get("TWILIO_WHATSAPP_FROM", "")  # e.g. whatsapp:+14155238886
+
+
+async def _get_notification_recipients() -> list[str]:
+    """Combine settings.notification_recipients + active staff phones."""
+    numbers = set()
+    doc = await db.site_settings.find_one({"id": "singleton"}, {"_id": 0}) or {}
+    for raw in (doc.get("notification_recipients") or "").split(","):
+        n = raw.strip()
+        if n:
+            numbers.add(n)
+    async for st in db.staff.find({"active": True, "phone": {"$ne": ""}}, {"_id": 0, "phone": 1}):
+        p = (st.get("phone") or "").strip()
+        if p:
+            numbers.add(p)
+    return list(numbers)
+
+
+def _e164(number: str) -> str:
+    """Best-effort TR normalization to +90XXXXXXXXXX."""
+    digits = "".join(ch for ch in number if ch.isdigit())
+    if not digits:
+        return ""
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if digits.startswith("90"):
+        return "+" + digits
+    if digits.startswith("0") and len(digits) == 11:
+        return "+90" + digits[1:]
+    if len(digits) == 10:
+        return "+90" + digits
+    return "+" + digits
+
+
+async def _try_send_external_notification(title: str, body: str) -> None:
+    """Send SMS + WhatsApp via Twilio if configured. Silent if not."""
+    if not (TWILIO_SID and TWILIO_TOKEN):
+        return
+    recipients = await _get_notification_recipients()
+    if not recipients:
+        return
+    try:
+        from twilio.rest import Client
+        client = Client(TWILIO_SID, TWILIO_TOKEN)
+        msg = f"{title}\n{body}"
+        for raw in recipients:
+            to = _e164(raw)
+            if not to:
+                continue
+            if TWILIO_SMS_FROM:
+                try:
+                    client.messages.create(from_=TWILIO_SMS_FROM, to=to, body=msg)
+                except Exception as e:
+                    logging.getLogger("fotuber").warning(f"Twilio SMS failed to {to}: {e}")
+            if TWILIO_WA_FROM:
+                try:
+                    client.messages.create(from_=TWILIO_WA_FROM, to=f"whatsapp:{to}", body=msg)
+                except Exception as e:
+                    logging.getLogger("fotuber").warning(f"Twilio WhatsApp failed to {to}: {e}")
+    except Exception as e:
+        logging.getLogger("fotuber").error(f"External notification error: {e}")
+
+
+@api_router.get("/notifications")
+async def list_notifications(admin: dict = Depends(require_admin), limit: int = 30, unread_only: bool = False):
+    q = {"read": False} if unread_only else {}
+    items = await db.notifications.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    unread_count = await db.notifications.count_documents({"read": False})
+    return {"items": items, "unread_count": unread_count}
+
+
+@api_router.post("/notifications/mark-read")
+async def mark_read(admin: dict = Depends(require_admin), notification_id: Optional[str] = None):
+    if notification_id:
+        await db.notifications.update_one({"id": notification_id}, {"$set": {"read": True}})
+    else:
+        await db.notifications.update_many({"read": False}, {"$set": {"read": True}})
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

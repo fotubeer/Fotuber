@@ -183,6 +183,27 @@ const AdminSettings = () => {
         </CardContent>
       </Card>
 
+      {/* Bildirim Alıcıları */}
+      <Card className="border-slate-200">
+        <CardHeader>
+          <CardTitle className="text-base font-semibold">Bildirim Alacak Numaralar</CardTitle>
+          <p className="text-xs text-slate-500 mt-1">
+            Yeni randevu talebi geldiğinde SMS/WhatsApp gelmesini istediğiniz telefon numaralarını virgülle ayırarak yazın.
+            Ayrıca Personel sayfasındaki aktif personellerin telefonları otomatik dahil edilir.
+            (Twilio anahtarları backend .env dosyasına eklendiğinde dış bildirimler aktif olur; şu ana kadar sadece panel içi bildirim çalışır.)
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Textarea
+            data-testid="setting-notify-recipients"
+            rows={2}
+            value={form.notification_recipients || ""}
+            onChange={upd("notification_recipients")}
+            placeholder="05011112233, 05012223344"
+          />
+        </CardContent>
+      </Card>
+
       {/* Google Maps */}
       <Card className="border-slate-200">
         <CardHeader>

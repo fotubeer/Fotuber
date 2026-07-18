@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { Button } from "@/components/ui/button";
 import { API_BASE } from "@/lib/api";
+import { NotificationBell } from "@/components/NotificationBell";
 
 const items = [
   { to: "/admin/dashboard", label: "Genel Bakış", icon: LayoutDashboard },
@@ -90,7 +91,10 @@ export const AdminLayout = ({ children }) => {
           <div className="text-sm text-slate-500 hidden lg:block">
             Fotuber Yönetim Paneli · <span className="text-slate-900">{user?.role === "admin" ? "Yönetici" : "Personel"}</span>
           </div>
-          <Link to="/" target="_blank" className="text-xs text-slate-500 hover:text-slate-900">Siteyi Görüntüle ↗</Link>
+          <div className="flex items-center gap-2">
+            <NotificationBell />
+            <Link to="/" target="_blank" className="text-xs text-slate-500 hover:text-slate-900 hidden md:inline">Siteyi Görüntüle ↗</Link>
+          </div>
         </header>
         <main className="flex-1 p-6 lg:p-8 overflow-x-hidden">{children}</main>
       </div>
