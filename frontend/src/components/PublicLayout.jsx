@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Menu, X, Camera, Phone, LogOut, User, Instagram, Youtube, Facebook, Music2 } from "lucide-react";
+import { Menu, X, Camera, Phone, LogOut, User, Instagram, Youtube, Facebook, Music2, ShieldCheck, LayoutDashboard } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { Button } from "@/components/ui/button";
@@ -73,6 +73,16 @@ export const PublicLayout = ({ children }) => {
                 Randevu Al
               </Button>
             </Link>
+            {user && user.role === "admin" && (
+              <Link to="/admin/dashboard">
+                <Button
+                  data-testid="navbar-admin-panel-btn"
+                  className="rounded-full bg-slate-900 hover:bg-slate-800 text-white gap-2"
+                >
+                  <LayoutDashboard className="w-4 h-4" /> Yönetim Paneli
+                </Button>
+              </Link>
+            )}
             {user ? (
               <div className="flex items-center gap-3">
                 <span className="text-xs text-neutral-400" data-testid="navbar-user-name">
@@ -84,14 +94,15 @@ export const PublicLayout = ({ children }) => {
                   variant="ghost"
                   onClick={async () => { await logout(); navigate("/"); }}
                   className="text-neutral-400 hover:text-white h-9 px-3"
+                  title="Çıkış Yap"
                 >
                   <LogOut className="w-4 h-4" />
                 </Button>
               </div>
             ) : (
               <Link to="/personel-girisi">
-                <Button data-testid="staff-login-nav-btn" variant="outline" className="rounded-full border-neutral-700 bg-transparent text-neutral-300 hover:bg-neutral-800 hover:text-white">
-                  Personel Girişi
+                <Button data-testid="staff-login-nav-btn" variant="outline" className="rounded-full border-neutral-700 bg-transparent text-neutral-300 hover:bg-neutral-800 hover:text-white gap-2">
+                  <ShieldCheck className="w-4 h-4" /> Personel Girişi
                 </Button>
               </Link>
             )}
@@ -118,6 +129,13 @@ export const PublicLayout = ({ children }) => {
               <Link to="/randevu" onClick={() => setOpen(false)}>
                 <Button className="w-full rounded-full bg-[#d4af37] text-black">Randevu Al</Button>
               </Link>
+              {user && user.role === "admin" && (
+                <Link to="/admin/dashboard" onClick={() => setOpen(false)}>
+                  <Button className="w-full rounded-full bg-slate-900 hover:bg-slate-800 text-white gap-2">
+                    <LayoutDashboard className="w-4 h-4" /> Yönetim Paneli
+                  </Button>
+                </Link>
+              )}
               {user ? (
                 <Button
                   variant="ghost"
@@ -126,8 +144,8 @@ export const PublicLayout = ({ children }) => {
                 >Çıkış Yap</Button>
               ) : (
                 <Link to="/personel-girisi" onClick={() => setOpen(false)}>
-                  <Button variant="outline" className="w-full rounded-full border-neutral-700 bg-transparent text-neutral-200">
-                    Personel Girişi
+                  <Button variant="outline" className="w-full rounded-full border-neutral-700 bg-transparent text-neutral-200 gap-2">
+                    <ShieldCheck className="w-4 h-4" /> Personel Girişi
                   </Button>
                 </Link>
               )}
@@ -195,9 +213,18 @@ export const PublicLayout = ({ children }) => {
           </div>
         </div>
         <div className="border-t border-neutral-900">
-          <div className="max-w-7xl mx-auto px-6 py-6 text-xs text-neutral-500 flex justify-between">
+          <div className="max-w-7xl mx-auto px-6 py-6 text-xs text-neutral-500 flex flex-col md:flex-row justify-between gap-3">
             <span>© {new Date().getFullYear()} {settings?.business_name || "Fotuber"}. Tüm hakları saklıdır.</span>
-            <span>fotuber.com.tr</span>
+            <div className="flex items-center gap-4">
+              <span>fotuber.com.tr</span>
+              <Link
+                to="/personel-girisi"
+                data-testid="footer-staff-login"
+                className="flex items-center gap-1 text-neutral-500 hover:text-[#d4af37]"
+              >
+                <ShieldCheck className="w-3 h-3" /> Personel Girişi
+              </Link>
+            </div>
           </div>
         </div>
       </footer>
