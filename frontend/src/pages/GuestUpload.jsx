@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { api, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { UploadCloud, Camera, Shield, Clock, Check, X, LogIn, HardDrive, Heart, Sparkles, Info } from "lucide-react";
@@ -204,9 +203,9 @@ const GuestUpload = () => {
                 animate={{ opacity: 1, letterSpacing: "-0.01em" }}
                 transition={{ delay: 0.6, duration: 1.2 }}
                 className="hero-title text-5xl md:text-7xl mb-4"
-                style={{ fontFamily: "var(--fotuber-font-heading)" }}
+                style={{ fontFamily: "var(--fotuber-font-heading)", color: "#fafafa" }}
               >
-                <em className="not-italic">{event.couple_names || event.name}</em>
+                {event.couple_names || event.name}
               </motion.h1>
               {event.event_date && (
                 <motion.div
@@ -254,7 +253,10 @@ const GuestUpload = () => {
 
       <div className="max-w-3xl mx-auto px-6 py-10">
         <div className="text-xs tracking-[0.3em] uppercase text-[#d4af37] mb-3">Doğru yerdesiniz</div>
-        <h1 className="hero-title text-4xl md:text-5xl mb-2" style={{ fontFamily: "var(--fotuber-font-heading)" }}>
+        <h1
+          className="hero-title text-4xl md:text-5xl mb-2"
+          style={{ fontFamily: "var(--fotuber-font-heading)", color: "#fafafa" }}
+        >
           {event.couple_names || event.name}
         </h1>
         <div className="flex items-center gap-3 text-neutral-400 text-sm mb-6">
@@ -263,60 +265,58 @@ const GuestUpload = () => {
           {venueName && <span>· 📍 {venueName}</span>}
         </div>
         {event.welcome_message && (
-          <p className="mb-6 text-neutral-300 italic border-l-2 border-[#d4af37] pl-4">"{event.welcome_message}"</p>
+          <p className="mb-6 text-neutral-300 italic border-l-2 border-[#d4af37] pl-4" style={{ color: "#e5e5e5" }}>
+            "{event.welcome_message}"
+          </p>
         )}
 
         {/* Rules / Guidance */}
-        <Card className="bg-neutral-900 border-neutral-800 text-neutral-200 mb-6">
-          <CardContent className="pt-6 space-y-4">
+        <div className="rounded-xl border border-neutral-800 mb-6 p-6 space-y-4" style={{ backgroundColor: "#171717", color: "#e5e5e5" }}>
             <div className="flex items-start gap-3">
               <Info className="w-4 h-4 text-[#d4af37] mt-0.5 flex-shrink-0" />
               <div className="text-sm">
-                <div className="font-semibold mb-1">Nasıl çalışır?</div>
-                <ol className="text-xs text-neutral-400 space-y-1 list-decimal list-inside">
-                  <li>Kısaca <b>ücretsiz kayıt</b> olun (KVKK onayı ile).</li>
-                  <li>Foto ve videolarınızı seçip yükleyin — kişi başı <b>{event.max_size_per_user_mb} MB</b>'a kadar.</li>
-                  <li>Yüklediğiniz kareler doğrudan <b>{event.couple_names || "çifte"}</b> ulaşır.</li>
-                  <li>Dosyalar <b>{event.retention_days} gün</b> sonra sunucudan otomatik silinir.</li>
+                <div className="font-semibold mb-1" style={{ color: "#fafafa" }}>Nasıl çalışır?</div>
+                <ol className="text-xs space-y-1 list-decimal list-inside" style={{ color: "#a3a3a3" }}>
+                  <li>Kısaca <b style={{ color: "#e5e5e5" }}>ücretsiz kayıt</b> olun (KVKK onayı ile).</li>
+                  <li>Foto ve videolarınızı seçip yükleyin — kişi başı <b style={{ color: "#e5e5e5" }}>{event.max_size_per_user_mb} MB</b>'a kadar.</li>
+                  <li>Yüklediğiniz kareler doğrudan <b style={{ color: "#e5e5e5" }}>{event.couple_names || "çifte"}</b> ulaşır.</li>
+                  <li>Dosyalar <b style={{ color: "#e5e5e5" }}>{event.retention_days} gün</b> sonra sunucudan otomatik silinir.</li>
                 </ol>
               </div>
             </div>
             <div className="flex items-start gap-3">
               <HardDrive className="w-4 h-4 text-[#d4af37] mt-0.5 flex-shrink-0" />
               <div className="text-sm">
-                <div className="font-semibold">Kişi başı yükleme limiti: {event.max_size_per_user_mb} MB</div>
-                <div className="text-xs text-neutral-500">Video için yaklaşık {Math.floor(event.max_size_per_user_mb / 25)} dk HD kayda yeter — kısa videolar yükleyin.</div>
+                <div className="font-semibold" style={{ color: "#fafafa" }}>Kişi başı yükleme limiti: {event.max_size_per_user_mb} MB</div>
+                <div className="text-xs" style={{ color: "#a3a3a3" }}>Video için yaklaşık {Math.floor(event.max_size_per_user_mb / 25)} dk HD kayda yeter — kısa videolar yükleyin.</div>
               </div>
             </div>
             <div className="flex items-start gap-3">
               <Clock className="w-4 h-4 text-[#d4af37] mt-0.5 flex-shrink-0" />
               <div className="text-sm">
-                <div className="font-semibold">{event.retention_days} gün sonra otomatik silinir</div>
-                <div className="text-xs text-neutral-500">Silinme tarihi: <b>{new Date(event.delete_at).toLocaleDateString("tr-TR")}</b>. Sonrasında dosyalar sunucudan tamamen silinir.</div>
+                <div className="font-semibold" style={{ color: "#fafafa" }}>{event.retention_days} gün sonra otomatik silinir</div>
+                <div className="text-xs" style={{ color: "#a3a3a3" }}>Silinme tarihi: <b style={{ color: "#e5e5e5" }}>{new Date(event.delete_at).toLocaleDateString("tr-TR")}</b>. Sonrasında dosyalar sunucudan tamamen silinir.</div>
               </div>
             </div>
             <div className="flex items-start gap-3">
               <Shield className="w-4 h-4 text-[#d4af37] mt-0.5 flex-shrink-0" />
               <div className="text-sm">
-                <div className="font-semibold">KVKK: Verileriniz güvende</div>
-                <div className="text-xs text-neutral-500">Yüklediğiniz medya yalnızca etkinliğin çifti ile paylaşılır. Üçüncü taraflarla asla paylaşılmaz.</div>
+                <div className="font-semibold" style={{ color: "#fafafa" }}>KVKK: Verileriniz güvende</div>
+                <div className="text-xs" style={{ color: "#a3a3a3" }}>Yüklediğiniz medya yalnızca etkinliğin çifti ile paylaşılır. Üçüncü taraflarla asla paylaşılmaz.</div>
               </div>
             </div>
-          </CardContent>
-        </Card>
+        </div>
 
         {!user ? (
-          <Card className="bg-neutral-900 border-neutral-800">
-            <CardContent className="pt-6 text-center space-y-4">
-              <p className="text-neutral-300">Yükleme yapabilmek için önce hesap oluşturmanız gerekiyor. 30 saniye sürer.</p>
-              <div className="flex justify-center gap-2">
-                <Button onClick={goLogin} className="bg-[#d4af37] hover:bg-[#b5952f] text-black rounded-full" data-testid="guest-signup-btn">
-                  <LogIn className="w-4 h-4 mr-2" /> Kayıt Ol / Giriş Yap
-                </Button>
-              </div>
-              <p className="text-xs text-neutral-500">Zaten hesabınız varsa giriş yaptığınızda otomatik buraya dönersiniz.</p>
-            </CardContent>
-          </Card>
+          <div className="rounded-xl border border-neutral-800 p-6 text-center space-y-4" style={{ backgroundColor: "#171717" }} data-testid="guest-signup-card">
+            <p style={{ color: "#e5e5e5" }}>Yükleme yapabilmek için önce hesap oluşturmanız gerekiyor. 30 saniye sürer.</p>
+            <div className="flex justify-center gap-2">
+              <Button onClick={goLogin} className="bg-[#d4af37] hover:bg-[#b5952f] text-black rounded-full" data-testid="guest-signup-btn">
+                <LogIn className="w-4 h-4 mr-2" /> Kayıt Ol / Giriş Yap
+              </Button>
+            </div>
+            <p className="text-xs" style={{ color: "#737373" }}>Zaten hesabınız varsa giriş yaptığınızda otomatik buraya dönersiniz.</p>
+          </div>
         ) : (
           <>
             {usage && (
