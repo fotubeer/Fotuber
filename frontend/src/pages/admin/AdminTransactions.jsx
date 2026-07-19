@@ -255,7 +255,7 @@ const AdminTransactions = () => {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs">Tür</Label>
+                  <Label className="text-sm font-semibold text-slate-900 mb-1 block">Tür</Label>
                   <Select value={editing.kind} onValueChange={(v) => setEditing({ ...editing, kind: v })}>
                     <SelectTrigger data-testid="tx-kind"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -265,7 +265,7 @@ const AdminTransactions = () => {
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-xs">Ödeme Yöntemi</Label>
+                  <Label className="text-sm font-semibold text-slate-900 mb-1 block">Ödeme Yöntemi</Label>
                   <Select value={editing.payment_method} onValueChange={(v) => setEditing({ ...editing, payment_method: v })}>
                     <SelectTrigger data-testid="tx-method"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -278,21 +278,21 @@ const AdminTransactions = () => {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs">Tutar (₺)</Label>
-                  <Input data-testid="tx-amount" type="number" step="0.01" min="0.01" value={editing.amount} onChange={(e) => setEditing({ ...editing, amount: e.target.value })} />
+                  <Label className="text-sm font-semibold text-slate-900 mb-1 block">Tutar (₺)</Label>
+                  <Input data-testid="tx-amount" type="number" step="0.01" min="0.01" value={editing.amount} onChange={(e) => setEditing({ ...editing, amount: e.target.value })} placeholder="0,00" />
                 </div>
                 <div>
-                  <Label className="text-xs">Tarih</Label>
+                  <Label className="text-sm font-semibold text-slate-900 mb-1 block">Tarih</Label>
                   <Input data-testid="tx-date" type="date" value={editing.date} onChange={(e) => setEditing({ ...editing, date: e.target.value })} />
                 </div>
               </div>
               <div>
-                <Label className="text-xs">Kategori (ör: Kapora, Kira, Malzeme, Maaş)</Label>
-                <Input data-testid="tx-category" value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })} />
+                <Label className="text-sm font-semibold text-slate-900 mb-1 block">Kategori (ör: Kapora, Kira, Malzeme, Maaş)</Label>
+                <Input data-testid="tx-category" value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })} placeholder="Kategori yazın" />
               </div>
               <div>
-                <Label className="text-xs">Açıklama</Label>
-                <Textarea data-testid="tx-description" rows={2} value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} />
+                <Label className="text-sm font-semibold text-slate-900 mb-1 block">Açıklama</Label>
+                <Textarea data-testid="tx-description" rows={2} value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} placeholder="Kısa açıklama (opsiyonel)" />
               </div>
             </div>
           )}
