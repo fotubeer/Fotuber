@@ -2631,11 +2631,19 @@ async def admin_download_event_zip(eid: str, admin: dict = Depends(require_admin
             except Exception:
                 continue
     buf.seek(0)
-    fname = f"{ev.get('name', 'etkinlik').replace(' ', '_')}_{ev.get('event_date') or ''}.zip"
+    from urllib.parse import quote as _urlquote
+    raw_name = f"{ev.get('name', 'etkinlik').replace(' ', '_')}_{ev.get('event_date') or ''}.zip"
+    # ASCII fallback for older clients + UTF-8 encoded RFC 5987 filename* for the rest
+    ascii_name = raw_name.encode("ascii", "ignore").decode("ascii") or "etkinlik.zip"
     return Response(
         content=buf.getvalue(),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_name}"; '
+                f"filename*=UTF-8''{_urlquote(raw_name)}"
+            ),
+        },
     )
 
 
