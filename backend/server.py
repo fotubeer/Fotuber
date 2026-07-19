@@ -2568,6 +2568,7 @@ class GuestEventIn(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     couple_names: Optional[str] = ""
     event_date: Optional[str] = None
+    event_type: Optional[str] = "wedding"
     max_size_per_user_mb: int = 200
     retention_days: int = 3
     welcome_message: Optional[str] = ""
@@ -2583,6 +2584,7 @@ async def create_guest_event(payload: GuestEventIn, admin: dict = Depends(requir
         "name": payload.name.strip(),
         "couple_names": payload.couple_names or "",
         "event_date": payload.event_date,
+        "event_type": payload.event_type or "wedding",
         "welcome_message": payload.welcome_message or "",
         "max_size_per_user_mb": max(10, min(1000, payload.max_size_per_user_mb)),
         "retention_days": max(1, min(30, payload.retention_days)),

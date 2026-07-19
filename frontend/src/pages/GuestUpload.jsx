@@ -11,12 +11,30 @@ import { toast } from "sonner";
 import { SEO } from "@/components/SEO";
 
 const EVENT_LABELS = {
-  wedding: { label: "Düğün", accent: "Anlarınızı bizimle ölümsüzleştirin" },
-  engagement: { label: "Nişan", accent: "Bu güzel günden kareler paylaşın" },
-  henna: { label: "Kına Gecesi", accent: "Kına'nın her karesi çiftimizin hatırasına" },
-  nikah: { label: "Nikah", accent: "Bu mutlu güne tanıklık ettiğiniz için teşekkürler" },
-  birthday: { label: "Doğum Günü", accent: "Bu güzel günden anılar paylaşın" },
-  other: { label: "Etkinlik", accent: "Anlarınızı bizimle paylaşın" },
+  wedding: { label: "Düğün", accent: "Anlarınızı bizimle ölümsüzleştirin", suffix: "Düğünü" },
+  engagement: { label: "Nişan", accent: "Bu güzel günden kareler paylaşın", suffix: "Nişanı" },
+  henna: { label: "Kına Gecesi", accent: "Kına'nın her karesi çiftimizin hatırasına", suffix: "Kına Gecesi" },
+  nikah: { label: "Nikah", accent: "Bu mutlu güne tanıklık ettiğiniz için teşekkürler", suffix: "Nikahı" },
+  bride_party: { label: "Bride Party", accent: "Gelin adayının en özel gecesinden kareler bırakın", suffix: "Bride Partisi", possessive: true },
+  birthday: { label: "Doğum Günü", accent: "Bu güzel günden anılar paylaşın", suffix: "Doğum Günü", possessive: true },
+  other: { label: "Etkinlik", accent: "Anlarınızı bizimle paylaşın", suffix: "Etkinliği" },
+};
+
+// Turkish possessive suffix: chooses 'nin/nun/nın/nün based on last vowel
+const turkishPossessive = (name) => {
+  if (!name) return "";
+  const last = name.trim().toLowerCase().split("").reverse().find((c) => "aeıioöuü".includes(c));
+  const map = { a: "'nın", e: "'nin", ı: "'nın", i: "'nin", o: "'nun", ö: "'nün", u: "'nun", ü: "'nün" };
+  return map[last] || "'nin";
+};
+
+const composeEventTitle = (event) => {
+  if (!event) return "";
+  const meta = EVENT_LABELS[event.event_type] || EVENT_LABELS.other;
+  const name = (event.couple_names || event.name || "").trim();
+  if (!name) return meta.label;
+  if (meta.possessive) return `${name}${turkishPossessive(name)} ${meta.suffix}`;
+  return `${name} ${meta.suffix}`;
 };
 
 const formatBytes = (n) => {
@@ -204,7 +222,7 @@ const GuestUpload = () => {
                 className="hero-title text-5xl md:text-7xl mb-4"
                 style={{ fontFamily: "var(--fotuber-font-heading)", color: "#fafafa" }}
               >
-                {event.couple_names || event.name}
+                {composeEventTitle(event)}
               </motion.h1>
               {event.event_date && (
                 <motion.div
@@ -256,7 +274,7 @@ const GuestUpload = () => {
           className="hero-title text-4xl md:text-5xl mb-2"
           style={{ fontFamily: "var(--fotuber-font-heading)", color: "#fafafa" }}
         >
-          {event.couple_names || event.name}
+          {composeEventTitle(event)}
         </h1>
         <div className="flex items-center gap-3 text-neutral-400 text-sm mb-6">
           <Badge variant="outline" className="border-neutral-700 text-neutral-300">{evLabel.label}</Badge>

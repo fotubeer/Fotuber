@@ -23,6 +23,7 @@ const EVENT_TYPES = [
   { value: "engagement", label: "Nişan" },
   { value: "henna", label: "Kına" },
   { value: "nikah", label: "Nikah" },
+  { value: "bride_party", label: "Bride Party" },
   { value: "birthday", label: "Doğum Günü" },
   { value: "other", label: "Diğer" },
 ];
