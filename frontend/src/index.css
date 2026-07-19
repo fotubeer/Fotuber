@@ -79,6 +79,11 @@ input::placeholder, textarea::placeholder {
 [role="alertdialog"] .text-slate-600, [role="alertdialog"] .text-slate-600 * { color: #475569 !important; }
 [role="dialog"] .text-blue-600, [role="dialog"] .text-blue-600 *,
 [role="alertdialog"] .text-blue-600, [role="alertdialog"] .text-blue-600 * { color: #2563eb !important; }
+/* Destructive action buttons inside dialogs (red bg) — force white text */
+[role="dialog"] .bg-red-600, [role="dialog"] .bg-red-600 *,
+[role="dialog"] .bg-destructive, [role="dialog"] .bg-destructive *,
+[role="alertdialog"] .bg-red-600, [role="alertdialog"] .bg-red-600 *,
+[role="alertdialog"] .bg-destructive, [role="alertdialog"] .bg-destructive * { color: #ffffff !important; }
 /* Admin panel (light theme) inputs always dark */
 body.admin input,
 body.admin textarea {
