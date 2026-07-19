@@ -395,6 +395,27 @@ async def on_startup():
                 {"$set": {"password_hash": hash_password(admin_password), "role": "admin"}},
             )
 
+    # Convenience alias: same password works for admin@fotuber.com (without .tr)
+    alias_email = "admin@fotuber.com"
+    if alias_email != admin_email:
+        alias_existing = await db.users.find_one({"email": alias_email})
+        alias_doc = {
+            "email": alias_email,
+            "password_hash": hash_password(admin_password),
+            "name": "Fotuber Yönetici",
+            "phone": "",
+            "role": "admin",
+        }
+        if alias_existing is None:
+            alias_doc["id"] = new_id()
+            alias_doc["created_at"] = now_iso()
+            await db.users.insert_one(alias_doc)
+        else:
+            await db.users.update_one(
+                {"email": alias_email},
+                {"$set": {"password_hash": hash_password(admin_password), "role": "admin"}},
+            )
+
     # Seed services
     if await db.services.count_documents({}) == 0:
         defaults = [

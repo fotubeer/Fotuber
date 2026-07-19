@@ -47,7 +47,7 @@ const StaffLogin = () => {
             <div>
               <Label className="text-neutral-400 text-xs">Personel E-postası</Label>
               <Input data-testid="staff-login-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                className="bg-neutral-950 border-neutral-800 text-neutral-100 mt-1" required />
+                className="bg-neutral-950 border-neutral-800 text-neutral-100 mt-1" placeholder="admin@fotuber.com.tr" required />
             </div>
             <div>
               <Label className="text-neutral-400 text-xs">Şifre</Label>
