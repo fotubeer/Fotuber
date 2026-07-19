@@ -41,12 +41,32 @@ input::placeholder, textarea::placeholder {
     opacity: 1;
     -webkit-text-fill-color: #94a3b8;
 }
-/* Force dark text inside any light-themed dialog content (Radix portals to body) */
-[role="dialog"] input,
-[role="dialog"] textarea {
+/* Force dark text inside any light-themed dialog / popover / select content.
+   Radix portals these OUTSIDE the react tree so text-foreground doesn't always cascade.
+   Every text descendant gets an explicit dark color unless it has its own color class. */
+[role="dialog"],
+[role="dialog"] *,
+[data-radix-popper-content-wrapper],
+[data-radix-popper-content-wrapper] * {
     color: #0f172a;
-    -webkit-text-fill-color: #0f172a;
 }
+[role="dialog"] input,
+[role="dialog"] textarea,
+[data-radix-popper-content-wrapper] input {
+    color: #0f172a !important;
+    -webkit-text-fill-color: #0f172a !important;
+}
+/* But allow explicit Tailwind color utilities to still win (they set !important-like specificity via class) */
+[role="dialog"] .text-white,
+[role="dialog"] .text-white * { color: #ffffff !important; }
+[role="dialog"] .text-red-600, [role="dialog"] .text-red-600 * { color: #dc2626 !important; }
+[role="dialog"] .text-red-700, [role="dialog"] .text-red-700 * { color: #b91c1c !important; }
+[role="dialog"] .text-emerald-600, [role="dialog"] .text-emerald-600 * { color: #059669 !important; }
+[role="dialog"] .text-emerald-700, [role="dialog"] .text-emerald-700 * { color: #047857 !important; }
+[role="dialog"] .text-amber-700, [role="dialog"] .text-amber-700 * { color: #b45309 !important; }
+[role="dialog"] .text-slate-500, [role="dialog"] .text-slate-500 * { color: #64748b !important; }
+[role="dialog"] .text-slate-600, [role="dialog"] .text-slate-600 * { color: #475569 !important; }
+[role="dialog"] .text-blue-600, [role="dialog"] .text-blue-600 * { color: #2563eb !important; }
 /* Admin panel (light theme) inputs always dark */
 body.admin input,
 body.admin textarea {
