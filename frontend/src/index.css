@@ -1,12 +1,22 @@
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=Poppins:wght@300;400;500;600;700&family=Lora:wght@400;500;600;700&family=Roboto:wght@300;400;500;700&family=Montserrat:wght@300;400;500;600;700&family=DM+Serif+Display&family=Nunito:wght@300;400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+:root {
+    --fotuber-font-heading: 'Cormorant Garamond', serif;
+    --fotuber-font-body: 'Manrope', sans-serif;
+    --fotuber-font-scale: 1;
+}
+
+html {
+    font-size: calc(16px * var(--fotuber-font-scale, 1));
+}
+
 body {
     margin: 0;
-    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: var(--fotuber-font-body, 'Manrope'), -apple-system, BlinkMacSystemFont, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background: #0a0a0a;
@@ -14,9 +24,9 @@ body {
 }
 
 /* App shell — public site defaults to dark; the admin routes override this in wrapper */
-.font-serif { font-family: 'Cormorant Garamond', serif; }
-.font-body  { font-family: 'Manrope', sans-serif; }
-.font-admin { font-family: 'Outfit', sans-serif; }
+.font-serif { font-family: var(--fotuber-font-heading, 'Cormorant Garamond'), serif; }
+.font-body  { font-family: var(--fotuber-font-body, 'Manrope'), sans-serif; }
+.font-admin { font-family: var(--fotuber-font-body, 'Outfit'), sans-serif; }
 
 ::selection {
     background: #d4af37;

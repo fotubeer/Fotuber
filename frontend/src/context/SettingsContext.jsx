@@ -18,6 +18,36 @@ const DEFAULTS = {
   instagram: "",
   logo_id: null,
   hero_image_url: "",
+  google_analytics_id: "",
+  font_heading: "",
+  font_body: "",
+  font_scale: 1.0,
+};
+
+const applyTypography = (s) => {
+  const root = document.documentElement;
+  const heading = s?.font_heading?.trim() || "'Cormorant Garamond', serif";
+  const body = s?.font_body?.trim() || "'Manrope', sans-serif";
+  const scale = Number(s?.font_scale) || 1.0;
+  root.style.setProperty("--fotuber-font-heading", heading);
+  root.style.setProperty("--fotuber-font-body", body);
+  root.style.setProperty("--fotuber-font-scale", String(scale));
+};
+
+const injectGA = (gaId) => {
+  if (!gaId || typeof gaId !== "string" || !gaId.startsWith("G-")) return;
+  if (document.getElementById("ga4-script")) return;
+  const s1 = document.createElement("script");
+  s1.async = true;
+  s1.id = "ga4-script";
+  s1.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
+  document.head.appendChild(s1);
+  const s2 = document.createElement("script");
+  s2.id = "ga4-init";
+  s2.innerHTML =
+    `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}` +
+    `gtag('js',new Date());gtag('config','${gaId}',{send_page_view:true});`;
+  document.head.appendChild(s2);
 };
 
 export const SettingsProvider = ({ children }) => {
@@ -27,12 +57,19 @@ export const SettingsProvider = ({ children }) => {
   const fetchSettings = useCallback(async () => {
     try {
       const { data } = await api.get("/settings");
-      setSettings({ ...DEFAULTS, ...data });
-    } catch (_) {}
-    finally { setLoading(false); }
+      const merged = { ...DEFAULTS, ...data };
+      setSettings(merged);
+      applyTypography(merged);
+      injectGA(merged.google_analytics_id);
+    } catch (_) {
+      applyTypography(DEFAULTS);
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
+
+  // Re-apply typography whenever settings change locally (e.g., after admin save)
+  useEffect(() => { applyTypography(settings); }, [settings.font_heading, settings.font_body, settings.font_scale]);
 
   return (
     <SettingsContext.Provider value={{ settings, loading, refresh: fetchSettings, setSettings }}>

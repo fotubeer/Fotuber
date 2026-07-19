@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, CalendarDays, CalendarClock, Users, Wallet,
-  ImageIcon, Camera, LogOut, Menu, X, Package, Settings, Coins, Ticket, Film,
+  ImageIcon, Camera, LogOut, Menu, X, Package, Settings, Coins, Ticket, Film, KeyRound, ArrowLeftRight,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
@@ -16,11 +16,13 @@ const items = [
   { to: "/admin/takvim", label: "Takvim & Kapatma", icon: CalendarClock },
   { to: "/admin/finans", label: "Finans", icon: Wallet },
   { to: "/admin/nakit-akisi", label: "Nakit Akışı", icon: Coins, ownerOnly: true },
+  { to: "/admin/kasa-devir", label: "Kasa Devir Defteri", icon: ArrowLeftRight, ownerOnly: true },
   { to: "/admin/hizmetler", label: "Hizmetler", icon: Package },
   { to: "/admin/galeri", label: "Galeri", icon: ImageIcon },
   { to: "/admin/fotuber-medya", label: "Fotuber Medya", icon: Film },
   { to: "/admin/indirim-kodlari", label: "İndirim Kodları", icon: Ticket },
-  { to: "/admin/personel", label: "Personel", icon: Users },
+  { to: "/admin/personel", label: "Personel Listesi", icon: Users },
+  { to: "/admin/kullanicilar", label: "Personel Hesapları", icon: KeyRound, ownerOnly: true },
   { to: "/admin/ayarlar", label: "Site Ayarları", icon: Settings, ownerOnly: true },
 ];
 

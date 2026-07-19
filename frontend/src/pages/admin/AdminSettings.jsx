@@ -6,8 +6,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Upload, Save, Image as ImageIcon } from "lucide-react";
+import { Upload, Save, Image as ImageIcon, Type, LineChart } from "lucide-react";
 import { useSettings } from "@/context/SettingsContext";
+
+const FONT_CHOICES = [
+  { value: "", label: "Varsayılan" },
+  { value: "'Cormorant Garamond', serif", label: "Cormorant Garamond (klasik serif)" },
+  { value: "'Playfair Display', serif", label: "Playfair Display (zarif serif)" },
+  { value: "'DM Serif Display', serif", label: "DM Serif Display (kalın serif)" },
+  { value: "'Lora', serif", label: "Lora (yumuşak serif)" },
+  { value: "'Manrope', sans-serif", label: "Manrope (modern)" },
+  { value: "'Outfit', sans-serif", label: "Outfit (yuvarlak)" },
+  { value: "'Poppins', sans-serif", label: "Poppins (temiz)" },
+  { value: "'Montserrat', sans-serif", label: "Montserrat (kurumsal)" },
+  { value: "'Nunito', sans-serif", label: "Nunito (dostane)" },
+  { value: "'Roboto', sans-serif", label: "Roboto (nötr)" },
+];
 
 const AdminSettings = () => {
   const { refresh } = useSettings();
@@ -306,6 +320,101 @@ const AdminSettings = () => {
             onChange={upd("contract_terms")}
             className="font-mono text-xs"
           />
+        </CardContent>
+      </Card>
+
+      {/* Tipografi / Fontlar */}
+      <Card className="border-slate-200">
+        <CardHeader>
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <Type className="w-4 h-4" /> Tipografi (Fontlar & Boyut)
+          </CardTitle>
+          <p className="text-xs text-slate-500 mt-1">
+            Sitedeki başlık ve gövde metinlerinin fontlarını değiştirin. "Boyut Ölçeği" tüm metinlerin boyutunu orantılı büyütür/küçültür.
+          </p>
+        </CardHeader>
+        <CardContent className="grid md:grid-cols-2 gap-4">
+          <div>
+            <Label className="text-xs">Başlık Fontu (H1, H2, öne çıkan yazılar)</Label>
+            <select
+              data-testid="setting-font-heading"
+              value={form.font_heading || ""}
+              onChange={upd("font_heading")}
+              className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm mt-1"
+            >
+              {FONT_CHOICES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+            </select>
+            <div className="mt-2 p-3 border border-slate-200 rounded-lg bg-slate-50 text-2xl" style={{ fontFamily: form.font_heading || undefined }}>
+              Fotuber Studio
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Gövde Fontu (paragraflar, menü, butonlar)</Label>
+            <select
+              data-testid="setting-font-body"
+              value={form.font_body || ""}
+              onChange={upd("font_body")}
+              className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm mt-1"
+            >
+              {FONT_CHOICES.map((f) => <option key={`b-${f.value}`} value={f.value}>{f.label}</option>)}
+            </select>
+            <div className="mt-2 p-3 border border-slate-200 rounded-lg bg-slate-50 text-sm" style={{ fontFamily: form.font_body || undefined }}>
+              Anlar, ışıkla ölümsüzleşir — düğün ve nişandan podcast'e...
+            </div>
+          </div>
+          <div className="md:col-span-2">
+            <Label className="text-xs">Boyut Ölçeği (0.8 = daha küçük · 1.0 = normal · 1.3 = büyük)</Label>
+            <div className="flex items-center gap-3 mt-1">
+              <input
+                type="range"
+                min="0.8"
+                max="1.3"
+                step="0.05"
+                value={form.font_scale ?? 1.0}
+                onChange={upd("font_scale")}
+                data-testid="setting-font-scale"
+                className="flex-1"
+              />
+              <Input
+                type="number"
+                step="0.05"
+                min="0.8"
+                max="1.3"
+                value={form.font_scale ?? 1.0}
+                onChange={upd("font_scale")}
+                className="w-24"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Google Analytics */}
+      <Card className="border-slate-200">
+        <CardHeader>
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <LineChart className="w-4 h-4" /> Google Analytics (Ziyaretçi Takibi)
+          </CardTitle>
+          <p className="text-xs text-slate-500 mt-1">
+            Google Analytics 4 hesabınızdan aldığınız Ölçüm Kimliğinizi (G-XXXXXXXXXX) buraya yapıştırın. Kaydeder kaydetmez site tüm ziyaretçileri Google Analytics'e raporlamaya başlar.
+            <br />
+            <span className="text-slate-400">
+              GA4 ID nasıl alınır: <a href="https://analytics.google.com" target="_blank" rel="noreferrer" className="text-blue-600 underline">analytics.google.com</a> → Yönetici → Veri Akışları → Web sitesi ekle → G- ile başlayan Ölçüm Kimliğini kopyalayın.
+            </span>
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Label className="text-xs">GA4 Ölçüm Kimliği</Label>
+          <Input
+            data-testid="setting-ga-id"
+            value={form.google_analytics_id || ""}
+            onChange={upd("google_analytics_id")}
+            placeholder="G-XXXXXXXXXX"
+            className="font-mono"
+          />
+          {form.google_analytics_id && form.google_analytics_id.startsWith("G-") && (
+            <p className="text-[11px] text-emerald-600 mt-1">✓ Geçerli format. Kaydettiğinizde aktif olacak.</p>
+          )}
         </CardContent>
       </Card>
 
