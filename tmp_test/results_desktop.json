@@ -1,0 +1,33 @@
+{
+  "desktop_public_login": {
+    "color": "rgb(245, 245, 245)",
+    "fill": "rgb(245, 245, 245)",
+    "bg_body": "rgb(10, 10, 10)"
+  },
+  "desktop_admin_albums": {
+    "bg": "rgb(255, 255, 255)",
+    "couple": {
+      "value": "TEST_DESKTOP_Couple",
+      "color": "rgb(15, 23, 42)",
+      "fill": "rgb(15, 23, 42)"
+    },
+    "notes": {
+      "value": "Desktop test notlar",
+      "color": "rgb(15, 23, 42)",
+      "fill": "rgb(15, 23, 42)"
+    }
+  },
+  "desktop_basket": {
+    "bg": "rgb(255, 255, 255)",
+    "qty": {
+      "value": "3",
+      "color": "rgb(15, 23, 42)",
+      "fill": "rgb(15, 23, 42)"
+    },
+    "gen": {
+      "value": "Desktop basket note",
+      "color": "rgb(15, 23, 42)",
+      "fill": "rgb(15, 23, 42)"
+    }
+  }
+}

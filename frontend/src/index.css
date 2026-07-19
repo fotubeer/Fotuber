@@ -28,6 +28,34 @@ body {
 .font-body  { font-family: var(--fotuber-font-body, 'Manrope'), sans-serif; }
 .font-admin { font-family: var(--fotuber-font-body, 'Outfit'), sans-serif; }
 
+/* Fix iOS Safari: <input> and <textarea> don't inherit color from parent by default.
+   Force them to inherit so form inputs are readable inside light dialogs / admin panels
+   even when the body has a dark color. */
+input, textarea, select, button {
+    color: inherit;
+    -webkit-text-fill-color: currentColor;
+}
+/* Placeholder color for inputs — muted gray */
+input::placeholder, textarea::placeholder {
+    color: #94a3b8;
+    opacity: 1;
+    -webkit-text-fill-color: #94a3b8;
+}
+/* Force dark text inside any light-themed dialog content (Radix portals to body) */
+[role="dialog"] input,
+[role="dialog"] textarea,
+[role="dialog"] select {
+    color: #0f172a;
+    -webkit-text-fill-color: #0f172a;
+}
+/* Admin panel (light theme) inputs always dark */
+body.admin input,
+body.admin textarea,
+body.admin select {
+    color: #0f172a;
+    -webkit-text-fill-color: #0f172a;
+}
+
 ::selection {
     background: #d4af37;
     color: #0a0a0a;
