@@ -15,7 +15,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { QRCodeCanvas } from "qrcode.react";
-import { Plus, QrCode, Trash2, Download, ExternalLink, Clock, Copy, HardDrive } from "lucide-react";
+import { Plus, QrCode, Trash2, Download, ExternalLink, Clock, Copy, HardDrive, Link2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 const emptyEvent = { name: "", couple_names: "", event_date: "", max_size_per_user_mb: 200, retention_days: 3, welcome_message: "" };
@@ -34,6 +34,7 @@ const AdminGuestEvents = () => {
   const [saving, setSaving] = useState(false);
   const [showQr, setShowQr] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [downloadLink, setDownloadLink] = useState(null); // { event, token, expires_at, days }
   const qrRef = useRef();
 
   const load = async () => {
@@ -100,6 +101,24 @@ const AdminGuestEvents = () => {
     a.click();
   };
 
+  const generateDownloadLink = async (ev, days) => {
+    try {
+      const { data } = await api.post(`/admin/guest-events/${ev.id}/generate-download-link`, { days });
+      setDownloadLink({ event: ev, ...data });
+      toast.success(`İndirme linki oluşturuldu (${days} gün geçerli)`);
+      load();
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
+  const revokeDownloadLink = async (ev) => {
+    try {
+      await api.post(`/admin/guest-events/${ev.id}/revoke-download-link`);
+      toast.success("İndirme linki iptal edildi");
+      setDownloadLink(null);
+      load();
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
   const eventUrl = (ev) => `${window.location.origin}/etkinlik/${ev.upload_token}`;
 
   return (
@@ -164,6 +183,9 @@ const AdminGuestEvents = () => {
                       </Button>
                       <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => downloadZip(ev)} disabled={(ev.upload_count || 0) === 0} data-testid={`event-zip-${ev.id}`}>
                         <Download className="w-3 h-3 md:mr-1" /><span className="hidden md:inline">ZIP</span>
+                      </Button>
+                      <Button size="sm" className="bg-[#d4af37] hover:bg-[#b5952f] text-black" onClick={() => setDownloadLink({ event: ev, download_token: ev.download_token, download_expires_at: ev.download_expires_at, days: ev.download_days })} disabled={(ev.upload_count || 0) === 0} data-testid={`event-share-${ev.id}`} title="Çifte indirme linki">
+                        <Link2 className="w-3 h-3 md:mr-1" /><span className="hidden md:inline">Çifte Link</span>
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
@@ -273,8 +295,7 @@ const AdminGuestEvents = () => {
       </Dialog>
 
       {/* Detail dialog */}
-      <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+      <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           {detail && (
             <>
               <DialogHeader>
@@ -314,6 +335,95 @@ const AdminGuestEvents = () => {
               </Table>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Couple download link dialog */}
+      <Dialog open={!!downloadLink} onOpenChange={(o) => !o && setDownloadLink(null)}>
+        <DialogContent data-testid="download-link-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Link2 className="w-4 h-4" /> Çifte İndirme Linki</DialogTitle>
+            <DialogDescription>
+              Bu linki çifte WhatsApp'tan gönderin. Onlar tüm misafir yüklemelerini ZIP olarak indirebilir. Süre dolduğunda link otomatik geçersiz olur.
+            </DialogDescription>
+          </DialogHeader>
+          {downloadLink && (
+            <div className="space-y-4">
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                <div className="text-xs text-slate-500 mb-1">Etkinlik</div>
+                <div className="font-semibold">{downloadLink.event.couple_names || downloadLink.event.name}</div>
+                <div className="text-xs text-slate-500 mt-1">
+                  {downloadLink.event.upload_count || 0} dosya · {formatBytes(downloadLink.event.total_size || 0)}
+                </div>
+              </div>
+
+              {downloadLink.download_token ? (
+                <>
+                  <div>
+                    <Label className="text-xs">İndirme Bağlantısı</Label>
+                    <div className="flex gap-2 mt-1">
+                      <Input readOnly value={`${window.location.origin}/paylas/${downloadLink.download_token}`} className="font-mono text-xs" />
+                      <Button variant="outline" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/paylas/${downloadLink.download_token}`); toast.success("Kopyalandı"); }} data-testid="download-link-copy">
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-600">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    Geçerlilik sonu: <b>{new Date(downloadLink.download_expires_at).toLocaleString("tr-TR")}</b>
+                  </div>
+                  <div className="pt-2 border-t border-slate-200">
+                    <Label className="text-xs mb-2 block">Süreyi Yenile veya Değiştir</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {[2, 3, 4, 5, 6, 7].map((d) => (
+                        <Button
+                          key={d}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => generateDownloadLink(downloadLink.event, d)}
+                          data-testid={`download-link-days-${d}`}
+                        >
+                          {d} gün
+                        </Button>
+                      ))}
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => revokeDownloadLink(downloadLink.event)}
+                        data-testid="download-link-revoke"
+                      >
+                        <Trash2 className="w-3 h-3 mr-1" /> Linki İptal Et
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-2">
+                      Yeni süre seçtiğinizde link değişmeden sadece bitiş tarihi güncellenir.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-slate-600">
+                    Bu etkinlik için henüz indirme linki oluşturulmadı. Kaç gün geçerli olsun?
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {[2, 3, 4, 5, 6, 7].map((d) => (
+                      <Button
+                        key={d}
+                        onClick={() => generateDownloadLink(downloadLink.event, d)}
+                        className={d === 3 ? "bg-[#d4af37] hover:bg-[#b5952f] text-black" : "bg-slate-900 hover:bg-slate-800"}
+                        data-testid={`download-link-create-${d}`}
+                      >
+                        {d} gün geçerli
+                      </Button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDownloadLink(null)}>Kapat</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

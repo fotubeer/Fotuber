@@ -389,6 +389,8 @@ async def on_startup():
     await db.guest_events.create_index("upload_token", unique=True)
     await db.guest_uploads.create_index([("event_id", 1), ("user_id", 1)])
     await db.guest_uploads.create_index("delete_at")
+    await db.venues.create_index("qr_token", unique=True)
+    await db.guest_events.create_index("download_token")
     init_storage()
 
     # Start background cleanup task (deletes expired guest uploads once an hour)
@@ -2739,6 +2741,233 @@ async def guest_upload_file(
         {"$inc": {"upload_count": 1, "total_size": size}},
     )
     return {"ok": True, "size": size, "remaining": max(0, limit - used - size)}
+
+
+# ---------------------------------------------------------------------------
+# Venues (Mekanlar) — permanent QR codes per venue; the admin swaps which
+# couple's event is currently ACTIVE at that venue (wedding hall, engagement house).
+# One QR per venue → forever. Panelden çift/organizasyon güncellenir.
+# ---------------------------------------------------------------------------
+class VenueIn(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    description: Optional[str] = ""
+    default_max_size_per_user_mb: int = 200
+    default_retention_days: int = 3
+
+
+class VenueActivateIn(BaseModel):
+    event_id: Optional[str] = None
+    # If event_id is not provided, create a new event using these fields:
+    name: Optional[str] = None
+    couple_names: Optional[str] = None
+    event_date: Optional[str] = None
+    event_type: Optional[str] = "wedding"  # wedding | engagement | henna | nikah | other
+    welcome_message: Optional[str] = ""
+    retention_days: Optional[int] = None
+    max_size_per_user_mb: Optional[int] = None
+
+
+@api_router.post("/admin/venues")
+async def create_venue(payload: VenueIn, admin: dict = Depends(require_admin)):
+    doc = {
+        "id": new_id(),
+        "name": payload.name.strip(),
+        "description": payload.description or "",
+        "qr_token": secrets.token_urlsafe(8),
+        "current_event_id": None,
+        "default_max_size_per_user_mb": max(10, min(1000, payload.default_max_size_per_user_mb)),
+        "default_retention_days": max(1, min(30, payload.default_retention_days)),
+        "created_at": now_iso(),
+        "created_by": admin.get("id"),
+    }
+    await db.venues.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/admin/venues")
+async def list_venues(admin: dict = Depends(require_admin)):
+    items = await db.venues.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    for v in items:
+        if v.get("current_event_id"):
+            ev = await db.guest_events.find_one({"id": v["current_event_id"]}, {"_id": 0})
+            if ev:
+                v["current_event"] = ev
+    return items
+
+
+@api_router.patch("/admin/venues/{vid}")
+async def update_venue(vid: str, payload: VenueIn, admin: dict = Depends(require_admin)):
+    await db.venues.update_one({"id": vid}, {"$set": {
+        "name": payload.name,
+        "description": payload.description or "",
+        "default_max_size_per_user_mb": payload.default_max_size_per_user_mb,
+        "default_retention_days": payload.default_retention_days,
+    }})
+    return await db.venues.find_one({"id": vid}, {"_id": 0})
+
+
+@api_router.post("/admin/venues/{vid}/activate")
+async def activate_venue_event(vid: str, payload: VenueActivateIn, admin: dict = Depends(require_admin)):
+    venue = await db.venues.find_one({"id": vid})
+    if not venue:
+        raise HTTPException(status_code=404, detail="Mekan bulunamadı")
+    eid = payload.event_id
+    if not eid:
+        retention = payload.retention_days or venue.get("default_retention_days", 3)
+        max_size = payload.max_size_per_user_mb or venue.get("default_max_size_per_user_mb", 200)
+        delete_at = (datetime.now(timezone.utc) + timedelta(days=int(retention))).isoformat()
+        ev_doc = {
+            "id": new_id(),
+            "venue_id": vid,
+            "venue_name": venue.get("name"),
+            "name": payload.name or f"{venue['name']} — {payload.couple_names or 'Etkinlik'}",
+            "couple_names": payload.couple_names or "",
+            "event_date": payload.event_date,
+            "event_type": payload.event_type or "wedding",
+            "welcome_message": payload.welcome_message or "",
+            "max_size_per_user_mb": max_size,
+            "retention_days": retention,
+            "upload_token": secrets.token_urlsafe(10),
+            "delete_at": delete_at,
+            "upload_count": 0,
+            "total_size": 0,
+            "created_at": now_iso(),
+            "created_by": admin.get("id"),
+        }
+        await db.guest_events.insert_one(ev_doc)
+        eid = ev_doc["id"]
+    await db.venues.update_one({"id": vid}, {"$set": {"current_event_id": eid}})
+    return await db.venues.find_one({"id": vid}, {"_id": 0})
+
+
+@api_router.post("/admin/venues/{vid}/deactivate")
+async def deactivate_venue(vid: str, admin: dict = Depends(require_admin)):
+    await db.venues.update_one({"id": vid}, {"$set": {"current_event_id": None}})
+    return {"ok": True}
+
+
+@api_router.delete("/admin/venues/{vid}")
+async def delete_venue(vid: str, admin: dict = Depends(require_admin)):
+    await db.venues.delete_one({"id": vid})
+    return {"ok": True}
+
+
+@api_router.get("/venues/{qr_token}")
+async def public_get_venue(qr_token: str):
+    """Public — scanning venue QR resolves to the currently active event (if any)."""
+    venue = await db.venues.find_one({"qr_token": qr_token}, {"_id": 0})
+    if not venue:
+        raise HTTPException(status_code=404, detail="Mekan bulunamadı")
+    if not venue.get("current_event_id"):
+        return {"venue_name": venue.get("name"), "active": False}
+    ev = await db.guest_events.find_one({"id": venue["current_event_id"]}, {"_id": 0})
+    if not ev:
+        return {"venue_name": venue.get("name"), "active": False}
+    expired = ev.get("delete_at") and ev["delete_at"] < now_iso()
+    return {
+        "venue_name": venue.get("name"),
+        "active": not expired,
+        "upload_token": ev.get("upload_token"),
+        "name": ev.get("name"),
+        "couple_names": ev.get("couple_names"),
+        "event_date": ev.get("event_date"),
+        "event_type": ev.get("event_type"),
+        "welcome_message": ev.get("welcome_message"),
+        "max_size_per_user_mb": ev.get("max_size_per_user_mb", 200),
+        "retention_days": ev.get("retention_days", 3),
+        "delete_at": ev.get("delete_at"),
+        "expired": bool(expired),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Couple Download Link — admin generates a shareable link for the couple to
+# download ALL guest uploads (photos+videos) with a self-set expiry (2-7 days).
+# ---------------------------------------------------------------------------
+class DownloadLinkIn(BaseModel):
+    days: int = 3
+
+
+@api_router.post("/admin/guest-events/{eid}/generate-download-link")
+async def generate_download_link(eid: str, payload: DownloadLinkIn, admin: dict = Depends(require_admin)):
+    ev = await db.guest_events.find_one({"id": eid})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+    days = max(2, min(7, int(payload.days or 3)))
+    token = secrets.token_urlsafe(12)
+    expires = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    await db.guest_events.update_one(
+        {"id": eid},
+        {"$set": {"download_token": token, "download_expires_at": expires, "download_days": days}},
+    )
+    return {"download_token": token, "download_expires_at": expires, "days": days}
+
+
+@api_router.post("/admin/guest-events/{eid}/revoke-download-link")
+async def revoke_download_link(eid: str, admin: dict = Depends(require_admin)):
+    await db.guest_events.update_one(
+        {"id": eid},
+        {"$unset": {"download_token": "", "download_expires_at": "", "download_days": ""}},
+    )
+    return {"ok": True}
+
+
+@api_router.get("/download/{download_token}")
+async def public_get_download(download_token: str):
+    ev = await db.guest_events.find_one({"download_token": download_token}, {"_id": 0})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Bağlantı bulunamadı")
+    if ev.get("download_expires_at") and ev["download_expires_at"] < now_iso():
+        raise HTTPException(status_code=410, detail="Bu indirme bağlantısının süresi doldu")
+    uploads = await db.guest_uploads.find(
+        {"event_id": ev["id"]}, {"_id": 0, "storage_path": 0}
+    ).sort("uploaded_at", -1).to_list(5000)
+    return {
+        "event": {
+            "name": ev.get("name"),
+            "couple_names": ev.get("couple_names"),
+            "event_date": ev.get("event_date"),
+            "event_type": ev.get("event_type"),
+        },
+        "expires_at": ev.get("download_expires_at"),
+        "total_files": len(uploads),
+        "total_size": sum(int(u.get("size", 0) or 0) for u in uploads),
+        "files": uploads,
+    }
+
+
+@api_router.get("/download/{download_token}/zip")
+async def public_download_zip(download_token: str):
+    ev = await db.guest_events.find_one({"download_token": download_token})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Bağlantı bulunamadı")
+    if ev.get("download_expires_at") and ev["download_expires_at"] < now_iso():
+        raise HTTPException(status_code=410, detail="Bu indirme bağlantısının süresi doldu")
+    uploads = await db.guest_uploads.find({"event_id": ev["id"]}).to_list(5000)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+        for up in uploads:
+            try:
+                data, _ct = get_object(up["storage_path"])
+                safe = (up.get("user_name") or "misafir").replace("/", "_")
+                zf.writestr(f"{safe}/{up.get('filename') or up['id']}", data)
+            except Exception:
+                continue
+    buf.seek(0)
+    from urllib.parse import quote as _urlquote
+    raw = f"{ev.get('couple_names') or ev.get('name', 'etkinlik')}_{ev.get('event_date') or ''}.zip".replace(" ", "_")
+    ascii_name = raw.encode("ascii", "ignore").decode("ascii") or "etkinlik.zip"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_name}"; '
+                f"filename*=UTF-8''{_urlquote(raw)}"
+            ),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -40,11 +40,13 @@ import AdminAlbums from "@/pages/admin/AdminAlbums";
 import AdminAlbumDetail from "@/pages/admin/AdminAlbumDetail";
 import AdminGuestEvents from "@/pages/admin/AdminGuestEvents";
 import AdminProductOptions from "@/pages/admin/AdminProductOptions";
+import AdminVenues from "@/pages/admin/AdminVenues";
 
 import DiscountCode from "@/pages/DiscountCode";
 import FotuberMedya from "@/pages/FotuberMedya";
 import AlbumViewer from "@/pages/AlbumViewer";
 import GuestUpload from "@/pages/GuestUpload";
+import CoupleDownload from "@/pages/CoupleDownload";
 
 const P = ({ children }) => <PublicLayout>{children}</PublicLayout>;
 const AdminGuard = ({ children }) => (
@@ -75,6 +77,10 @@ function App() {
               <Route path="/albumler/:token" element={<AlbumViewer />} />
               {/* Public guest upload via QR (auth required for uploads) */}
               <Route path="/etkinlik/:token" element={<GuestUpload />} />
+              {/* Public venue QR — resolves to currently active event */}
+              <Route path="/mekan/:venueToken" element={<GuestUpload />} />
+              {/* Public download link for the couple */}
+              <Route path="/paylas/:token" element={<CoupleDownload />} />
               <Route path="/giris" element={<P><Login /></P>} />
               <Route path="/kayit" element={<P><Register /></P>} />
               <Route path="/personel-girisi" element={<StaffLogin />} />
@@ -109,6 +115,7 @@ function App() {
               <Route path="/admin/albumler" element={<AdminGuard><AdminAlbums /></AdminGuard>} />
               <Route path="/admin/albumler/:id" element={<AdminGuard><AdminAlbumDetail /></AdminGuard>} />
               <Route path="/admin/etkinlikler" element={<AdminGuard><AdminGuestEvents /></AdminGuard>} />
+              <Route path="/admin/mekanlar" element={<AdminGuard><AdminVenues /></AdminGuard>} />
               <Route path="/admin/urun-secenekleri" element={<AdminGuard><AdminProductOptions /></AdminGuard>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
