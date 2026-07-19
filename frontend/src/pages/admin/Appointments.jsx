@@ -11,7 +11,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle2, XCircle, Wallet, Phone, Bell, Send, FileText, Upload, UserPlus, ExternalLink } from "lucide-react";
+import { CheckCircle2, XCircle, Wallet, Phone, Bell, Send, FileText, Upload, UserPlus, ExternalLink, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { API_BASE } from "@/lib/api";
 import {
@@ -269,6 +269,21 @@ const AdminAppointments = () => {
                         ) : (
                           <Button size="sm" variant="outline" data-testid={`upload-contract-${a.id}`} onClick={() => { setContract({ appt: a }); setContractFile(null); }} title="Islak imzalı sözleşmeyi yükle">
                             <Upload className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                        {a.status === "cancelled" && (
+                          <Button size="sm" variant="destructive" data-testid={`delete-btn-${a.id}`}
+                            onClick={async () => {
+                              if (!window.confirm("Bu randevu KALICI olarak silinsin mi? Geri alınamaz.")) return;
+                              try {
+                                await api.delete(`/appointments/${a.id}`);
+                                toast.success("Randevu kalıcı olarak silindi.");
+                                load();
+                              } catch (e) { toast.error(formatApiError(e)); }
+                            }}
+                            title="Kalıcı olarak sil"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 mr-1" /> Kalıcı Sil
                           </Button>
                         )}
                         {a.status !== "cancelled" && (
