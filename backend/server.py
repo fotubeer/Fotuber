@@ -1129,6 +1129,185 @@ async def delete_transaction(tid: str, admin: dict = Depends(require_admin)):
     return {"ok": True}
 
 
+def _period_bounds(period: str) -> tuple[str, str, str]:
+    """Return (date_from, date_to, label) for period keyword."""
+    today = datetime.now(timezone.utc).date()
+    if period == "week":
+        start = today - timedelta(days=today.weekday())
+        return start.isoformat(), today.isoformat(), f"{start.strftime('%d.%m.%Y')} – {today.strftime('%d.%m.%Y')}"
+    if period == "month":
+        start = today.replace(day=1)
+        return start.isoformat(), today.isoformat(), start.strftime("%B %Y")
+    if period == "year":
+        start = today.replace(month=1, day=1)
+        return start.isoformat(), today.isoformat(), str(today.year)
+    if period == "all":
+        return "1900-01-01", today.isoformat(), "Tümü"
+    # default = today
+    return today.isoformat(), today.isoformat(), today.strftime("%d.%m.%Y")
+
+
+@api_router.get("/transactions/export.xlsx")
+async def export_transactions_xlsx(
+    admin: dict = Depends(require_admin),
+    period: str = Query("month", description="today|week|month|year|all"),
+):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from io import BytesIO
+    from urllib.parse import quote
+
+    date_from, date_to, label = _period_bounds(period)
+    items = await db.transactions.find(
+        {"date": {"$gte": date_from, "$lte": date_to}}, {"_id": 0}
+    ).sort([("date", 1), ("created_at", 1)]).to_list(5000)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Nakit Akışı"
+
+    # Header row with brand
+    ws["A1"] = "Fotuber Studio — Nakit Akışı Raporu"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws.merge_cells("A1:G1")
+    ws["A2"] = f"Dönem: {label}"
+    ws["A2"].font = Font(italic=True, color="666666")
+    ws.merge_cells("A2:G2")
+
+    headers = ["Tarih", "Tür", "Ödeme Yöntemi", "Kategori", "Açıklama", "Tutar (₺)", "İşaretli Tutar"]
+    for i, h in enumerate(headers, 1):
+        c = ws.cell(row=4, column=i, value=h)
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill(start_color="0F172A", end_color="0F172A", fill_type="solid")
+        c.alignment = Alignment(horizontal="center")
+
+    method_map = {"cash": "Nakit", "card": "Kart", "transfer": "Havale"}
+    kind_map = {"income": "Gelir", "expense": "Gider"}
+    row = 5
+    total_in, total_out = 0.0, 0.0
+    for t in items:
+        amount = float(t.get("amount", 0) or 0)
+        signed = amount if t["kind"] == "income" else -amount
+        if t["kind"] == "income": total_in += amount
+        else: total_out += amount
+        ws.cell(row=row, column=1, value=t.get("date"))
+        ws.cell(row=row, column=2, value=kind_map.get(t.get("kind"), t.get("kind")))
+        ws.cell(row=row, column=3, value=method_map.get(t.get("payment_method"), t.get("payment_method")))
+        ws.cell(row=row, column=4, value=t.get("category", ""))
+        ws.cell(row=row, column=5, value=t.get("description", ""))
+        ws.cell(row=row, column=6, value=amount)
+        ws.cell(row=row, column=7, value=signed)
+        row += 1
+
+    # Totals
+    row += 1
+    ws.cell(row=row, column=5, value="Toplam Gelir").font = Font(bold=True)
+    ws.cell(row=row, column=6, value=total_in).font = Font(bold=True, color="059669")
+    row += 1
+    ws.cell(row=row, column=5, value="Toplam Gider").font = Font(bold=True)
+    ws.cell(row=row, column=6, value=total_out).font = Font(bold=True, color="DC2626")
+    row += 1
+    ws.cell(row=row, column=5, value="NET").font = Font(bold=True, size=12)
+    ws.cell(row=row, column=6, value=total_in - total_out).font = Font(bold=True, size=12)
+
+    # Column widths
+    widths = [12, 10, 14, 24, 40, 14, 14]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[chr(64 + i)].width = w
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = quote(f"fotuber-nakit-akisi-{period}-{date_to}.xlsx")
+    return StarletteResponse(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
+@api_router.get("/transactions/export.pdf")
+async def export_transactions_pdf(
+    admin: dict = Depends(require_admin),
+    period: str = Query("month"),
+):
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from io import BytesIO
+    from urllib.parse import quote
+
+    date_from, date_to, label = _period_bounds(period)
+    items = await db.transactions.find(
+        {"date": {"$gte": date_from, "$lte": date_to}}, {"_id": 0}
+    ).sort([("date", 1), ("created_at", 1)]).to_list(5000)
+    settings = await db.site_settings.find_one({"id": "singleton"}, {"_id": 0}) or {}
+    brand = settings.get("business_name", "Fotuber")
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("t", parent=styles["Title"], fontSize=18, textColor=colors.HexColor("#0F172A"))
+    sub_style = ParagraphStyle("s", parent=styles["Normal"], fontSize=10, textColor=colors.HexColor("#666666"))
+
+    story = [
+        Paragraph(f"{brand} — Nakit Akışı Raporu", title_style),
+        Paragraph(f"Dönem: <b>{label}</b> · Kayıt: {len(items)}", sub_style),
+        Spacer(1, 6*mm),
+    ]
+
+    method_map = {"cash": "Nakit", "card": "Kart", "transfer": "Havale"}
+    kind_map = {"income": "Gelir", "expense": "Gider"}
+
+    data = [["Tarih", "Tür", "Yöntem", "Kategori", "Açıklama", "Tutar (₺)"]]
+    total_in, total_out = 0.0, 0.0
+    for t in items:
+        amt = float(t.get("amount", 0) or 0)
+        if t["kind"] == "income": total_in += amt
+        else: total_out += amt
+        data.append([
+            t.get("date", ""),
+            kind_map.get(t.get("kind"), ""),
+            method_map.get(t.get("payment_method"), ""),
+            (t.get("category") or "")[:24],
+            (t.get("description") or "")[:40],
+            f"{'+' if t['kind']=='income' else '−'}{amt:,.2f}".replace(",", "."),
+        ])
+
+    tbl = Table(data, colWidths=[22*mm, 20*mm, 22*mm, 45*mm, 90*mm, 30*mm], repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F172A")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("ALIGN", (5, 1), (5, -1), "RIGHT"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#F8FAFC"), colors.white]),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#CBD5E1")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(tbl)
+
+    story += [
+        Spacer(1, 6*mm),
+        Paragraph(f"<b>Toplam Gelir:</b> ₺{total_in:,.2f}".replace(",", "."), styles["Normal"]),
+        Paragraph(f"<b>Toplam Gider:</b> ₺{total_out:,.2f}".replace(",", "."), styles["Normal"]),
+        Paragraph(f"<b>NET:</b> ₺{(total_in - total_out):,.2f}".replace(",", "."), styles["Heading3"]),
+    ]
+
+    doc.build(story)
+    buf.seek(0)
+    filename = quote(f"fotuber-nakit-akisi-{period}-{date_to}.pdf")
+    return StarletteResponse(
+        content=buf.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
 @api_router.get("/transactions/summary")
 async def transaction_summary(admin: dict = Depends(require_admin)):
     """Return daily (last 7 days), weekly (last 4 weeks), monthly (last 6 months) aggregates,

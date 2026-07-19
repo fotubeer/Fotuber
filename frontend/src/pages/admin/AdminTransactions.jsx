@@ -16,10 +16,11 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Plus, TrendingUp, TrendingDown, Wallet, CreditCard, Banknote, ArrowLeftRight,
-  Pencil, Trash2, Lock,
+  Pencil, Trash2, Lock, FileDown, FileSpreadsheet,
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, PieChart, Pie, Cell } from "recharts";
 import { toast } from "sonner";
+import { API_BASE } from "@/lib/api";
 
 const METHOD_META = {
   cash: { label: "Nakit", icon: Banknote, color: "#10b981" },
@@ -136,6 +137,43 @@ const AdminTransactions = () => {
           <Plus className="w-4 h-4 mr-2" /> Yeni Hareket
         </Button>
       </div>
+
+      {/* Export butonları */}
+      <Card className="border-slate-200">
+        <CardContent className="p-4 flex flex-wrap items-center gap-3">
+          <div className="text-sm font-medium text-slate-700 mr-2">📥 Raporu İndir:</div>
+          {[
+            { period: "week", label: "Bu Hafta" },
+            { period: "month", label: "Bu Ay" },
+            { period: "year", label: "Bu Yıl" },
+            { period: "all", label: "Tümü" },
+          ].map((p) => (
+            <div key={p.period} className="flex items-center gap-1.5">
+              <span className="text-xs text-slate-500">{p.label}:</span>
+              <a
+                href={`${API_BASE}/transactions/export.xlsx?period=${p.period}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid={`export-xlsx-${p.period}`}
+              >
+                <Button size="sm" variant="outline" className="h-8 gap-1">
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Excel
+                </Button>
+              </a>
+              <a
+                href={`${API_BASE}/transactions/export.pdf?period=${p.period}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid={`export-pdf-${p.period}`}
+              >
+                <Button size="sm" variant="outline" className="h-8 gap-1">
+                  <FileDown className="w-3.5 h-3.5 text-red-600" /> PDF
+                </Button>
+              </a>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       {/* Big stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
