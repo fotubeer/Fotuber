@@ -5,6 +5,7 @@ import { ArrowRight, Sparkles, Award, Camera, Video, Mic, MonitorPlay } from "lu
 import { Button } from "@/components/ui/button";
 import { api, galleryFileUrl } from "@/lib/api";
 import { useSettings } from "@/context/SettingsContext";
+import { SEO, buildLocalBusinessLd } from "@/components/SEO";
 
 const DEFAULT_HERO = "https://images.pexels.com/photos/5762880/pexels-photo-5762880.jpeg";
 
@@ -33,6 +34,7 @@ const Home = () => {
 
   return (
     <div>
+      <SEO path="/" jsonLd={buildLocalBusinessLd(settings)} />
       {/* Hero */}
       <section className="relative min-h-[92vh] overflow-hidden">
         <div

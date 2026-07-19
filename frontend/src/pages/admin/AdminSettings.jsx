@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Upload, Save, Image as ImageIcon, Type, LineChart } from "lucide-react";
+import { Upload, Save, Image as ImageIcon, Type, LineChart, Search } from "lucide-react";
 import { useSettings } from "@/context/SettingsContext";
 
 const FONT_CHOICES = [
@@ -414,6 +414,140 @@ const AdminSettings = () => {
           />
           {form.google_analytics_id && form.google_analytics_id.startsWith("G-") && (
             <p className="text-[11px] text-emerald-600 mt-1">✓ Geçerli format. Kaydettiğinizde aktif olacak.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* SEO — Search engines & Google Search Console */}
+      <Card className="border-slate-200">
+        <CardHeader>
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <Search className="w-4 h-4" /> SEO — Google Arama & Sosyal Paylaşım
+          </CardTitle>
+          <p className="text-xs text-slate-500 mt-1">
+            Arama motorlarında ve sosyal medyada paylaşıldığında sitenizin nasıl görüneceğini bu alandan kontrol edin.
+          </p>
+        </CardHeader>
+        <CardContent className="grid md:grid-cols-2 gap-4">
+          <div className="md:col-span-2">
+            <Label className="text-xs">Site URL (kanonik adres)</Label>
+            <Input
+              data-testid="setting-seo-site-url"
+              value={form.seo_site_url || ""}
+              onChange={upd("seo_site_url")}
+              placeholder="https://fotuber.com.tr"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">Sitenizin resmi adresi. Boş bırakılırsa fotuber.com.tr kullanılır.</p>
+          </div>
+          <div className="md:col-span-2">
+            <Label className="text-xs">Google'da Görünecek Başlık (Title)</Label>
+            <Input
+              data-testid="setting-seo-title"
+              value={form.seo_title || ""}
+              onChange={upd("seo_title")}
+              maxLength={70}
+              placeholder="Fotuber Studio | Düğün, Nişan & Portre Fotoğrafçılığı"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">50-60 karakter arası ideal. En fazla 70 karakter.</p>
+          </div>
+          <div className="md:col-span-2">
+            <Label className="text-xs">Meta Açıklama (Google özet metni)</Label>
+            <Textarea
+              data-testid="setting-seo-description"
+              rows={3}
+              maxLength={200}
+              value={form.seo_description || ""}
+              onChange={upd("seo_description")}
+              placeholder="Fotuber Studio — Ankara'da profesyonel düğün, nişan, bebek, aile ve kurumsal fotoğraf çekimi. Online randevu ve galeri."
+            />
+            <p className="text-[11px] text-slate-500 mt-1">140-160 karakter arası ideal. Google arama sonucunda başlığın altında görünür.</p>
+          </div>
+          <div className="md:col-span-2">
+            <Label className="text-xs">Anahtar Kelimeler (virgülle ayırın)</Label>
+            <Input
+              data-testid="setting-seo-keywords"
+              value={form.seo_keywords || ""}
+              onChange={upd("seo_keywords")}
+              placeholder="düğün fotoğrafçısı, nişan çekimi, bebek fotoğrafı, ankara fotoğrafçı..."
+            />
+          </div>
+          <div>
+            <Label className="text-xs">İşletme Türü (Schema.org)</Label>
+            <select
+              data-testid="setting-seo-business-type"
+              value={form.seo_business_type || "PhotographyBusiness"}
+              onChange={upd("seo_business_type")}
+              className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm mt-1"
+            >
+              <option value="PhotographyBusiness">Fotoğraf Stüdyosu</option>
+              <option value="LocalBusiness">Yerel İşletme (Genel)</option>
+              <option value="ProfessionalService">Profesyonel Hizmet</option>
+              <option value="EventVenue">Etkinlik Mekanı</option>
+            </select>
+          </div>
+          <div>
+            <Label className="text-xs">Fiyat Aralığı</Label>
+            <select
+              data-testid="setting-seo-price-range"
+              value={form.seo_price_range || "₺₺"}
+              onChange={upd("seo_price_range")}
+              className="w-full h-10 px-3 rounded-md border border-slate-200 bg-white text-sm mt-1"
+            >
+              <option value="₺">₺ (Ekonomik)</option>
+              <option value="₺₺">₺₺ (Orta)</option>
+              <option value="₺₺₺">₺₺₺ (Premium)</option>
+              <option value="₺₺₺₺">₺₺₺₺ (Lüks)</option>
+            </select>
+          </div>
+          <div className="md:col-span-2">
+            <Label className="text-xs">Çalışma Saatleri (Schema.org formatı)</Label>
+            <Input
+              data-testid="setting-seo-opening-hours"
+              value={form.seo_opening_hours || ""}
+              onChange={upd("seo_opening_hours")}
+              placeholder="Mo-Sa 09:00-19:00"
+              className="font-mono text-sm"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">Örn: <code>Mo-Fr 09:00-18:00</code> · <code>Mo-Sa 09:00-19:00</code> · <code>Mo-Su 10:00-22:00</code></p>
+          </div>
+          <div className="md:col-span-2">
+            <Label className="text-xs">Sosyal Paylaşım Görseli (OG Image URL)</Label>
+            <Input
+              data-testid="setting-seo-og-image"
+              value={form.seo_og_image_url || ""}
+              onChange={upd("seo_og_image_url")}
+              placeholder="https://fotuber.com.tr/og-image.jpg"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">1200x630 px önerilir. Boş bırakılırsa logo kullanılır. WhatsApp, Facebook, Twitter'da link paylaşınca görünür.</p>
+          </div>
+          <div className="md:col-span-2 border-t border-slate-200 pt-4 mt-2">
+            <Label className="text-xs">Google Search Console Doğrulama Kodu</Label>
+            <Input
+              data-testid="setting-gsc"
+              value={form.google_search_console_verification || ""}
+              onChange={upd("google_search_console_verification")}
+              placeholder="content değerini yapıştırın (örn: xYz123AbC...)"
+              className="font-mono text-sm"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              <a href="https://search.google.com/search-console" target="_blank" rel="noreferrer" className="text-blue-600 underline">Google Search Console</a>'a giriş → mülk ekle → HTML etiketi → <code>content="..."</code> içindeki değeri buraya yapıştırın.
+            </p>
+          </div>
+
+          {/* Live preview */}
+          {(form.seo_title || form.seo_description) && (
+            <div className="md:col-span-2 mt-2">
+              <Label className="text-xs">Google Önizleme</Label>
+              <div className="p-4 border border-slate-200 rounded-lg bg-white mt-1">
+                <div className="text-xs text-slate-600 truncate">{form.seo_site_url || "https://fotuber.com.tr"}</div>
+                <div className="text-lg text-blue-800 hover:underline cursor-pointer truncate mt-0.5">
+                  {form.seo_title || "Fotuber Studio | Düğün, Nişan & Portre Fotoğrafçılığı"}
+                </div>
+                <div className="text-sm text-slate-600 mt-0.5 line-clamp-2">
+                  {form.seo_description || "Fotuber Studio — Ankara'da profesyonel düğün, nişan, bebek, aile ve kurumsal fotoğraf çekimi."}
+                </div>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>

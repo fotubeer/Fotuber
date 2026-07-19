@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Megaphone, Sparkles, Building2, TrendingUp, PlayCircle, ArrowRight, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, API_BASE } from "@/lib/api";
+import { SEO } from "@/components/SEO";
 
 const OFFERINGS = [
   { icon: Megaphone, title: "Sosyal Medya Yönetimi", desc: "Aylık içerik takvimi, çekim, kurgu, paylaşım ve topluluk yönetimi." },
@@ -28,6 +29,7 @@ const FotuberMedya = () => {
 
   return (
     <div>
+      <SEO title="Fotuber Medya — B2B Prodüksiyon" description="Kurumsal video prodüksiyon, sosyal medya içerikleri, reklam çekimleri ve marka kimliği hizmetleri. Fotuber Medya B2B portföyü." path="/fotuber-medya" />
       {/* Hero */}
       <section className="relative overflow-hidden border-b border-neutral-900">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(212,175,55,0.15),transparent_50%)]" />

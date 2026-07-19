@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Save, Wallet, ArrowRight, Lock } from "lucide-react";
+import { Save, Wallet, ArrowRight, Lock, AlertTriangle, TrendingUp, TrendingDown } from "lucide-react";
 import { toast } from "sonner";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -19,6 +19,18 @@ const AdminCashRegister = () => {
   const [close, setClose] = useState({ opening_balance: "", closing_balance: "", notes: "" });
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState([]);
+  const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [report, setReport] = useState(null);
+
+  const loadReport = async (ym) => {
+    try {
+      const [y, m] = ym.split("-").map(Number);
+      const { data } = await api.get("/cash-register/discrepancy", { params: { year: y, month: m } });
+      setReport(data);
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+
+  useEffect(() => { loadReport(reportMonth); }, [reportMonth]);
 
   const loadDay = async (d) => {
     try {
@@ -139,6 +151,94 @@ const AdminCashRegister = () => {
               <Save className="w-4 h-4 mr-2" /> {saving ? "Kaydediliyor..." : "Kaydet / Güncelle"}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Monthly Discrepancy Report */}
+      <Card className="border-slate-200">
+        <CardHeader>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600" /> Aylık Fark Raporu (Eksik / Fazla Çıkan Günler)
+              </CardTitle>
+              <p className="text-xs text-slate-500 mt-1">
+                Fiili kasa kapanışı ile beklenen kapanış (açılış + nakit gelir − nakit gider) arasındaki farkları gösterir.
+              </p>
+            </div>
+            <div>
+              <Input
+                type="month"
+                value={reportMonth}
+                onChange={(e) => setReportMonth(e.target.value)}
+                data-testid="discrepancy-month"
+                className="w-44"
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {report && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="p-3 rounded-lg border border-slate-200">
+                  <div className="text-xs text-slate-500">Kayıt Sayısı</div>
+                  <div className="text-xl font-semibold" data-testid="discrepancy-total-days">{report.days.length}</div>
+                </div>
+                <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50">
+                  <div className="text-xs text-emerald-700 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Toplam Fazla</div>
+                  <div className="text-xl font-semibold text-emerald-700" data-testid="discrepancy-total-over">{money(report.total_over)}</div>
+                </div>
+                <div className="p-3 rounded-lg border border-red-200 bg-red-50">
+                  <div className="text-xs text-red-700 flex items-center gap-1"><TrendingDown className="w-3 h-3" /> Toplam Eksik</div>
+                  <div className="text-xl font-semibold text-red-700" data-testid="discrepancy-total-short">{money(Math.abs(report.total_short))}</div>
+                </div>
+                <div className="p-3 rounded-lg border border-slate-200 bg-slate-50">
+                  <div className="text-xs text-slate-500">Net Fark</div>
+                  <div className={`text-xl font-semibold ${report.net_diff < 0 ? "text-red-700" : report.net_diff > 0 ? "text-emerald-700" : "text-slate-700"}`}>
+                    {report.net_diff >= 0 ? "+" : ""}{money(report.net_diff)}
+                  </div>
+                </div>
+              </div>
+
+              {report.days_with_diff.length === 0 ? (
+                <div className="p-6 text-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-medium">
+                  ✓ Bu ay hiç eksik/fazla çıkan gün yok — kasa hep tutmuş 🎉
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Tarih</TableHead>
+                      <TableHead className="text-right">Beklenen</TableHead>
+                      <TableHead className="text-right">Fiili</TableHead>
+                      <TableHead className="text-right">Fark</TableHead>
+                      <TableHead>Vardiya</TableHead>
+                      <TableHead>Not</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {report.days_with_diff.map((d) => (
+                      <TableRow key={d.date} data-testid={`discrepancy-row-${d.date}`}>
+                        <TableCell className="font-medium">{d.date}</TableCell>
+                        <TableCell className="text-right">{money(d.expected_closing)}</TableCell>
+                        <TableCell className="text-right">{money(d.actual_closing)}</TableCell>
+                        <TableCell className={`text-right font-semibold ${d.diff < 0 ? "text-red-700" : "text-emerald-700"}`}>
+                          {d.diff >= 0 ? "+" : ""}{money(d.diff)}
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-600">
+                          {d.updated_by_name || "—"}
+                          {d.updated_by_role === "staff" && <Badge className="ml-2 text-[10px] bg-slate-100 border-slate-300 text-slate-700">Personel</Badge>}
+                          {d.updated_by_role === "admin" && <Badge className="ml-2 text-[10px] bg-amber-100 border-amber-300 text-amber-700">Yönetici</Badge>}
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-500 max-w-xs truncate">{d.notes || "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
 

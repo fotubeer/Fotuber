@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /personel/
+Disallow: /personel-girisi
+Disallow: /giris
+Disallow: /kayit
+Disallow: /randevularim
+
+Sitemap: https://fotuber.com.tr/sitemap.xml

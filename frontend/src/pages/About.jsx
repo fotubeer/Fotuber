@@ -1,5 +1,6 @@
 import React from "react";
 import { useSettings } from "@/context/SettingsContext";
+import { SEO } from "@/components/SEO";
 
 const About = () => {
   const { settings } = useSettings();
@@ -9,6 +10,7 @@ const About = () => {
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-24">
+      <SEO title="Hakkımızda" description="Fotuber Studio — düğün, nişan, bebek, portre, klip ve podcast prodüksiyonunda deneyimli sinematik yaklaşımlı stüdyo." path="/hakkimizda" />
       <div className="text-xs tracking-[0.3em] uppercase text-[#d4af37] mb-3">Hakkımızda</div>
       <h1 className="hero-title text-5xl md:text-6xl mb-10">
         {brand} <em>Studio</em>

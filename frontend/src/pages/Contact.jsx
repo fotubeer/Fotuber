@@ -3,6 +3,7 @@ import { Phone, MessageCircle, Mail, MapPin, Instagram, Youtube, Facebook, Music
 import { Button } from "@/components/ui/button";
 import { useSettings } from "@/context/SettingsContext";
 import { instagramUrl, youtubeUrl, tiktokUrl, facebookUrl, extractMapEmbedSrc } from "@/lib/social";
+import { SEO } from "@/components/SEO";
 
 const formatPhone = (raw) => {
   if (!raw) return "";
@@ -31,6 +32,7 @@ const Contact = () => {
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-24">
+      <SEO title="İletişim" description="Fotuber Studio iletişim — telefon, WhatsApp, e-posta, adres, sosyal medya ve Google Haritalar konumu." path="/iletisim" />
       <div className="text-xs tracking-[0.3em] uppercase text-[#d4af37] mb-3">İletişim</div>
       <h1 className="hero-title text-5xl md:text-6xl mb-14">
         Bize <em>ulaşın</em>.

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Clock, ArrowRight } from "lucide-react";
+import { SEO } from "@/components/SEO";
 
 const Services = () => {
   const [services, setServices] = useState([]);
@@ -10,6 +11,7 @@ const Services = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-24">
+      <SEO title="Hizmetler" description="Fotuber Studio hizmetleri: düğün, nişan, bebek, aile, portre, kurumsal fotoğraf ve podcast prodüksiyonu paketleri." path="/hizmetler" />
       <div className="max-w-2xl mb-16">
         <div className="text-xs tracking-[0.3em] uppercase text-[#d4af37] mb-3">Hizmetler</div>
         <h1 className="hero-title text-5xl md:text-6xl mb-6">

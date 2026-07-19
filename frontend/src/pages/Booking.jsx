@@ -10,6 +10,7 @@ import { useSettings } from "@/context/SettingsContext";
 import { toast } from "sonner";
 import { Phone, MessageCircle, Info, Check, Clock, FileText, ChevronDown, ChevronUp } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { SEO } from "@/components/SEO";
 
 function isoDate(d) {
   const y = d.getFullYear();
@@ -74,6 +75,7 @@ const Booking = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-16">
+      <SEO title="Randevu Al" description="Fotuber Studio online randevu — takvimden tarih ve saat seçin, hizmet paketinizi belirleyin, sözleşmeyi onaylayın." path="/randevu" />
       <div className="text-xs tracking-[0.3em] uppercase text-[#d4af37] mb-3">Randevu Al</div>
       <h1 className="hero-title text-4xl md:text-6xl mb-12">
         Tarihinizi ve saatinizi <em>seçin</em>.

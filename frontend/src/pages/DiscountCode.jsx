@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { api, formatApiError } from "@/lib/api";
+import { SEO } from "@/components/SEO";
 import { useSettings } from "@/context/SettingsContext";
 import { instagramUrl, youtubeUrl, tiktokUrl, facebookUrl } from "@/lib/social";
 import { toast } from "sonner";
@@ -65,6 +66,7 @@ const DiscountCode = () => {
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-24">
+      <SEO title="İndirim Kodu" description="Fotuber Studio çekim paketlerine özel indirim kodları — sosyal medyayı takip edin, ilk çekiminizde avantajı kaçırmayın." path="/indirim-kodu" />
       <div className="text-xs tracking-[0.3em] uppercase text-[#d4af37] mb-3 flex items-center gap-2">
         <Sparkles className="w-3.5 h-3.5" /> Fotuber'da Sana Özel
       </div>

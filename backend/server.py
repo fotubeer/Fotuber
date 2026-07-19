@@ -6,6 +6,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 import os
 import logging
+import asyncio
 import uuid
 import bcrypt
 import jwt
@@ -105,6 +106,30 @@ def get_object(path: str) -> tuple[bytes, str]:
         )
     resp.raise_for_status()
     return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+
+
+def delete_object(path: str) -> bool:
+    key = init_storage()
+    if not key:
+        return False
+    try:
+        resp = requests.delete(
+            f"{STORAGE_URL}/objects/{path}",
+            headers={"X-Storage-Key": key},
+            timeout=60,
+        )
+        if resp.status_code == 403:
+            global _storage_key
+            _storage_key = None
+            key = init_storage()
+            resp = requests.delete(
+                f"{STORAGE_URL}/objects/{path}",
+                headers={"X-Storage-Key": key},
+                timeout=60,
+            )
+        return resp.status_code in (200, 204, 404)
+    except Exception:
+        return False
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -325,6 +350,16 @@ class SiteSettingsIn(BaseModel):
     h1_size_class: Optional[str] = None
     h2_size_class: Optional[str] = None
     body_size_class: Optional[str] = None
+    # SEO
+    seo_title: Optional[str] = None
+    seo_description: Optional[str] = None
+    seo_keywords: Optional[str] = None
+    seo_og_image_url: Optional[str] = None
+    seo_site_url: Optional[str] = None
+    seo_business_type: Optional[str] = None  # e.g. "PhotographyBusiness"
+    seo_opening_hours: Optional[str] = None  # e.g. "Mo-Sa 09:00-19:00"
+    seo_price_range: Optional[str] = None    # e.g. "₺₺"
+    google_search_console_verification: Optional[str] = None
 
 
 class TransactionIn(BaseModel):
@@ -348,7 +383,16 @@ async def on_startup():
     await db.blocked_slots.create_index([("date", 1), ("time", 1)], unique=True)
     await db.gallery.create_index([("category", 1), ("created_at", -1)])
     await db.notifications.create_index([("created_at", -1)])
+    await db.photo_albums.create_index("share_token", unique=True)
+    await db.album_photos.create_index([("album_id", 1), ("sort_order", 1)])
+    await db.photo_selections.create_index([("album_id", 1), ("user_id", 1)])
+    await db.guest_events.create_index("upload_token", unique=True)
+    await db.guest_uploads.create_index([("event_id", 1), ("user_id", 1)])
+    await db.guest_uploads.create_index("delete_at")
     init_storage()
+
+    # Start background cleanup task (deletes expired guest uploads once an hour)
+    asyncio.create_task(_cleanup_expired_uploads())
 
     # Seed default site settings if missing
     if await db.site_settings.count_documents({}) == 0:
@@ -1414,6 +1458,79 @@ async def cash_register_history(
     return items
 
 
+@api_router.get("/cash-register/discrepancy")
+async def cash_register_discrepancy(
+    admin: dict = Depends(require_admin),
+    year: int = 0,
+    month: int = 0,
+):
+    """Monthly report: days where actual closing ≠ expected closing (opening + cash_in − cash_out)."""
+    from calendar import monthrange
+    today = datetime.now(timezone.utc).date()
+    y = year or today.year
+    m = month or today.month
+    _, last_day = monthrange(y, m)
+    date_from = f"{y:04d}-{m:02d}-01"
+    date_to = f"{y:04d}-{m:02d}-{last_day:02d}"
+
+    closes = await db.cash_registers.find(
+        {"date": {"$gte": date_from, "$lte": date_to}}, {"_id": 0}
+    ).sort("date", 1).to_list(500)
+
+    tx = await db.transactions.find(
+        {"date": {"$gte": date_from, "$lte": date_to}, "payment_method": "cash"}, {"_id": 0}
+    ).to_list(5000)
+
+    by_day = {}
+    for t in tx:
+        d = t.get("date")
+        by_day.setdefault(d, {"cash_in": 0.0, "cash_out": 0.0})
+        amt = float(t.get("amount", 0) or 0)
+        if t.get("kind") == "income":
+            by_day[d]["cash_in"] += amt
+        elif t.get("kind") == "expense":
+            by_day[d]["cash_out"] += amt
+
+    rows = []
+    total_over = 0.0
+    total_short = 0.0
+    for c in closes:
+        d = c.get("date")
+        opening = float(c.get("opening_balance", 0) or 0)
+        actual = float(c.get("closing_balance", 0) or 0)
+        cash_in = by_day.get(d, {}).get("cash_in", 0.0)
+        cash_out = by_day.get(d, {}).get("cash_out", 0.0)
+        expected = opening + cash_in - cash_out
+        diff = actual - expected
+        if diff > 0:
+            total_over += diff
+        elif diff < 0:
+            total_short += diff
+        rows.append({
+            "date": d,
+            "opening": opening,
+            "cash_in": cash_in,
+            "cash_out": cash_out,
+            "expected_closing": expected,
+            "actual_closing": actual,
+            "diff": diff,
+            "notes": c.get("notes", ""),
+            "updated_by_name": c.get("updated_by_name", ""),
+            "updated_by_role": c.get("updated_by_role", ""),
+        })
+
+    days_missing = [d for d in rows if abs(d["diff"]) > 0.01]
+    return {
+        "year": y,
+        "month": m,
+        "days": rows,
+        "days_with_diff": days_missing,
+        "total_over": round(total_over, 2),
+        "total_short": round(total_short, 2),
+        "net_diff": round(total_over + total_short, 2),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Staff User Management (admin only)
 # ---------------------------------------------------------------------------
@@ -2068,6 +2185,578 @@ async def client_logo(logo_id: str):
 async def delete_client(cid: str, admin: dict = Depends(require_admin)):
     await db.clients.delete_one({"id": cid})
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Photo Selection Albums (Fotoğraf Seçim Sistemi)
+# — Photographer uploads up to 1500 photos per album.
+# — Customer (registered) picks photos and chooses product (album/print/canvas).
+# — Only the photo CODES are recorded (no re-uploads to admin).
+# — WhatsApp notification is sent to admin on submit.
+# ---------------------------------------------------------------------------
+from PIL import Image
+import io
+import secrets
+import zipfile
+
+
+PRINT_SIZES = ["10x15", "13x18", "15x21", "20x30", "30x40"]
+
+
+class PhotoAlbumIn(BaseModel):
+    couple_names: str = Field(min_length=2, max_length=200)
+    event_date: Optional[str] = None
+    notes: Optional[str] = ""
+    max_selections: Optional[int] = None
+    selection_deadline: Optional[str] = None
+
+
+class SelectionItemIn(BaseModel):
+    photo_id: str
+    photo_code: str
+    product_type: Literal["album", "print", "canvas"]
+    product_variant: Optional[str] = ""  # e.g. "20x30" or canvas model name
+    quantity: int = 1
+    notes: Optional[str] = ""
+
+
+class SelectionsBatchIn(BaseModel):
+    selections: List[SelectionItemIn] = []
+    customer_note: Optional[str] = ""
+
+
+def _resize_photo_for_preview(data: bytes) -> bytes:
+    """Downscale to max 1600px on long edge, JPEG 82%. Keeps preview clean but light."""
+    try:
+        img = Image.open(io.BytesIO(data))
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        img.thumbnail((1600, 1600), Image.LANCZOS)
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=82, optimize=True)
+        return out.getvalue()
+    except Exception:
+        return data
+
+
+def _extract_photo_code(filename: str) -> str:
+    """Get the code from the filename e.g. 'DSC00123.JPG' -> 'DSC00123'."""
+    base = (filename or "photo").rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    return base.strip().upper() or "PHOTO"
+
+
+@api_router.post("/admin/photo-albums")
+async def create_photo_album(payload: PhotoAlbumIn, admin: dict = Depends(require_admin)):
+    doc = {
+        "id": new_id(),
+        "couple_names": payload.couple_names.strip(),
+        "event_date": payload.event_date,
+        "notes": payload.notes or "",
+        "max_selections": payload.max_selections,
+        "selection_deadline": payload.selection_deadline,
+        "share_token": secrets.token_urlsafe(16),
+        "photo_count": 0,
+        "created_at": now_iso(),
+        "created_by": admin.get("id"),
+        "created_by_name": admin.get("name"),
+        "is_locked": False,
+    }
+    await db.photo_albums.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/admin/photo-albums")
+async def list_photo_albums(admin: dict = Depends(require_admin)):
+    items = await db.photo_albums.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return items
+
+
+@api_router.get("/admin/photo-albums/{aid}")
+async def get_admin_photo_album(aid: str, admin: dict = Depends(require_admin)):
+    album = await db.photo_albums.find_one({"id": aid}, {"_id": 0})
+    if not album:
+        raise HTTPException(status_code=404, detail="Albüm bulunamadı")
+    photos = await db.album_photos.find({"album_id": aid}, {"_id": 0}).sort("sort_order", 1).to_list(2000)
+    return {"album": album, "photos": photos}
+
+
+@api_router.patch("/admin/photo-albums/{aid}")
+async def update_photo_album(aid: str, payload: PhotoAlbumIn, admin: dict = Depends(require_admin)):
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    await db.photo_albums.update_one({"id": aid}, {"$set": updates})
+    return await db.photo_albums.find_one({"id": aid}, {"_id": 0})
+
+
+@api_router.delete("/admin/photo-albums/{aid}")
+async def delete_photo_album(aid: str, admin: dict = Depends(require_admin)):
+    photos = await db.album_photos.find({"album_id": aid}).to_list(2000)
+    for p in photos:
+        if p.get("storage_path"):
+            delete_object(p["storage_path"])
+    await db.album_photos.delete_many({"album_id": aid})
+    await db.photo_selections.delete_many({"album_id": aid})
+    await db.photo_albums.delete_one({"id": aid})
+    return {"ok": True}
+
+
+@api_router.post("/admin/photo-albums/{aid}/photos")
+async def upload_album_photos(
+    aid: str,
+    files: List[UploadFile] = File(...),
+    admin: dict = Depends(require_admin),
+):
+    album = await db.photo_albums.find_one({"id": aid})
+    if not album:
+        raise HTTPException(status_code=404, detail="Albüm bulunamadı")
+    if album.get("photo_count", 0) + len(files) > 1500:
+        raise HTTPException(status_code=400, detail="Albüm başına en fazla 1500 fotoğraf yükleyebilirsiniz")
+
+    added = []
+    now_ord = int(datetime.now(timezone.utc).timestamp())
+    for i, f in enumerate(files):
+        data = await f.read()
+        if not data:
+            continue
+        # server-side resize for preview (keeps disk tiny + fast client)
+        preview = _resize_photo_for_preview(data)
+        code = _extract_photo_code(f.filename)
+        pid = new_id()
+        path = f"albums/{aid}/{pid}.jpg"
+        try:
+            put_object(path, preview, "image/jpeg")
+        except Exception as e:
+            logger.exception("Photo upload failed: %s", e)
+            continue
+        doc = {
+            "id": pid,
+            "album_id": aid,
+            "code": code,
+            "original_filename": f.filename,
+            "storage_path": path,
+            "size": len(preview),
+            "sort_order": now_ord + i,
+            "uploaded_at": now_iso(),
+        }
+        await db.album_photos.insert_one(doc)
+        doc.pop("_id", None)
+        added.append(doc)
+
+    await db.photo_albums.update_one({"id": aid}, {"$inc": {"photo_count": len(added)}})
+    return {"added": len(added), "photos": added}
+
+
+@api_router.delete("/admin/photo-albums/{aid}/photos/{pid}")
+async def delete_album_photo(aid: str, pid: str, admin: dict = Depends(require_admin)):
+    photo = await db.album_photos.find_one({"id": pid, "album_id": aid})
+    if not photo:
+        raise HTTPException(status_code=404, detail="Fotoğraf bulunamadı")
+    if photo.get("storage_path"):
+        delete_object(photo["storage_path"])
+    await db.album_photos.delete_one({"id": pid})
+    await db.photo_selections.delete_many({"album_id": aid, "photo_id": pid})
+    await db.photo_albums.update_one({"id": aid}, {"$inc": {"photo_count": -1}})
+    return {"ok": True}
+
+
+@api_router.get("/admin/photo-albums/{aid}/selections")
+async def list_album_selections(aid: str, admin: dict = Depends(require_admin)):
+    sels = await db.photo_selections.find({"album_id": aid}, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    # group by user for admin readability
+    users = {}
+    for s in sels:
+        uid = s.get("user_id")
+        if uid not in users:
+            users[uid] = {
+                "user_id": uid,
+                "user_name": s.get("user_name"),
+                "user_phone": s.get("user_phone"),
+                "user_email": s.get("user_email"),
+                "customer_note": s.get("customer_note"),
+                "created_at": s.get("created_at"),
+                "items": [],
+            }
+        users[uid]["items"].append(s)
+    return {"count": len(sels), "by_user": list(users.values())}
+
+
+# --- Public album endpoints (require any authenticated user) ---
+@api_router.get("/photo-albums/{token}")
+async def public_get_album(token: str, user: dict = Depends(get_current_user)):
+    album = await db.photo_albums.find_one({"share_token": token}, {"_id": 0})
+    if not album:
+        raise HTTPException(status_code=404, detail="Albüm bulunamadı")
+    photos = await db.album_photos.find({"album_id": album["id"]}, {"_id": 0, "storage_path": 0}).sort("sort_order", 1).to_list(2000)
+    existing = await db.photo_selections.find(
+        {"album_id": album["id"], "user_id": user.get("id")}, {"_id": 0}
+    ).to_list(2000)
+    canvas_opts = await db.product_options.find(
+        {"kind": "canvas", "active": True}, {"_id": 0}
+    ).sort("sort_order", 1).to_list(200)
+    album_opts = await db.product_options.find(
+        {"kind": "album", "active": True}, {"_id": 0}
+    ).sort("sort_order", 1).to_list(200)
+    return {
+        "album": album,
+        "photos": photos,
+        "print_sizes": PRINT_SIZES,
+        "canvas_options": canvas_opts,
+        "album_options": album_opts,
+        "selections": existing,
+    }
+
+
+@api_router.get("/photo-albums/{token}/file/{pid}")
+async def public_get_album_photo(token: str, pid: str, user: dict = Depends(get_current_user)):
+    album = await db.photo_albums.find_one({"share_token": token})
+    if not album:
+        raise HTTPException(status_code=404, detail="Albüm bulunamadı")
+    photo = await db.album_photos.find_one({"id": pid, "album_id": album["id"]})
+    if not photo:
+        raise HTTPException(status_code=404, detail="Fotoğraf bulunamadı")
+    data, ct = get_object(photo["storage_path"])
+    return Response(
+        content=data,
+        media_type=ct,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@api_router.post("/photo-albums/{token}/selections")
+async def public_submit_selections(
+    token: str,
+    payload: SelectionsBatchIn,
+    user: dict = Depends(get_current_user),
+):
+    album = await db.photo_albums.find_one({"share_token": token})
+    if not album:
+        raise HTTPException(status_code=404, detail="Albüm bulunamadı")
+    if album.get("is_locked"):
+        raise HTTPException(status_code=400, detail="Bu albümde seçim yapma süresi doldu")
+    if album.get("max_selections") and len(payload.selections) > album["max_selections"]:
+        raise HTTPException(status_code=400, detail=f"En fazla {album['max_selections']} seçim yapabilirsiniz")
+
+    # Overwrite user's previous selections for this album
+    await db.photo_selections.delete_many({"album_id": album["id"], "user_id": user.get("id")})
+    docs = []
+    for sel in payload.selections:
+        docs.append({
+            "id": new_id(),
+            "album_id": album["id"],
+            "album_couple": album.get("couple_names"),
+            "album_event_date": album.get("event_date"),
+            "user_id": user.get("id"),
+            "user_name": user.get("name"),
+            "user_phone": user.get("phone", ""),
+            "user_email": user.get("email"),
+            "photo_id": sel.photo_id,
+            "photo_code": sel.photo_code,
+            "product_type": sel.product_type,
+            "product_variant": sel.product_variant or "",
+            "quantity": max(1, sel.quantity),
+            "notes": sel.notes or "",
+            "customer_note": payload.customer_note or "",
+            "created_at": now_iso(),
+        })
+    if docs:
+        await db.photo_selections.insert_many(docs)
+
+    # Notify admin via WhatsApp/SMS (best-effort)
+    try:
+        from collections import Counter
+        summary = Counter([f"{d['product_type']}·{d.get('product_variant') or '-'}" for d in docs])
+        breakdown = ", ".join([f"{k}={v}" for k, v in summary.items()])
+        title = "📸 Yeni Fotoğraf Seçimi"
+        body = (
+            f"Albüm: {album.get('couple_names')} · {album.get('event_date') or ''}\n"
+            f"Müşteri: {user.get('name')} ({user.get('phone', '-')})\n"
+            f"Toplam Seçim: {len(docs)}\n"
+            f"Ürün Dağılımı: {breakdown or 'yok'}\n"
+            f"Panel: /admin/albumler ile detayları görün."
+        )
+        await _try_send_external_notification(title, body)
+        # In-app notification too
+        await db.notifications.insert_one({
+            "id": new_id(),
+            "type": "selection",
+            "title": "Yeni Fotoğraf Seçimi",
+            "body": f"{user.get('name')} — {album.get('couple_names')} albümünde {len(docs)} seçim yaptı",
+            "read": False,
+            "created_at": now_iso(),
+        })
+    except Exception:
+        logger.exception("Selection notification failed")
+
+    return {"ok": True, "count": len(docs)}
+
+
+# ---------------------------------------------------------------------------
+# Product Options (Albüm & Kanvas Tablo Modelleri — admin managed)
+# ---------------------------------------------------------------------------
+class ProductOptionIn(BaseModel):
+    kind: Literal["album", "canvas"]
+    name: str = Field(min_length=1, max_length=100)
+    size: Optional[str] = ""
+    price: Optional[float] = 0
+    description: Optional[str] = ""
+    active: bool = True
+    sort_order: Optional[int] = 0
+
+
+@api_router.get("/product-options")
+async def public_list_product_options(kind: Optional[str] = None):
+    q = {"active": True}
+    if kind:
+        q["kind"] = kind
+    items = await db.product_options.find(q, {"_id": 0}).sort("sort_order", 1).to_list(500)
+    return {"items": items, "print_sizes": PRINT_SIZES}
+
+
+@api_router.get("/admin/product-options")
+async def admin_list_product_options(admin: dict = Depends(require_admin)):
+    items = await db.product_options.find({}, {"_id": 0}).sort([("kind", 1), ("sort_order", 1)]).to_list(500)
+    return items
+
+
+@api_router.post("/admin/product-options")
+async def admin_create_product_option(payload: ProductOptionIn, admin: dict = Depends(require_admin)):
+    doc = {**payload.model_dump(), "id": new_id(), "created_at": now_iso()}
+    await db.product_options.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.patch("/admin/product-options/{oid}")
+async def admin_update_product_option(oid: str, payload: ProductOptionIn, admin: dict = Depends(require_admin)):
+    await db.product_options.update_one({"id": oid}, {"$set": payload.model_dump()})
+    return await db.product_options.find_one({"id": oid}, {"_id": 0})
+
+
+@api_router.delete("/admin/product-options/{oid}")
+async def admin_delete_product_option(oid: str, admin: dict = Depends(require_admin)):
+    await db.product_options.delete_one({"id": oid})
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Guest Uploads via QR (Etkinlik Fotoğraf/Video Toplama)
+# — Guests scan QR at wedding tables, register (KVKK), upload up to 200MB each,
+#   files auto-delete after N days (default 3).
+# ---------------------------------------------------------------------------
+class GuestEventIn(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    couple_names: Optional[str] = ""
+    event_date: Optional[str] = None
+    max_size_per_user_mb: int = 200
+    retention_days: int = 3
+    welcome_message: Optional[str] = ""
+
+
+@api_router.post("/admin/guest-events")
+async def create_guest_event(payload: GuestEventIn, admin: dict = Depends(require_admin)):
+    token = secrets.token_urlsafe(10)
+    now = datetime.now(timezone.utc)
+    delete_at = (now + timedelta(days=int(payload.retention_days))).isoformat()
+    doc = {
+        "id": new_id(),
+        "name": payload.name.strip(),
+        "couple_names": payload.couple_names or "",
+        "event_date": payload.event_date,
+        "welcome_message": payload.welcome_message or "",
+        "max_size_per_user_mb": max(10, min(1000, payload.max_size_per_user_mb)),
+        "retention_days": max(1, min(30, payload.retention_days)),
+        "upload_token": token,
+        "delete_at": delete_at,
+        "upload_count": 0,
+        "total_size": 0,
+        "created_at": now_iso(),
+        "created_by": admin.get("id"),
+    }
+    await db.guest_events.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/admin/guest-events")
+async def admin_list_guest_events(admin: dict = Depends(require_admin)):
+    items = await db.guest_events.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return items
+
+
+@api_router.get("/admin/guest-events/{eid}")
+async def admin_get_guest_event(eid: str, admin: dict = Depends(require_admin)):
+    ev = await db.guest_events.find_one({"id": eid}, {"_id": 0})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+    uploads = await db.guest_uploads.find({"event_id": eid}, {"_id": 0, "storage_path": 0}).sort("uploaded_at", -1).to_list(2000)
+    return {"event": ev, "uploads": uploads}
+
+
+@api_router.delete("/admin/guest-events/{eid}")
+async def admin_delete_guest_event(eid: str, admin: dict = Depends(require_admin)):
+    uploads = await db.guest_uploads.find({"event_id": eid}).to_list(2000)
+    for up in uploads:
+        if up.get("storage_path"):
+            delete_object(up["storage_path"])
+    await db.guest_uploads.delete_many({"event_id": eid})
+    await db.guest_events.delete_one({"id": eid})
+    return {"ok": True}
+
+
+@api_router.post("/admin/guest-events/{eid}/extend")
+async def admin_extend_guest_event(eid: str, days: int = 3, admin: dict = Depends(require_admin)):
+    ev = await db.guest_events.find_one({"id": eid})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+    new_delete = (datetime.now(timezone.utc) + timedelta(days=max(1, min(30, days)))).isoformat()
+    await db.guest_events.update_one({"id": eid}, {"$set": {"delete_at": new_delete}})
+    await db.guest_uploads.update_many({"event_id": eid}, {"$set": {"delete_at": new_delete}})
+    return {"delete_at": new_delete}
+
+
+@api_router.get("/admin/guest-events/{eid}/download-zip")
+async def admin_download_event_zip(eid: str, admin: dict = Depends(require_admin)):
+    ev = await db.guest_events.find_one({"id": eid})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+    uploads = await db.guest_uploads.find({"event_id": eid}).to_list(5000)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+        for up in uploads:
+            try:
+                data, _ct = get_object(up["storage_path"])
+                safe_name = (up.get("user_name") or "misafir").replace("/", "_")
+                arcname = f"{safe_name}/{up.get('filename') or up['id']}"
+                zf.writestr(arcname, data)
+            except Exception:
+                continue
+    buf.seek(0)
+    fname = f"{ev.get('name', 'etkinlik').replace(' ', '_')}_{ev.get('event_date') or ''}.zip"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+# Public guest info (for QR landing)
+@api_router.get("/guest-events/{token}")
+async def public_get_guest_event(token: str):
+    ev = await db.guest_events.find_one({"upload_token": token}, {"_id": 0})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+    expired = ev.get("delete_at") and ev["delete_at"] < now_iso()
+    return {
+        "name": ev.get("name"),
+        "couple_names": ev.get("couple_names"),
+        "event_date": ev.get("event_date"),
+        "welcome_message": ev.get("welcome_message"),
+        "max_size_per_user_mb": ev.get("max_size_per_user_mb", 200),
+        "retention_days": ev.get("retention_days", 3),
+        "delete_at": ev.get("delete_at"),
+        "expired": bool(expired),
+    }
+
+
+@api_router.get("/guest-events/{token}/my-usage")
+async def guest_my_usage(token: str, user: dict = Depends(get_current_user)):
+    ev = await db.guest_events.find_one({"upload_token": token})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+    used_agg = await db.guest_uploads.aggregate([
+        {"$match": {"event_id": ev["id"], "user_id": user.get("id")}},
+        {"$group": {"_id": None, "total": {"$sum": "$size"}, "count": {"$sum": 1}}},
+    ]).to_list(1)
+    used = used_agg[0]["total"] if used_agg else 0
+    count = used_agg[0]["count"] if used_agg else 0
+    limit = ev.get("max_size_per_user_mb", 200) * 1024 * 1024
+    return {"used_bytes": used, "used_files": count, "limit_bytes": limit, "remaining_bytes": max(0, limit - used)}
+
+
+@api_router.post("/guest-events/{token}/upload")
+async def guest_upload_file(
+    token: str,
+    file: UploadFile = File(...),
+    kvkk_accepted: bool = Form(True),
+    user: dict = Depends(get_current_user),
+):
+    ev = await db.guest_events.find_one({"upload_token": token})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+    if ev.get("delete_at") and ev["delete_at"] < now_iso():
+        raise HTTPException(status_code=410, detail="Bu etkinlik için yükleme süresi doldu")
+    if not kvkk_accepted:
+        raise HTTPException(status_code=400, detail="KVKK onayı zorunludur")
+
+    # Check user's used quota
+    used_agg = await db.guest_uploads.aggregate([
+        {"$match": {"event_id": ev["id"], "user_id": user.get("id")}},
+        {"$group": {"_id": None, "total": {"$sum": "$size"}}},
+    ]).to_list(1)
+    used = used_agg[0]["total"] if used_agg else 0
+    limit = ev.get("max_size_per_user_mb", 200) * 1024 * 1024
+
+    data = await file.read()
+    size = len(data)
+    if size == 0:
+        raise HTTPException(status_code=400, detail="Boş dosya")
+    if used + size > limit:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Kotanızı aştınız. Kalan: {(limit - used) // (1024*1024)} MB",
+        )
+
+    uid = new_id()
+    path = f"events/{ev['id']}/{uid}_{(file.filename or 'file').replace('/', '_')[:100]}"
+    put_object(path, data, file.content_type or "application/octet-stream")
+    doc = {
+        "id": uid,
+        "event_id": ev["id"],
+        "user_id": user.get("id"),
+        "user_name": user.get("name"),
+        "user_phone": user.get("phone", ""),
+        "user_email": user.get("email"),
+        "filename": file.filename,
+        "storage_path": path,
+        "size": size,
+        "mime_type": file.content_type or "application/octet-stream",
+        "kvkk_accepted": True,
+        "kvkk_accepted_at": now_iso(),
+        "uploaded_at": now_iso(),
+        "delete_at": ev.get("delete_at"),
+    }
+    await db.guest_uploads.insert_one(doc)
+    await db.guest_events.update_one(
+        {"id": ev["id"]},
+        {"$inc": {"upload_count": 1, "total_size": size}},
+    )
+    return {"ok": True, "size": size, "remaining": max(0, limit - used - size)}
+
+
+# ---------------------------------------------------------------------------
+# Cleanup task — auto-delete expired guest uploads
+# ---------------------------------------------------------------------------
+async def _cleanup_expired_uploads():
+    while True:
+        try:
+            now = now_iso()
+            expired = await db.guest_uploads.find({"delete_at": {"$lt": now}}).to_list(1000)
+            for up in expired:
+                try:
+                    if up.get("storage_path"):
+                        delete_object(up["storage_path"])
+                    await db.guest_uploads.delete_one({"id": up["id"]})
+                    await db.guest_events.update_one(
+                        {"id": up.get("event_id")},
+                        {"$inc": {"upload_count": -1, "total_size": -int(up.get("size", 0))}},
+                    )
+                except Exception:
+                    logger.exception("Cleanup failed for %s", up.get("id"))
+            if expired:
+                logger.info("Deleted %d expired guest uploads", len(expired))
+        except Exception:
+            logger.exception("cleanup loop error")
+        await asyncio.sleep(3600)  # every hour
 
 
 # ---------------------------------------------------------------------------

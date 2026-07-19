@@ -1,5 +1,6 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { HelmetProvider } from "react-helmet-async";
 import { AuthProvider } from "@/context/AuthContext";
 import { SettingsProvider } from "@/context/SettingsContext";
 import { Toaster } from "@/components/ui/sonner";
@@ -35,9 +36,15 @@ import AdminDiscountCodes from "@/pages/admin/AdminDiscountCodes";
 import AdminFotuberMedya from "@/pages/admin/AdminFotuberMedya";
 import AdminCashRegister from "@/pages/admin/AdminCashRegister";
 import AdminUsers from "@/pages/admin/AdminUsers";
+import AdminAlbums from "@/pages/admin/AdminAlbums";
+import AdminAlbumDetail from "@/pages/admin/AdminAlbumDetail";
+import AdminGuestEvents from "@/pages/admin/AdminGuestEvents";
+import AdminProductOptions from "@/pages/admin/AdminProductOptions";
 
 import DiscountCode from "@/pages/DiscountCode";
 import FotuberMedya from "@/pages/FotuberMedya";
+import AlbumViewer from "@/pages/AlbumViewer";
+import GuestUpload from "@/pages/GuestUpload";
 
 const P = ({ children }) => <PublicLayout>{children}</PublicLayout>;
 const AdminGuard = ({ children }) => (
@@ -51,8 +58,9 @@ function App() {
   return (
     <div className="App">
       <BrowserRouter>
-        <SettingsProvider>
-          <AuthProvider>
+        <HelmetProvider>
+          <SettingsProvider>
+            <AuthProvider>
             <Routes>
               {/* Public */}
               <Route path="/" element={<P><Home /></P>} />
@@ -63,6 +71,10 @@ function App() {
               <Route path="/randevu" element={<P><Booking /></P>} />
               <Route path="/indirim-kodu" element={<P><DiscountCode /></P>} />
               <Route path="/fotuber-medya" element={<P><FotuberMedya /></P>} />
+              {/* Public photo selection album (auth required inside component) */}
+              <Route path="/albumler/:token" element={<AlbumViewer />} />
+              {/* Public guest upload via QR (auth required for uploads) */}
+              <Route path="/etkinlik/:token" element={<GuestUpload />} />
               <Route path="/giris" element={<P><Login /></P>} />
               <Route path="/kayit" element={<P><Register /></P>} />
               <Route path="/personel-girisi" element={<StaffLogin />} />
@@ -94,12 +106,17 @@ function App() {
               <Route path="/admin/ayarlar" element={<AdminGuard><AdminSettings /></AdminGuard>} />
               <Route path="/admin/indirim-kodlari" element={<AdminGuard><AdminDiscountCodes /></AdminGuard>} />
               <Route path="/admin/fotuber-medya" element={<AdminGuard><AdminFotuberMedya /></AdminGuard>} />
+              <Route path="/admin/albumler" element={<AdminGuard><AdminAlbums /></AdminGuard>} />
+              <Route path="/admin/albumler/:id" element={<AdminGuard><AdminAlbumDetail /></AdminGuard>} />
+              <Route path="/admin/etkinlikler" element={<AdminGuard><AdminGuestEvents /></AdminGuard>} />
+              <Route path="/admin/urun-secenekleri" element={<AdminGuard><AdminProductOptions /></AdminGuard>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
             <Toaster position="top-right" richColors />
           </AuthProvider>
         </SettingsProvider>
+        </HelmetProvider>
       </BrowserRouter>
     </div>
   );

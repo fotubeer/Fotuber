@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api, galleryFileUrl } from "@/lib/api";
+import { SEO } from "@/components/SEO";
 
 const Gallery = () => {
   const [categories, setCategories] = useState([]);
@@ -18,6 +19,7 @@ const Gallery = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-24">
+      <SEO title="Galeri" description="Fotuber Studio galerisi — düğün, nişan, bebek, aile, portre ve etkinlik çekimlerinden seçkiler." path="/galeri" />
       <div className="text-xs tracking-[0.3em] uppercase text-[#d4af37] mb-3">Galeri</div>
       <h1 className="hero-title text-5xl md:text-6xl mb-10">
         <em>Işıkta</em> yakalanan anlar.

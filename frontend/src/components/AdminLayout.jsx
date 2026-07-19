@@ -3,6 +3,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, CalendarDays, CalendarClock, Users, Wallet,
   ImageIcon, Camera, LogOut, Menu, X, Package, Settings, Coins, Ticket, Film, KeyRound, ArrowLeftRight,
+  Images, QrCode, Frame,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
@@ -14,6 +15,9 @@ const items = [
   { to: "/admin/dashboard", label: "Genel Bakış", icon: LayoutDashboard },
   { to: "/admin/randevular", label: "Randevular", icon: CalendarDays },
   { to: "/admin/takvim", label: "Takvim & Kapatma", icon: CalendarClock },
+  { to: "/admin/albumler", label: "Fotoğraf Seçim Albümleri", icon: Images },
+  { to: "/admin/etkinlikler", label: "Etkinlik QR (Misafir Yükleme)", icon: QrCode },
+  { to: "/admin/urun-secenekleri", label: "Tablo & Albüm Modelleri", icon: Frame },
   { to: "/admin/finans", label: "Finans", icon: Wallet },
   { to: "/admin/nakit-akisi", label: "Nakit Akışı", icon: Coins, ownerOnly: true },
   { to: "/admin/kasa-devir", label: "Kasa Devir Defteri", icon: ArrowLeftRight, ownerOnly: true },
