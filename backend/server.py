@@ -1308,8 +1308,24 @@ async def export_transactions_pdf(
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import mm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
     from io import BytesIO
     from urllib.parse import quote
+
+    # Register Turkish + ₺ capable font once (DejaVu Sans supports Turkish characters and TL symbol)
+    FONT_REG = "FotuberSans"
+    FONT_BOLD = "FotuberSans-Bold"
+    if FONT_REG not in pdfmetrics.getRegisteredFontNames():
+        try:
+            pdfmetrics.registerFont(TTFont(FONT_REG, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"))
+            pdfmetrics.registerFont(TTFont(FONT_BOLD, "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"))
+        except Exception:
+            try:
+                pdfmetrics.registerFont(TTFont(FONT_REG, "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"))
+                pdfmetrics.registerFont(TTFont(FONT_BOLD, "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"))
+            except Exception:
+                FONT_REG, FONT_BOLD = "Helvetica", "Helvetica-Bold"
 
     date_from, date_to, label = _period_bounds(period)
     items = await db.transactions.find(
@@ -1321,8 +1337,10 @@ async def export_transactions_pdf(
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle("t", parent=styles["Title"], fontSize=18, textColor=colors.HexColor("#0F172A"))
-    sub_style = ParagraphStyle("s", parent=styles["Normal"], fontSize=10, textColor=colors.HexColor("#666666"))
+    title_style = ParagraphStyle("t", parent=styles["Title"], fontName=FONT_BOLD, fontSize=18, textColor=colors.HexColor("#0F172A"))
+    sub_style = ParagraphStyle("s", parent=styles["Normal"], fontName=FONT_REG, fontSize=10, textColor=colors.HexColor("#666666"))
+    body_style = ParagraphStyle("b", parent=styles["Normal"], fontName=FONT_REG, fontSize=10)
+    h3_style = ParagraphStyle("h3", parent=styles["Heading3"], fontName=FONT_BOLD, fontSize=12)
 
     story = [
         Paragraph(f"{brand} — Nakit Akışı Raporu", title_style),
@@ -1352,7 +1370,8 @@ async def export_transactions_pdf(
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F172A")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 0), FONT_BOLD),
+        ("FONTNAME", (0, 1), (-1, -1), FONT_REG),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
         ("ALIGN", (5, 1), (5, -1), "RIGHT"),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#F8FAFC"), colors.white]),
@@ -1365,9 +1384,9 @@ async def export_transactions_pdf(
 
     story += [
         Spacer(1, 6*mm),
-        Paragraph(f"<b>Toplam Gelir:</b> ₺{total_in:,.2f}".replace(",", "."), styles["Normal"]),
-        Paragraph(f"<b>Toplam Gider:</b> ₺{total_out:,.2f}".replace(",", "."), styles["Normal"]),
-        Paragraph(f"<b>NET:</b> ₺{(total_in - total_out):,.2f}".replace(",", "."), styles["Heading3"]),
+        Paragraph(f"<b>Toplam Gelir:</b> ₺{total_in:,.2f}".replace(",", "."), body_style),
+        Paragraph(f"<b>Toplam Gider:</b> ₺{total_out:,.2f}".replace(",", "."), body_style),
+        Paragraph(f"<b>NET:</b> ₺{(total_in - total_out):,.2f}".replace(",", "."), h3_style),
     ]
 
     doc.build(story)

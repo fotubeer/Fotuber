@@ -38,8 +38,8 @@ const AdminAlbumDetail = () => {
   const handleUpload = async (fileList) => {
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList);
-    // Upload in batches of 20 to keep it snappy and avoid single huge request timeouts
-    const batchSize = 20;
+    // Upload in small batches (5) — big batches with Pillow resize exceed ingress timeouts.
+    const batchSize = 5;
     setUploading(true);
     setProgress({ done: 0, total: files.length });
     try {
@@ -48,7 +48,6 @@ const AdminAlbumDetail = () => {
         const fd = new FormData();
         chunk.forEach((f) => fd.append("files", f));
         await api.post(`/admin/photo-albums/${id}/photos`, fd, {
-          headers: { "Content-Type": "multipart/form-data" },
           timeout: 600000,
         });
         setProgress({ done: Math.min(i + chunk.length, files.length), total: files.length });

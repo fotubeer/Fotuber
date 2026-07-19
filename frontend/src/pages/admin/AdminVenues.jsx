@@ -260,7 +260,7 @@ const AdminVenues = () => {
                 <div>
                   <Label className="text-sm font-semibold mb-1 block">Organizasyon Türü</Label>
                   <Select value={activating.event_type} onValueChange={(v) => setActivating({ ...activating, event_type: v })}>
-                    <SelectTrigger data-testid="activate-type"><SelectValue /></SelectTrigger>
+                    <SelectTrigger data-testid="activate-type"><SelectValue placeholder="Seçin" /></SelectTrigger>
                     <SelectContent>
                       {EVENT_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
                     </SelectContent>

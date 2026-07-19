@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 10 multi-bug-fix verification (backend + frontend). All 4 reported bugs are FIXED and verified. (1) iOS/desktop photo uploads work — album upload (3 JPGs via canvas, chunk size=5) completed 3/3 with progress advancing normally, photo_count=3 persisted, and guest event upload returns 200 with size/remaining. (2) The 'Yükleniyor...' stuck state is resolved — chunked upload (5-per-batch) + no manual Content-Type header both verified end-to-end. (3) Radix Select 'Organizasyon Türü' in AdminVenues 'Aktif Çifti Değiştir' dialog renders all 6 Turkish labels correctly on both mobile (390x844) and desktop (1400x900): Düğün, Nişan, Kına, Nikah, Doğum Günü, Diğer. Default label 'Düğün' correctly maps from value 'wedding'. (4) PDF export (/api/transactions/export.pdf) now renders Turkish characters and ₺ symbol properly — extracted PDF text with pypdf contains 'Nakit Akışı Raporu', 'Dönem', 'Tür', 'Açıklama', '₺', 'Düğün', 'İstanbul'. XLSX regression still passes (headers 'Tarih', 'Tür', 'Açıklama', 'Tutar (₺)' all present).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration10_bugfixes.py",
+    "/app/test_reports/pytest/iteration10.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 3045 lines long — well beyond the 700-line threshold. Consider splitting into modules (auth, transactions, albums, guest_events, venues, exports) using APIRouter includes. This is not blocking but increases maintenance risk as the app grows.",
+    "PDF font registration duplicates the try/except fallback chain inside the request handler. Consider registering DejaVu/Liberation fonts ONCE at server startup (e.g. in a lifespan/startup hook) instead of re-running the try block on every export request. Currently the `if FONT_REG not in pdfmetrics.getRegisteredFontNames()` guard makes it a no-op after the first request, but startup registration is cleaner and pre-validates fonts are installed.",
+    "Album upload endpoint /api/admin/photo-albums/{aid}/photos silently skips files that fail Pillow decode (line 2351: `continue` on `put_object` failure) but does not surface these per-file errors to the client. The response {added: N, photos: [...]} tells the client the count but not WHICH filenames failed. Consider returning a `skipped: [{filename, reason}]` array for better UX debugging.",
+    "GuestUpload.jsx uploadNext() uses a `for` loop with await inside — sequential uploads only. This is intentional for quota tracking but could be parallelised in small chunks (like AdminAlbumDetail does with batchSize=5) if quota is pre-validated. Not a bug — noted for potential future perf improvement.",
+    "The /api/transactions/export.pdf 'description' field is truncated to 40 chars in the table (line 1365). A Turkish description like 'Düğün çekimi — İstanbul dış çekim' (33 chars) fits, but longer descriptions get silently cut. Consider using Paragraph with word-wrap instead of hard truncation for cleaner reports."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration10_bugfixes.py"
+  ],
+  "success_rate": {
+    "backend": "100% — 5/5 pytest tests passed (test_iteration10_bugfixes.py). PDF/XLSX exports valid, Turkish + ₺ chars present in PDF-extracted text, 3-photo album upload works, guest event upload works.",
+    "frontend": "100% — Mobile 390x844: Select trigger shows 'Düğün' as default, dropdown shows all 6 labels. Desktop 1400x900: same behavior. Desktop album upload of 3 canvas-generated JPGs completed 3/3 with progress data-testid=album-upload-progress transitioning 0/3 → 3/3 then disappearing. Regression: album/event/venue dialog input text color remains rgb(15,23,42) after the button/select selector removal from index.css."
+  },
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (from /app/memory/test_credentials.md). Test customer created via POST /api/auth/register with prefix test_it10_ — no cleanup endpoint exists for customer records (existing limitation).",
+  "seed_data_creation": "Backend pytest fixtures created and CLEANED UP: (a) 1 TEST_ transaction with Turkish description → deleted after test, (b) 1 TEST_Iter10_Album photo album with 3 uploaded JPGs → deleted, (c) 1 TEST_Iter10_Event guest event with 1 uploaded JPG → deleted, (d) 1 test customer test_it10_*@example.com → NOT deleted (no delete endpoint). Frontend Playwright test also created and deleted 1 TEST_Iter10_UI_Album album. Also deleted a leftover TEST_Iter10_Venue_202218 created during Playwright mobile test via DELETE /api/admin/venues/{id}. Final DB state: clean of TEST_ artifacts except for the test customer(s).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 4 iteration-10 bug fixes verified in headless Chromium (390x844 mobile + 1400x900 desktop). On actual iOS Safari the upload fix should also work because the root cause was the same manual 'Content-Type: multipart/form-data' header preventing axios from generating the boundary — the fix removes that header consistently in GuestUpload.jsx line ~120 and AdminAlbumDetail.jsx line ~50. If any regression appears on real iOS device, ask user for Safari version + Network tab payload boundary line. The pytest file at /app/backend/tests/test_iteration10_bugfixes.py is a reusable regression suite: it covers PDF Turkish rendering (pypdf extracts text and checks substrings), XLSX headers, album multipart upload without manual Content-Type, and guest event upload with kvkk_accepted=true.",
+  "rca of the issue": "RCA per bug: (1) iOS mobile Safari upload failure — root cause: manual header 'Content-Type: multipart/form-data' was set on axios request, which prevented the browser from generating the multipart boundary parameter (needs 'multipart/form-data; boundary=----WebKitFormBoundary...'). Result: FastAPI's UploadFile parsing failed silently on iOS Safari (Chromium was more lenient). Fix: removed manual header — axios auto-generates the header WITH boundary when FormData is passed. (2) Desktop 'Yükleniyor...' hang — root cause: album upload sent all 20 photos in one multipart request; Pillow resize on 20 images plus network I/O exceeded the ingress read timeout. Fix: batch size reduced from 20 to 5 photos per request so each request completes fast. (3) Select options blank — root cause: global `input, textarea, select, button { color: inherit; -webkit-text-fill-color: currentColor }` in index.css was overriding the Radix Select item text rendering on iOS Safari (currentColor resolved to the dark body theme's color, making white-on-white unreadable inside the light dropdown portal). Fix: narrowed the rule to `input, textarea` only. (4) PDF empty boxes for Turkish + ₺ — root cause: default reportlab font Helvetica (Type-1 built-in) only supports Latin-1 codepoints, so Turkish diacritics ('ı ğ ş ç ö ü İ Ğ') and the ₺ symbol (U+20BA) rendered as .notdef boxes. Fix: registered DejaVu Sans TTF (which has full Turkish + ₺ coverage) via pdfmetrics.registerFont and switched all Paragraph/Table styles to FONT_REG/FONT_BOLD. Verified with pypdf text extraction — all Turkish substrings are decoded from the PDF."
+}

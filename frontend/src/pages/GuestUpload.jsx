@@ -118,7 +118,6 @@ const GuestUpload = () => {
         fd.append("file", queue[i].file);
         fd.append("kvkk_accepted", "true");
         const res = await api.post(`/guest-events/${eventToken}/upload`, fd, {
-          headers: { "Content-Type": "multipart/form-data" },
           timeout: 600000,
         });
         setQueue((q) => q.map((it, idx) => idx === i ? { ...it, status: "done" } : it));
