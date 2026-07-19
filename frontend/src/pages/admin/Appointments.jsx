@@ -10,6 +10,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CheckCircle2, XCircle, Wallet, Phone, Bell, Send, FileText, Upload, UserPlus, ExternalLink, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -39,6 +43,7 @@ const AdminAppointments = () => {
   const [walkin, setWalkin] = useState(null);  // walk-in creation dialog state
   const [walkinSaving, setWalkinSaving] = useState(false);
   const [services, setServices] = useState([]);
+  const [confirmAction, setConfirmAction] = useState(null);
 
   useEffect(() => { api.get("/services").then((r) => setServices(r.data)); }, []);
 
@@ -63,13 +68,42 @@ const AdminAppointments = () => {
     } catch (e) { toast.error(formatApiError(e)); }
   };
 
-  const cancel = async (id) => {
-    if (!window.confirm("Randevu iptal edilsin mi?")) return;
+  const cancel = (id) => {
+    setConfirmAction({
+      type: "cancel", id,
+      title: "Randevu iptal edilsin mi?",
+      message: "Randevu 'İptaller' sekmesine taşınacak. Kayıt silinmeyecek — istediğinizde geri alabilirsiniz.",
+      confirmLabel: "Evet, İptal Et",
+      confirmClass: "bg-red-600 hover:bg-red-700",
+    });
+  };
+
+  const hardDelete = (id) => {
+    setConfirmAction({
+      type: "delete", id,
+      title: "Bu randevu KALICI olarak silinsin mi?",
+      message: "Bu işlem geri alınamaz. Randevu veritabanından tamamen silinecek.",
+      confirmLabel: "Evet, Kalıcı Sil",
+      confirmClass: "bg-red-700 hover:bg-red-800",
+    });
+  };
+
+  const runConfirmedAction = async () => {
+    if (!confirmAction) return;
     try {
-      await api.patch(`/appointments/${id}`, { status: "cancelled" });
-      toast.success("Randevu iptal edildi.");
+      if (confirmAction.type === "cancel") {
+        await api.patch(`/appointments/${confirmAction.id}`, { status: "cancelled" });
+        toast.success("Randevu iptal edildi.");
+      } else if (confirmAction.type === "delete") {
+        await api.delete(`/appointments/${confirmAction.id}`);
+        toast.success("Randevu kalıcı olarak silindi.");
+      }
       load();
-    } catch (e) { toast.error(formatApiError(e)); }
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setConfirmAction(null);
+    }
   };
 
   const sendReminder = async (id) => {
@@ -273,14 +307,7 @@ const AdminAppointments = () => {
                         )}
                         {a.status === "cancelled" && (
                           <Button size="sm" variant="destructive" data-testid={`delete-btn-${a.id}`}
-                            onClick={async () => {
-                              if (!window.confirm("Bu randevu KALICI olarak silinsin mi? Geri alınamaz.")) return;
-                              try {
-                                await api.delete(`/appointments/${a.id}`);
-                                toast.success("Randevu kalıcı olarak silindi.");
-                                load();
-                              } catch (e) { toast.error(formatApiError(e)); }
-                            }}
+                            onClick={() => hardDelete(a.id)}
                             title="Kalıcı olarak sil"
                           >
                             <Trash2 className="w-3.5 h-3.5 mr-1" /> Kalıcı Sil
@@ -506,6 +533,26 @@ const AdminAppointments = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirm Dialog (mobile-friendly, replaces window.confirm) */}
+      <AlertDialog open={!!confirmAction} onOpenChange={(o) => !o && setConfirmAction(null)}>
+        <AlertDialogContent data-testid="confirm-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmAction?.title}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmAction?.message}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="confirm-cancel">Vazgeç</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="confirm-ok"
+              onClick={runConfirmedAction}
+              className={confirmAction?.confirmClass || "bg-slate-900 hover:bg-slate-800"}
+            >
+              {confirmAction?.confirmLabel || "Onayla"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
