@@ -216,6 +216,12 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+async def require_staff_or_admin(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") not in ("admin", "staff"):
+        raise HTTPException(status_code=403, detail="Yetkisiz erişim")
+    return user
+
+
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
@@ -311,6 +317,14 @@ class SiteSettingsIn(BaseModel):
     discount_heading: Optional[str] = None
     discount_subtitle: Optional[str] = None
     hero_image_url: Optional[str] = None
+    # Analytics & typography (added Feb 2026)
+    google_analytics_id: Optional[str] = None
+    font_heading: Optional[str] = None
+    font_body: Optional[str] = None
+    font_scale: Optional[float] = None
+    h1_size_class: Optional[str] = None
+    h2_size_class: Optional[str] = None
+    body_size_class: Optional[str] = None
 
 
 class TransactionIn(BaseModel):
@@ -1080,11 +1094,17 @@ async def download_logo(logo_id: str):
 # Cash Flow / Transactions (owner-admin only)
 # ---------------------------------------------------------------------------
 @api_router.post("/transactions")
-async def create_transaction(payload: TransactionIn, admin: dict = Depends(require_admin)):
+async def create_transaction(payload: TransactionIn, user: dict = Depends(require_staff_or_admin)):
     doc = payload.model_dump()
+    if user.get("role") == "staff":
+        # Personel: sadece bugüne, sadece nakit girişi yapabilir
+        doc["payment_method"] = "cash"
+        doc["date"] = datetime.now(timezone.utc).date().isoformat()
     doc["id"] = new_id()
     doc["created_at"] = now_iso()
-    doc["created_by"] = admin.get("id")
+    doc["created_by"] = user.get("id")
+    doc["created_by_name"] = user.get("name")
+    doc["created_by_role"] = user.get("role")
     await db.transactions.insert_one(doc)
     doc.pop("_id", None)
     return doc
@@ -1092,7 +1112,7 @@ async def create_transaction(payload: TransactionIn, admin: dict = Depends(requi
 
 @api_router.get("/transactions")
 async def list_transactions(
-    admin: dict = Depends(require_admin),
+    user: dict = Depends(require_staff_or_admin),
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     kind: Optional[str] = None,
@@ -1100,17 +1120,23 @@ async def list_transactions(
     limit: int = 500,
 ):
     q: dict = {}
-    if kind:
-        q["kind"] = kind
-    if method:
-        q["payment_method"] = method
-    if date_from or date_to:
-        rng = {}
-        if date_from:
-            rng["$gte"] = date_from
-        if date_to:
-            rng["$lte"] = date_to
-        q["date"] = rng
+    if user.get("role") == "staff":
+        # Personel sadece bugünün nakit hareketlerini görür
+        today = datetime.now(timezone.utc).date().isoformat()
+        q["date"] = today
+        q["payment_method"] = "cash"
+    else:
+        if kind:
+            q["kind"] = kind
+        if method:
+            q["payment_method"] = method
+        if date_from or date_to:
+            rng = {}
+            if date_from:
+                rng["$gte"] = date_from
+            if date_to:
+                rng["$lte"] = date_to
+            q["date"] = rng
     items = await db.transactions.find(q, {"_id": 0}).sort([("date", -1), ("created_at", -1)]).to_list(limit)
     return items
 
@@ -1306,6 +1332,163 @@ async def export_transactions_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Cash Register (Kasa Devir Defteri) — daily opening/closing balance
+# Staff can enter today; Admin sees all history.
+# ---------------------------------------------------------------------------
+class CashCloseIn(BaseModel):
+    date: str  # YYYY-MM-DD
+    opening_balance: float = 0
+    closing_balance: float = 0
+    notes: Optional[str] = ""
+
+
+@api_router.get("/cash-register")
+async def get_cash_register_day(
+    date: str,
+    user: dict = Depends(require_staff_or_admin),
+):
+    """Return today's saved close + suggested opening (previous day closing) + today's cash flow."""
+    saved = await db.cash_registers.find_one({"date": date}, {"_id": 0})
+    prev_list = await db.cash_registers.find(
+        {"date": {"$lt": date}}, {"_id": 0}
+    ).sort("date", -1).limit(1).to_list(1)
+    suggested_opening = float(prev_list[0].get("closing_balance", 0)) if prev_list else 0.0
+    prev_date = prev_list[0].get("date") if prev_list else None
+
+    tx = await db.transactions.find(
+        {"date": date, "payment_method": "cash"}, {"_id": 0}
+    ).sort("created_at", 1).to_list(500)
+    cash_in = sum(float(t.get("amount", 0) or 0) for t in tx if t.get("kind") == "income")
+    cash_out = sum(float(t.get("amount", 0) or 0) for t in tx if t.get("kind") == "expense")
+    opening = float(saved.get("opening_balance", 0)) if saved else suggested_opening
+    expected_closing = opening + cash_in - cash_out
+
+    return {
+        "date": date,
+        "saved": saved,
+        "suggested_opening": suggested_opening,
+        "previous_date": prev_date,
+        "cash_in": cash_in,
+        "cash_out": cash_out,
+        "expected_closing": expected_closing,
+        "transactions": tx,
+    }
+
+
+@api_router.post("/cash-register/close")
+async def save_cash_register_close(
+    payload: CashCloseIn,
+    user: dict = Depends(require_staff_or_admin),
+):
+    now = now_iso()
+    update_doc = {
+        "date": payload.date,
+        "opening_balance": float(payload.opening_balance or 0),
+        "closing_balance": float(payload.closing_balance or 0),
+        "notes": payload.notes or "",
+        "updated_at": now,
+        "updated_by": user.get("id"),
+        "updated_by_name": user.get("name"),
+        "updated_by_role": user.get("role"),
+    }
+    await db.cash_registers.update_one(
+        {"date": payload.date},
+        {
+            "$set": update_doc,
+            "$setOnInsert": {"id": new_id(), "created_at": now, "created_by": user.get("id")},
+        },
+        upsert=True,
+    )
+    return await db.cash_registers.find_one({"date": payload.date}, {"_id": 0})
+
+
+@api_router.get("/cash-register/history")
+async def cash_register_history(
+    admin: dict = Depends(require_admin),
+    limit: int = 90,
+):
+    items = await db.cash_registers.find({}, {"_id": 0}).sort("date", -1).to_list(limit)
+    return items
+
+
+# ---------------------------------------------------------------------------
+# Staff User Management (admin only)
+# ---------------------------------------------------------------------------
+class StaffUserIn(BaseModel):
+    email: EmailStr
+    name: str = Field(min_length=2, max_length=80)
+    password: Optional[str] = None
+    role: Literal["staff", "admin"] = "staff"
+    phone: Optional[str] = ""
+
+
+@api_router.get("/users/staff")
+async def list_staff_users(admin: dict = Depends(require_admin)):
+    items = await db.users.find(
+        {"role": {"$in": ["staff", "admin"]}},
+        {"_id": 0, "password_hash": 0},
+    ).sort("created_at", 1).to_list(200)
+    return items
+
+
+@api_router.post("/users/staff")
+async def create_staff_user(payload: StaffUserIn, admin: dict = Depends(require_admin)):
+    email = payload.email.lower()
+    if not payload.password or len(payload.password) < 6:
+        raise HTTPException(status_code=400, detail="Şifre en az 6 karakter olmalı")
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="Bu e-posta ile kayıtlı bir kullanıcı var")
+    doc = {
+        "id": new_id(),
+        "email": email,
+        "name": payload.name,
+        "phone": payload.phone or "",
+        "role": payload.role,
+        "password_hash": hash_password(payload.password),
+        "created_at": now_iso(),
+        "created_by": admin.get("id"),
+    }
+    await db.users.insert_one(doc)
+    doc.pop("_id", None)
+    doc.pop("password_hash", None)
+    return doc
+
+
+@api_router.patch("/users/staff/{uid}")
+async def update_staff_user(uid: str, payload: StaffUserIn, admin: dict = Depends(require_admin)):
+    existing = await db.users.find_one({"id": uid})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    if existing.get("role") not in ("staff", "admin"):
+        raise HTTPException(status_code=400, detail="Bu hesap personel değil")
+    updates = {
+        "name": payload.name,
+        "phone": payload.phone or "",
+        "role": payload.role,
+    }
+    if payload.password and len(payload.password) >= 6:
+        updates["password_hash"] = hash_password(payload.password)
+    await db.users.update_one({"id": uid}, {"$set": updates})
+    doc = await db.users.find_one({"id": uid}, {"_id": 0, "password_hash": 0})
+    return doc
+
+
+@api_router.delete("/users/staff/{uid}")
+async def delete_staff_user(uid: str, admin: dict = Depends(require_admin)):
+    if uid == admin.get("id"):
+        raise HTTPException(status_code=400, detail="Kendi hesabınızı silemezsiniz")
+    existing = await db.users.find_one({"id": uid})
+    if not existing:
+        return {"ok": True}
+    if existing.get("role") not in ("staff", "admin"):
+        raise HTTPException(status_code=400, detail="Bu hesap personel değil")
+    await db.users.delete_one({"id": uid})
+    return {"ok": True}
+
+
 
 
 @api_router.get("/transactions/summary")

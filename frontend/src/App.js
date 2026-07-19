@@ -7,6 +7,7 @@ import "@/App.css";
 
 import PublicLayout from "@/components/PublicLayout";
 import AdminLayout from "@/components/AdminLayout";
+import StaffLayout from "@/components/StaffLayout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 import Home from "@/pages/Home";
@@ -19,6 +20,7 @@ import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import StaffLogin from "@/pages/StaffLogin";
 import MyAppointments from "@/pages/MyAppointments";
+import StaffDaily from "@/pages/StaffDaily";
 
 import Dashboard from "@/pages/admin/Dashboard";
 import AdminAppointments from "@/pages/admin/Appointments";
@@ -31,6 +33,8 @@ import AdminSettings from "@/pages/admin/AdminSettings";
 import AdminTransactions from "@/pages/admin/AdminTransactions";
 import AdminDiscountCodes from "@/pages/admin/AdminDiscountCodes";
 import AdminFotuberMedya from "@/pages/admin/AdminFotuberMedya";
+import AdminCashRegister from "@/pages/admin/AdminCashRegister";
+import AdminUsers from "@/pages/admin/AdminUsers";
 
 import DiscountCode from "@/pages/DiscountCode";
 import FotuberMedya from "@/pages/FotuberMedya";
@@ -38,6 +42,9 @@ import FotuberMedya from "@/pages/FotuberMedya";
 const P = ({ children }) => <PublicLayout>{children}</PublicLayout>;
 const AdminGuard = ({ children }) => (
   <ProtectedRoute requireRole="admin"><AdminLayout>{children}</AdminLayout></ProtectedRoute>
+);
+const StaffGuard = ({ children }) => (
+  <ProtectedRoute requireRoles={["staff", "admin"]}><StaffLayout>{children}</StaffLayout></ProtectedRoute>
 );
 
 function App() {
@@ -69,6 +76,9 @@ function App() {
                 }
               />
 
+              {/* Staff (limited role) — daily cash entry & register close */}
+              <Route path="/personel/gunluk" element={<StaffGuard><StaffDaily /></StaffGuard>} />
+
               {/* Admin (protected, admin-only) */}
               <Route path="/admin" element={<AdminGuard><Navigate to="/admin/dashboard" replace /></AdminGuard>} />
               <Route path="/admin/dashboard" element={<AdminGuard><Dashboard /></AdminGuard>} />
@@ -76,8 +86,10 @@ function App() {
               <Route path="/admin/takvim" element={<AdminGuard><AdminCalendar /></AdminGuard>} />
               <Route path="/admin/finans" element={<AdminGuard><Finance /></AdminGuard>} />
               <Route path="/admin/nakit-akisi" element={<AdminGuard><AdminTransactions /></AdminGuard>} />
+              <Route path="/admin/kasa-devir" element={<AdminGuard><AdminCashRegister /></AdminGuard>} />
               <Route path="/admin/hizmetler" element={<AdminGuard><AdminServices /></AdminGuard>} />
               <Route path="/admin/personel" element={<AdminGuard><Staff /></AdminGuard>} />
+              <Route path="/admin/kullanicilar" element={<AdminGuard><AdminUsers /></AdminGuard>} />
               <Route path="/admin/galeri" element={<AdminGuard><AdminGallery /></AdminGuard>} />
               <Route path="/admin/ayarlar" element={<AdminGuard><AdminSettings /></AdminGuard>} />
               <Route path="/admin/indirim-kodlari" element={<AdminGuard><AdminDiscountCodes /></AdminGuard>} />

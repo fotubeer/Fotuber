@@ -20,13 +20,13 @@ const StaffLogin = () => {
     setBusy(true);
     try {
       const u = await login(email, password);
-      if (u.role !== "admin") {
+      if (u.role !== "admin" && u.role !== "staff") {
         toast.error("Bu alan yalnızca personel içindir.");
         setBusy(false);
         return;
       }
-      toast.success("Yönetim paneline hoşgeldiniz.");
-      nav("/admin/dashboard");
+      toast.success(u.role === "admin" ? "Yönetim paneline hoşgeldiniz." : "Personel paneline hoşgeldiniz.");
+      nav(u.role === "admin" ? "/admin/dashboard" : "/personel/gunluk");
     } catch (err) {
       toast.error(formatApiError(err, "Giriş yapılamadı"));
     } finally { setBusy(false); }
