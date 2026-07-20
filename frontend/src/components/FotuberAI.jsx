@@ -36,13 +36,20 @@ const CameraBot = ({ animated = true }) => (
     <rect x="22" y="34" width="10" height="6" rx="1.5" fill="#d4af37" opacity="0.9" />
     {/* Lens (eye) */}
     <circle cx="50" cy="58" r="18" fill="#000" stroke="#d4af37" strokeWidth="1.5" />
-    <circle cx="50" cy="58" r="14" fill="url(#eye-grad)" />
-    <motion.circle
-      cx="50" cy="58" r="6" fill="#0a0a0a"
-      animate={animated ? { cx: [50, 52, 48, 50], cy: [58, 57, 59, 58] } : {}}
-      transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-    />
-    <circle cx="46" cy="54" r="2" fill="#fff" opacity="0.85" />
+    {/* Blinking eyelid — collapses to a slit every few seconds */}
+    <motion.g
+      animate={animated ? { scaleY: [1, 1, 1, 1, 0.06, 1, 1, 1, 0.06, 1] } : {}}
+      transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut", times: [0, 0.15, 0.30, 0.45, 0.48, 0.51, 0.65, 0.80, 0.83, 0.86] }}
+      style={{ transformOrigin: "50px 58px", transformBox: "fill-box" }}
+    >
+      <circle cx="50" cy="58" r="14" fill="url(#eye-grad)" />
+      <motion.circle
+        cx="50" cy="58" r="6" fill="#0a0a0a"
+        animate={animated ? { cx: [50, 52, 48, 50], cy: [58, 57, 59, 58] } : {}}
+        transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+      />
+      <circle cx="46" cy="54" r="2" fill="#fff" opacity="0.85" />
+    </motion.g>
     {/* Recording light */}
     <motion.circle
       cx="76" cy="38" r="2.2" fill="#f43f5e"
@@ -53,6 +60,46 @@ const CameraBot = ({ animated = true }) => (
     <line x1="50" y1="22" x2="50" y2="14" stroke="#d4af37" strokeWidth="1.5" />
     <circle cx="50" cy="12" r="2.5" fill="#d4af37" />
   </motion.svg>
+);
+
+// SVG waving hand — device-independent, matches gold accent
+const WavingHand = ({ className = "" }) => (
+  <svg viewBox="0 0 64 64" className={className} xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="skin-grad" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0" stopColor="#f5d3a3" />
+        <stop offset="1" stopColor="#e2a870" />
+      </linearGradient>
+    </defs>
+    {/* Sleeve cuff */}
+    <path d="M18 50 L46 50 L48 60 L16 60 Z" fill="#d4af37" stroke="#0a0a0a" strokeWidth="1.4" />
+    {/* Palm */}
+    <path
+      d="M22 22
+         C 20 18, 24 14, 28 16
+         L 30 26
+         L 32 12
+         C 32 8, 38 8, 38 12
+         L 38 26
+         L 40 10
+         C 40 6, 46 6, 46 10
+         L 46 28
+         L 48 16
+         C 48 12, 54 12, 54 16
+         L 54 34
+         C 54 44, 48 52, 40 52
+         L 28 52
+         C 22 52, 18 46, 18 40
+         L 18 26
+         C 18 22, 22 20, 22 22 Z"
+      fill="url(#skin-grad)"
+      stroke="#8a5a2a"
+      strokeWidth="1.4"
+      strokeLinejoin="round"
+    />
+    {/* Palm crease highlight */}
+    <path d="M28 38 Q34 46 44 40" fill="none" stroke="#c68a4d" strokeWidth="1" opacity="0.6" />
+  </svg>
 );
 
 const FotuberAI = () => {
@@ -212,13 +259,13 @@ const FotuberAI = () => {
                 <CameraBot />
               </motion.div>
 
-              {/* Waving hand that peeks from the left every ~5s */}
+              {/* Waving hand SVG — device-independent (peeks from left every ~5s) */}
               <motion.div
                 initial={{ opacity: 0, x: 0, rotate: 0 }}
                 animate={{
                   opacity: [0, 0, 1, 1, 1, 1, 0, 0],
                   x:       [0, 0, -22, -22, -22, -22, -8, 0],
-                  rotate:  [0, 0, -18, 14, -18, 14, 0, 0],
+                  rotate:  [0, 0, -22, 16, -22, 16, 0, 0],
                 }}
                 transition={{
                   duration: 5.2,
@@ -228,10 +275,10 @@ const FotuberAI = () => {
                   ease: "easeInOut",
                 }}
                 style={{ transformOrigin: "80% 90%" }}
-                className="absolute left-0 top-1/2 -translate-y-1/2 pointer-events-none text-3xl sm:text-4xl select-none drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)]"
+                className="absolute left-0 top-1/2 -translate-y-1/2 pointer-events-none w-8 h-8 sm:w-10 sm:h-10 drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)]"
                 aria-hidden="true"
               >
-                👋
+                <WavingHand className="w-full h-full" />
               </motion.div>
 
               <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-500 border-2 border-black">
