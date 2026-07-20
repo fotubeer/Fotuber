@@ -32,11 +32,7 @@ const Services = () => {
               </div>
               <h3 className="font-serif text-3xl mb-3">{s.name}</h3>
               <p className="text-neutral-400 leading-relaxed mb-6">{s.description}</p>
-              <div className="flex items-center justify-between">
-                <div className="text-neutral-300">
-                  <span className="text-xs text-neutral-500 mr-2">Başlangıç</span>
-                  <span className="text-2xl font-serif">₺{Number(s.price).toLocaleString("tr-TR")}</span>
-                </div>
+              <div className="flex items-center justify-end">
                 <Link to="/randevu">
                   <Button className="rounded-full bg-[#d4af37] hover:bg-[#b5952f] text-black">
                     Randevu Al <ArrowRight className="w-4 h-4 ml-2" />

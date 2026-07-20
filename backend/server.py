@@ -282,9 +282,21 @@ class ServiceOut(ServiceIn):
 class AppointmentIn(BaseModel):
     service_id: str
     date: str  # YYYY-MM-DD
-    time: str  # HH:MM (opening one-hour slot)
+    time: str  # HH:MM (30-min slot)
     notes: Optional[str] = ""
     contract_accepted: bool = False
+    # Extended event configuration
+    event_type: Optional[str] = None            # wedding|engagement_venue|kina|nikah|birthday|bride_party|other
+    event_addons: Optional[List[str]] = None    # e.g. ["klip", "album", "tablo"]
+    extra_services_note: Optional[str] = ""
+    phone_2: Optional[str] = ""
+
+
+class MidPaymentIn(BaseModel):
+    amount: float = Field(gt=0)
+    date: str                       # YYYY-MM-DD
+    method: Literal["cash", "card", "transfer"] = "cash"
+    note: Optional[str] = ""
 
 
 class AppointmentAdminUpdate(BaseModel):
@@ -293,6 +305,16 @@ class AppointmentAdminUpdate(BaseModel):
     total_amount: Optional[float] = None
     paid_amount: Optional[float] = None
     notes: Optional[str] = None
+    admin_notes: Optional[str] = None
+    phone_2: Optional[str] = None
+    event_type: Optional[str] = None
+    event_addons: Optional[List[str]] = None
+    extra_services_note: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    customer_email: Optional[str] = None
+    date: Optional[str] = None
+    time: Optional[str] = None
 
 
 class BlockedSlotIn(BaseModel):
@@ -588,34 +610,65 @@ async def delete_service(sid: str, admin: dict = Depends(require_admin)):
 # ---------------------------------------------------------------------------
 # Public: Availability
 # ---------------------------------------------------------------------------
-OPENING_HOUR = 9
-CLOSING_HOUR = 20  # last slot start 19:00
-SLOTS = [f"{h:02d}:00" for h in range(OPENING_HOUR, CLOSING_HOUR)]
+# 30-min interval slots
+PUBLIC_OPENING_HOUR = 8   # earliest slot 08:00
+PUBLIC_CLOSING_HOUR = 24  # last slot 23:30 (exclusive of 24:00)
+
+
+def _generate_slots(start_hour: int, end_hour: int) -> List[str]:
+    out = []
+    total_start = start_hour * 60
+    total_end = end_hour * 60
+    for minute in range(total_start, total_end, 30):
+        h = minute // 60
+        m = minute % 60
+        out.append(f"{h:02d}:{m:02d}")
+    return out
+
+
+PUBLIC_SLOTS = _generate_slots(PUBLIC_OPENING_HOUR, PUBLIC_CLOSING_HOUR)   # 08:00..23:30
+FULL_SLOTS = _generate_slots(0, 24)                                        # 00:00..23:30
+SLOTS = PUBLIC_SLOTS  # legacy alias for existing code
+
+
+async def _try_get_current_user(request: Request) -> Optional[dict]:
+    try:
+        return await get_current_user(request)
+    except HTTPException:
+        return None
 
 
 @api_router.get("/availability")
-async def availability(date: str):
-    """Return list of slots with status per date."""
+async def availability(date: str, request: Request):
+    """Return list of slots with status per date. Admin/staff see full 24h; public sees 08:00-23:30 and booked slots are hidden."""
+    user = await _try_get_current_user(request)
+    is_privileged = bool(user and user.get("role") in ("admin", "staff"))
+    slots_source = FULL_SLOTS if is_privileged else PUBLIC_SLOTS
+
     # approved appointments block
     approved = await db.appointments.find(
         {"date": date, "status": "approved"}, {"_id": 0, "time": 1}
-    ).to_list(200)
-    blocked = await db.blocked_slots.find({"date": date}, {"_id": 0, "time": 1}).to_list(200)
+    ).to_list(500)
+    blocked = await db.blocked_slots.find({"date": date}, {"_id": 0, "time": 1}).to_list(500)
 
     booked_times = {a["time"] for a in approved} | {b["time"] for b in blocked}
     result = []
     now = datetime.now(timezone.utc)
-    for t in SLOTS:
-        # mark past times as booked (cannot select)
+    for t in slots_source:
         try:
             slot_dt = datetime.fromisoformat(f"{date}T{t}:00+00:00")
         except Exception:
             slot_dt = now
         past = slot_dt < now - timedelta(hours=1)
-        result.append({
-            "time": t,
-            "status": "booked" if (t in booked_times or past) else "available",
-        })
+        is_taken = t in booked_times or past
+        if is_privileged:
+            # admin/staff sees everything and knows what is booked
+            result.append({"time": t, "status": "booked" if is_taken else "available"})
+        else:
+            # public: hide booked slots entirely (no availability visibility)
+            if is_taken:
+                continue
+            result.append({"time": t, "status": "available"})
     return {"date": date, "slots": result}
 
 
@@ -629,6 +682,17 @@ async def _enrich_appointment(a: dict) -> dict:
     svc = await db.services.find_one({"id": a.get("service_id")}, {"_id": 0, "name": 1, "price": 1})
     a["service_name"] = svc["name"] if svc else "Bilinmeyen Hizmet"
     a["service_price"] = svc["price"] if svc else 0
+    # Compute derived financials
+    mp = a.get("mid_payments") or []
+    mid_total = sum(float(p.get("amount", 0) or 0) for p in mp)
+    deposit = float(a.get("deposit_amount") or 0)
+    total = float(a.get("total_amount") or 0)
+    paid_from_field = float(a.get("paid_amount") or 0)
+    # Sum of paid = max(paid_amount_field, deposit + mid_total) to keep back-compat
+    paid_total = max(paid_from_field, deposit + mid_total)
+    a["mid_payments_total"] = round(mid_total, 2)
+    a["paid_total"] = round(paid_total, 2)
+    a["remaining_amount"] = round(max(total - paid_total, 0), 2)
     return a
 
 
@@ -640,8 +704,8 @@ async def create_appointment(payload: AppointmentIn, user: dict = Depends(get_cu
     if not payload.contract_accepted:
         raise HTTPException(status_code=400, detail="Randevu oluşturmak için sözleşme maddelerini kabul etmelisiniz")
 
-    if payload.time not in SLOTS:
-        raise HTTPException(status_code=400, detail="Geçersiz saat dilimi")
+    if payload.time not in PUBLIC_SLOTS:
+        raise HTTPException(status_code=400, detail="Geçersiz saat dilimi (08:00 - 23:30 arasında 30 dk aralıklarla seçin)")
 
     # Check if slot already blocked
     if await db.appointments.find_one({"date": payload.date, "time": payload.time, "status": "approved"}):
@@ -660,14 +724,20 @@ async def create_appointment(payload: AppointmentIn, user: dict = Depends(get_cu
         "customer_name": user.get("name"),
         "customer_phone": user.get("phone"),
         "customer_email": user.get("email"),
+        "phone_2": payload.phone_2 or "",
         "service_id": payload.service_id,
         "date": payload.date,
         "time": payload.time,
         "notes": payload.notes or "",
+        "admin_notes": "",
+        "event_type": payload.event_type or "",
+        "event_addons": payload.event_addons or [],
+        "extra_services_note": payload.extra_services_note or "",
         "status": "pending",
         "deposit_amount": 0,
         "total_amount": service.get("price", 0),
         "paid_amount": 0,
+        "mid_payments": [],
         "origin": "online",
         "contract_accepted": True,
         "contract_accepted_at": now,
@@ -741,12 +811,31 @@ async def update_appointment(aid: str, payload: AppointmentAdminUpdate, admin: d
         raise HTTPException(status_code=404, detail="Randevu bulunamadı")
 
     updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+
+    # If date/time being changed, ensure it's a valid 30-min slot and not taken
+    new_date = updates.get("date") or existing["date"]
+    new_time = updates.get("time") or existing["time"]
+    if updates.get("date") is not None or updates.get("time") is not None:
+        if new_time not in FULL_SLOTS:
+            raise HTTPException(status_code=400, detail="Geçersiz saat dilimi (30 dk aralıklarla seçin)")
+        if new_date != existing["date"] or new_time != existing["time"]:
+            conflict = await db.appointments.find_one({
+                "id": {"$ne": aid},
+                "date": new_date,
+                "time": new_time,
+                "status": "approved",
+            })
+            if conflict:
+                raise HTTPException(status_code=409, detail="Bu saat başka bir randevu tarafından işgal edildi")
+            if await db.blocked_slots.find_one({"date": new_date, "time": new_time}):
+                raise HTTPException(status_code=409, detail="Bu saat kapalı")
+
     if payload.status == "approved":
         # ensure slot not double-booked
         conflict = await db.appointments.find_one({
             "id": {"$ne": aid},
-            "date": existing["date"],
-            "time": existing["time"],
+            "date": new_date,
+            "time": new_time,
             "status": "approved",
         })
         if conflict:
@@ -782,11 +871,57 @@ async def delete_appointment(aid: str, admin: dict = Depends(require_admin)):
     return {"ok": True}
 
 
+@api_router.get("/appointments/{aid}")
+async def get_appointment(aid: str, admin: dict = Depends(require_staff_or_admin)):
+    doc = await db.appointments.find_one({"id": aid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Randevu bulunamadı")
+    return await _enrich_appointment(doc)
+
+
+@api_router.post("/appointments/{aid}/mid-payments")
+async def add_mid_payment(aid: str, payload: MidPaymentIn, admin: dict = Depends(require_admin)):
+    """Add an interim (mid) payment to an existing appointment (admin only)."""
+    appt = await db.appointments.find_one({"id": aid})
+    if not appt:
+        raise HTTPException(status_code=404, detail="Randevu bulunamadı")
+    entry = {
+        "id": new_id(),
+        "amount": float(payload.amount),
+        "date": payload.date,
+        "method": payload.method,
+        "note": payload.note or "",
+        "created_at": now_iso(),
+        "created_by": admin.get("id"),
+        "created_by_name": admin.get("name") or admin.get("email"),
+    }
+    await db.appointments.update_one(
+        {"id": aid},
+        {"$push": {"mid_payments": entry}, "$set": {"updated_at": now_iso()}},
+    )
+    doc = await db.appointments.find_one({"id": aid}, {"_id": 0})
+    return await _enrich_appointment(doc)
+
+
+@api_router.delete("/appointments/{aid}/mid-payments/{pid}")
+async def remove_mid_payment(aid: str, pid: str, admin: dict = Depends(require_admin)):
+    """Remove a specific mid-payment (admin only)."""
+    res = await db.appointments.update_one(
+        {"id": aid},
+        {"$pull": {"mid_payments": {"id": pid}}, "$set": {"updated_at": now_iso()}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Randevu bulunamadı")
+    doc = await db.appointments.find_one({"id": aid}, {"_id": 0})
+    return await _enrich_appointment(doc)
+
+
 # ---- Contract file upload (signed physical contract) ----
 class WalkinAppointmentIn(BaseModel):
     customer_name: str
     customer_phone: str
     customer_email: Optional[str] = ""
+    phone_2: Optional[str] = ""
     service_id: str
     date: str
     time: str
@@ -794,14 +929,18 @@ class WalkinAppointmentIn(BaseModel):
     total_amount: Optional[float] = None
     paid_amount: float = 0
     notes: Optional[str] = ""
+    admin_notes: Optional[str] = ""
+    event_type: Optional[str] = None
+    event_addons: Optional[List[str]] = None
+    extra_services_note: Optional[str] = ""
     auto_approve: bool = True
 
 
 @api_router.post("/appointments/walkin")
 async def create_walkin_appointment(payload: WalkinAppointmentIn, admin: dict = Depends(require_admin)):
     """Admin creates a face-to-face appointment for a walk-in customer."""
-    if payload.time not in SLOTS:
-        raise HTTPException(status_code=400, detail="Geçersiz saat dilimi")
+    if payload.time not in FULL_SLOTS:
+        raise HTTPException(status_code=400, detail="Geçersiz saat dilimi (30 dk aralıklarla seçin)")
     if await db.appointments.find_one({"date": payload.date, "time": payload.time, "status": "approved"}):
         raise HTTPException(status_code=409, detail="Bu saat dolu")
     if await db.blocked_slots.find_one({"date": payload.date, "time": payload.time}):
@@ -818,14 +957,20 @@ async def create_walkin_appointment(payload: WalkinAppointmentIn, admin: dict = 
         "customer_name": payload.customer_name,
         "customer_phone": payload.customer_phone,
         "customer_email": payload.customer_email or "",
+        "phone_2": payload.phone_2 or "",
         "service_id": payload.service_id,
         "date": payload.date,
         "time": payload.time,
         "notes": payload.notes or "",
+        "admin_notes": payload.admin_notes or "",
+        "event_type": payload.event_type or "",
+        "event_addons": payload.event_addons or [],
+        "extra_services_note": payload.extra_services_note or "",
         "status": "approved" if payload.auto_approve else "pending",
         "deposit_amount": payload.deposit_amount,
         "total_amount": payload.total_amount if payload.total_amount is not None else service.get("price", 0),
         "paid_amount": payload.paid_amount,
+        "mid_payments": [],
         "origin": "walkin",
         "contract_accepted": True,  # signed in-person
         "contract_accepted_at": now,
