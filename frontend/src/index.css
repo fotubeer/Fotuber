@@ -79,11 +79,21 @@ input::placeholder, textarea::placeholder {
 [role="alertdialog"] .text-slate-600, [role="alertdialog"] .text-slate-600 * { color: #475569 !important; }
 [role="dialog"] .text-blue-600, [role="dialog"] .text-blue-600 *,
 [role="alertdialog"] .text-blue-600, [role="alertdialog"] .text-blue-600 * { color: #2563eb !important; }
-/* Destructive action buttons inside dialogs (red bg) — force white text */
+/* Destructive & primary action buttons inside dialogs (dark/red/emerald bg) — force white text */
 [role="dialog"] .bg-red-600, [role="dialog"] .bg-red-600 *,
 [role="dialog"] .bg-destructive, [role="dialog"] .bg-destructive *,
+[role="dialog"] .bg-slate-900, [role="dialog"] .bg-slate-900 *,
+[role="dialog"] .bg-slate-800, [role="dialog"] .bg-slate-800 *,
+[role="dialog"] .bg-emerald-600, [role="dialog"] .bg-emerald-600 *,
+[role="dialog"] .bg-emerald-700, [role="dialog"] .bg-emerald-700 *,
+[role="dialog"] .bg-neutral-900, [role="dialog"] .bg-neutral-900 *,
 [role="alertdialog"] .bg-red-600, [role="alertdialog"] .bg-red-600 *,
-[role="alertdialog"] .bg-destructive, [role="alertdialog"] .bg-destructive * { color: #ffffff !important; }
+[role="alertdialog"] .bg-destructive, [role="alertdialog"] .bg-destructive *,
+[role="alertdialog"] .bg-slate-900, [role="alertdialog"] .bg-slate-900 *,
+[role="alertdialog"] .bg-slate-800, [role="alertdialog"] .bg-slate-800 * { color: #ffffff !important; }
+/* Gold accent action buttons keep black text */
+[role="dialog"] [class*="bg-\\[\\#d4af37\\]"], [role="dialog"] [class*="bg-\\[\\#d4af37\\]"] *,
+[role="alertdialog"] [class*="bg-\\[\\#d4af37\\]"], [role="alertdialog"] [class*="bg-\\[\\#d4af37\\]"] * { color: #000000 !important; }
 /* Admin panel (light theme) inputs always dark */
 body.admin input,
 body.admin textarea {

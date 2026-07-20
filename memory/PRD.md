@@ -44,3 +44,19 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
 
 ## Admin
 - admin@fotuber.com.tr / FTB.2024
+
+## Session D (Feb 2026) — Contrast fixes + Bride Party
+- Fixed iOS Safari `<input>/<textarea>` color inheritance (global CSS `color: inherit`)
+- Fixed white-on-white text inside Radix Dialog + AlertDialog (portaled outside DialogContent scope)
+  - Global rule forces `[role="dialog"] *, [role="alertdialog"] * { color: #0f172a }`
+  - Whitelist exceptions: `.text-white`, `.text-red-*`, `.text-emerald-*`, `.text-amber-*`, `.text-slate-500/600`, `.text-blue-600`
+  - Button bg whitelist: `.bg-red-600/.bg-destructive/.bg-slate-900/.bg-slate-800/.bg-emerald-600/.bg-emerald-700/.bg-neutral-900` → WHITE text; `.bg-[#d4af37]` → BLACK text
+- Fixed multipart uploads (photo albums + guest events) — removed manual `Content-Type: multipart/form-data` (axios auto-generates boundary)
+- Reduced album upload batch size 20 → 5 to prevent ingress timeouts
+- Fixed PDF exports Turkish characters & ₺ symbol — registered DejaVu Sans TTF (apt install fonts-dejavu)
+- Added "Bride Party" event type + Turkish possessive title composer:
+  - wedding: "Ayşe & Mehmet Düğünü"
+  - engagement: "Zeynep Nişanı"
+  - bride_party: "Ayşe'nin Bride Partisi"
+  - birthday: "Emre'nin Doğum Günü"
+  - Vowel-aware suffix: a/ı→'nın, e/i→'nin, o/u→'nun, ö/ü→'nün
