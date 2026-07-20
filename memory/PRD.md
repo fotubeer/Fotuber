@@ -61,7 +61,11 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
   - Explains blocking behavior via footer note.
 
 ### Session E addon — Cinematic Intro Splash
-- `components/IntroSplash.jsx` — luxury intro shown once per session (sessionStorage `fotuber_intro_played_v1`) on Home page:
+- `components/IntroSplash.jsx` — luxury intro shown **once per browser session (per tab)** on Home page:
+  - Guard: module flag `INTRO_ALREADY_PLAYED_THIS_TAB` + sessionStorage `fotuber_intro_seen_v3`.
+  - Same tab F5 / SPA back-to-home → NO replay. New tab / new session → replays.
+  - Personalised greeting: if user is logged in, line reads "Bugün harika görünüyorsunuz, {ilk_ad}." else generic.
+  - Waits for `useAuth().loading === false` before starting phase timers to guarantee correct greeting.
   - Camera lens SVG animates in (aperture blades, gold engraving "FOTUBER · f/1.4").
   - Procedurally synthesised sound via Web Audio API (mechanical shutter click + high-freq flash whine decay + mirror thunk) — no external asset.
   - White flash burst overlay + expanding gold ring on shutter fire.

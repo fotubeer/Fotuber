@@ -1,22 +1,32 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSettings } from "@/context/SettingsContext";
+import { useAuth } from "@/context/AuthContext";
 import { API_BASE } from "@/lib/api";
 
 /**
  * Cinematic intro splash for Fotuber
- * Sequence (~5.5s total):
- *  0.0s - dark bg + lens draws in at center
- *  1.3s - shutter click + flash burst (white overlay to 100% then decays)
- *  2.4s - “Bugün harika görünüyorsunuz.” fades in
- *  3.6s - line fades out
- *  4.0s - logo icon + wordmark (“Fotuber” bold + “Görsel Sanat” cursive) reveal
- *  5.4s - whole splash fades out and unmounts (site is visible under)
+ * Plays ONLY on the first visit within a browser session (per tab).
+ *  - Same tab, SPA nav Home → x → Home:  no replay (module flag).
+ *  - Same tab, F5/hard reload:            no replay (sessionStorage flag).
+ *  - New tab / re-opening browser:        plays again (new session).
  *
+ * If the user is logged in, greets them personally.
  * Sound: procedurally synthesised via Web Audio API — no external asset.
- * A single tap/click anywhere also skips the splash instantly.
  */
-const SESSION_KEY = "fotuber_intro_played_v1";
+
+const SESSION_KEY = "fotuber_intro_seen_v3";
+let INTRO_ALREADY_PLAYED_THIS_TAB = false;
+
+const hasSeenIntroThisSession = () => {
+  if (INTRO_ALREADY_PLAYED_THIS_TAB) return true;
+  try { return sessionStorage.getItem(SESSION_KEY) === "1"; } catch { return false; }
+};
+
+const markIntroSeen = () => {
+  INTRO_ALREADY_PLAYED_THIS_TAB = true;
+  try { sessionStorage.setItem(SESSION_KEY, "1"); } catch (_) {}
+};
 
 const useProceduralShutterSound = () => {
   const ctxRef = useRef(null);
@@ -116,38 +126,42 @@ const CameraLens = () => (
 
 const IntroSplash = () => {
   const { settings } = useSettings();
-  const [visible, setVisible] = useState(() => {
-    try { return sessionStorage.getItem(SESSION_KEY) !== "1"; } catch { return true; }
-  });
+  const { user, loading: authLoading } = useAuth();
+  const [visible, setVisible] = useState(() => !hasSeenIntroThisSession());
   const [phase, setPhase] = useState("lens"); // lens -> flash -> line -> brand -> out
   const playSound = useProceduralShutterSound();
 
   const finish = () => {
-    try { sessionStorage.setItem(SESSION_KEY, "1"); } catch (_) {}
+    markIntroSeen();
     setPhase("out");
     setTimeout(() => setVisible(false), 900);
   };
 
+  // Start the animation timeline only after auth has resolved,
+  // so we know whether to personalise the greeting.
   useEffect(() => {
-    if (!visible) return;
-    // lock body scroll during splash
+    if (!visible || authLoading) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const timers = [];
     timers.push(setTimeout(() => { setPhase("flash"); playSound(); }, 1250));
     timers.push(setTimeout(() => setPhase("line"),  2400));
-    timers.push(setTimeout(() => setPhase("brand"), 3600));
-    timers.push(setTimeout(finish, 5400));
+    timers.push(setTimeout(() => setPhase("brand"), 3800));
+    timers.push(setTimeout(finish, 5600));
     return () => {
       timers.forEach(clearTimeout);
       document.body.style.overflow = prevOverflow;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [visible, authLoading]);
 
   if (!visible) return null;
 
   const logoUrl = settings?.logo_id ? `${API_BASE}/settings/logo/${settings.logo_id}` : null;
+  const firstName = (user?.name || "").trim().split(/\s+/)[0] || "";
+  const greetingLine = firstName
+    ? `Bugün harika görünüyorsunuz, ${firstName}.`
+    : "Bugün harika görünüyorsunuz.";
 
   return (
     <AnimatePresence>
@@ -203,7 +217,7 @@ const IntroSplash = () => {
                 className="text-white text-2xl sm:text-3xl md:text-5xl font-light tracking-[0.18em] drop-shadow-[0_2px_20px_rgba(255,255,255,0.35)]"
                 style={{ fontFamily: "'Cormorant Garamond', 'Times New Roman', serif" }}
               >
-                Bugün harika görünüyorsunuz.
+                {greetingLine}
               </motion.div>
             )}
           </AnimatePresence>
