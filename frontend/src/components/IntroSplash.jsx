@@ -30,53 +30,122 @@ const markIntroSeen = () => {
 
 const useProceduralShutterSound = () => {
   const ctxRef = useRef(null);
+  /**
+   * Cinematic camera sequence:
+   *   t=0.00  → mechanical SHUTTER click (sharp noise burst, band-pass filtered)
+   *   t=0.25  → xenon FLASH burst (high-freq whine + bright top-end)
+   *   t=0.25  → HEARTBEAT thump #1 (deep bass sine)
+   *   t=0.55  → HEARTBEAT thump #2 (softer second beat)
+   *   t=0.40  → mirror return thunk
+   *
+   * Call this ~250ms BEFORE the visible white flash appears
+   * so the shutter click leads the visual, then flash+heartbeat
+   * hit exactly when the screen turns white.
+   */
   const play = () => {
     try {
-      // Lazy create audio context after user interaction (or fallback for autoplay-tolerant browsers)
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = ctxRef.current || new AudioCtx();
       ctxRef.current = ctx;
-      // Mechanical shutter click — short noise burst through a band-pass
+      // Try to resume in case the browser autoplay policy suspended the context on load.
+      if (ctx.state === "suspended") {
+        try { ctx.resume(); } catch (_) {}
+      }
       const now = ctx.currentTime;
-      const bufferSize = Math.floor(ctx.sampleRate * 0.08);
-      const noiseBuf = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-      const data = noiseBuf.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
-      const noise = ctx.createBufferSource();
-      noise.buffer = noiseBuf;
-      const bp = ctx.createBiquadFilter();
-      bp.type = "bandpass";
-      bp.frequency.value = 1200;
-      bp.Q.value = 0.8;
-      const noiseGain = ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.9, now);
-      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
-      noise.connect(bp).connect(noiseGain).connect(ctx.destination);
-      noise.start(now);
-      // Flash whine — high frequency sine that decays
+
+      // === 1) SHUTTER CLICK (t=0) — sharp mechanical percussion ===
+      const clickBufSize = Math.floor(ctx.sampleRate * 0.09);
+      const clickBuf = ctx.createBuffer(1, clickBufSize, ctx.sampleRate);
+      const clickData = clickBuf.getChannelData(0);
+      for (let i = 0; i < clickBufSize; i++) {
+        clickData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / clickBufSize, 2);
+      }
+      const clickSrc = ctx.createBufferSource();
+      clickSrc.buffer = clickBuf;
+      const clickBp = ctx.createBiquadFilter();
+      clickBp.type = "bandpass";
+      clickBp.frequency.value = 1400;
+      clickBp.Q.value = 0.7;
+      const clickGain = ctx.createGain();
+      clickGain.gain.setValueAtTime(1.1, now);
+      clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.10);
+      clickSrc.connect(clickBp).connect(clickGain).connect(ctx.destination);
+      clickSrc.start(now);
+
+      // === 2) FLASH BURST (t=0.25) — xenon whine + bright top-end sizzle ===
+      const flashStart = now + 0.25;
+      // High-freq whine sweep
       const whine = ctx.createOscillator();
       whine.type = "sine";
-      whine.frequency.setValueAtTime(3600, now + 0.06);
-      whine.frequency.exponentialRampToValueAtTime(900, now + 0.9);
+      whine.frequency.setValueAtTime(4200, flashStart);
+      whine.frequency.exponentialRampToValueAtTime(1100, flashStart + 1.1);
       const whineGain = ctx.createGain();
-      whineGain.gain.setValueAtTime(0.0001, now + 0.06);
-      whineGain.gain.exponentialRampToValueAtTime(0.18, now + 0.09);
-      whineGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.0);
+      whineGain.gain.setValueAtTime(0.0001, flashStart);
+      whineGain.gain.exponentialRampToValueAtTime(0.22, flashStart + 0.05);
+      whineGain.gain.exponentialRampToValueAtTime(0.0001, flashStart + 1.2);
       whine.connect(whineGain).connect(ctx.destination);
-      whine.start(now + 0.06);
-      whine.stop(now + 1.05);
-      // Second thunk (mirror return)
+      whine.start(flashStart);
+      whine.stop(flashStart + 1.25);
+
+      // White-noise sizzle at flash moment (electronic zap)
+      const sizzleBufSize = Math.floor(ctx.sampleRate * 0.25);
+      const sizzleBuf = ctx.createBuffer(1, sizzleBufSize, ctx.sampleRate);
+      const sizzleData = sizzleBuf.getChannelData(0);
+      for (let i = 0; i < sizzleBufSize; i++) {
+        sizzleData[i] = (Math.random() * 2 - 1) * (1 - i / sizzleBufSize);
+      }
+      const sizzleSrc = ctx.createBufferSource();
+      sizzleSrc.buffer = sizzleBuf;
+      const sizzleHp = ctx.createBiquadFilter();
+      sizzleHp.type = "highpass";
+      sizzleHp.frequency.value = 3800;
+      const sizzleGain = ctx.createGain();
+      sizzleGain.gain.setValueAtTime(0.4, flashStart);
+      sizzleGain.gain.exponentialRampToValueAtTime(0.001, flashStart + 0.3);
+      sizzleSrc.connect(sizzleHp).connect(sizzleGain).connect(ctx.destination);
+      sizzleSrc.start(flashStart);
+
+      // === 3) HEARTBEAT (thump #1 at flash + thump #2 slightly later) ===
+      const makeThump = (t, level = 0.7, dur = 0.35) => {
+        const osc = ctx.createOscillator();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(90, t);
+        osc.frequency.exponentialRampToValueAtTime(38, t + dur);
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(level, t + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        // Sub-bass thump body (thicker feel)
+        const subOsc = ctx.createOscillator();
+        subOsc.type = "sine";
+        subOsc.frequency.setValueAtTime(55, t);
+        subOsc.frequency.exponentialRampToValueAtTime(28, t + dur);
+        const subGain = ctx.createGain();
+        subGain.gain.setValueAtTime(0.0001, t);
+        subGain.gain.exponentialRampToValueAtTime(level * 0.9, t + 0.04);
+        subGain.gain.exponentialRampToValueAtTime(0.0001, t + dur * 1.2);
+        osc.connect(gain).connect(ctx.destination);
+        subOsc.connect(subGain).connect(ctx.destination);
+        osc.start(t);
+        subOsc.start(t);
+        osc.stop(t + dur + 0.05);
+        subOsc.stop(t + dur * 1.2 + 0.05);
+      };
+      makeThump(flashStart, 0.85, 0.38);           // primary boom syncs with flash
+      makeThump(flashStart + 0.32, 0.55, 0.30);    // second heartbeat pulse
+
+      // === 4) Mirror return thunk (t=0.40) — mechanical settle ===
       const thunk = ctx.createOscillator();
       thunk.type = "square";
-      thunk.frequency.setValueAtTime(120, now + 0.15);
-      thunk.frequency.exponentialRampToValueAtTime(60, now + 0.24);
+      thunk.frequency.setValueAtTime(150, now + 0.40);
+      thunk.frequency.exponentialRampToValueAtTime(55, now + 0.55);
       const thunkGain = ctx.createGain();
-      thunkGain.gain.setValueAtTime(0.35, now + 0.15);
-      thunkGain.gain.exponentialRampToValueAtTime(0.001, now + 0.26);
+      thunkGain.gain.setValueAtTime(0.35, now + 0.40);
+      thunkGain.gain.exponentialRampToValueAtTime(0.001, now + 0.56);
       thunk.connect(thunkGain).connect(ctx.destination);
-      thunk.start(now + 0.15);
-      thunk.stop(now + 0.27);
+      thunk.start(now + 0.40);
+      thunk.stop(now + 0.58);
     } catch (_) { /* silent */ }
   };
   return play;
@@ -141,14 +210,17 @@ const IntroSplash = () => {
     if (!visible || authLoading) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    // Total timeline ≈ 14.4s — lens/flash tightened, brand held longer so cursive lands well before end.
-    // lens:  0.0s → 1.4s   (opens quickly)
-    // flash: 1.4s          (~1.4s decay; peak white blankets the screen ~0.35s)
-    // line:  2.9s → 6.9s   (~4.0s reading time)
-    // brand: 7.0s → 13.5s  (~6.5s — 'Görsel Sanat' fully in by ~9.2s, then held ~4.3s)
-    // out:   13.5s (0.9s fade-out)
+    // Total timeline ≈ 13.5s — sound is fired 250ms BEFORE the visible flash
+    // so the shutter click leads, then flash whine + heartbeat sync with the white burst.
+    // sound:  1.15s (shutter click)
+    // lens:   0.0s → 1.4s
+    // flash:  1.4s   (sound whine + heartbeat land here as the screen turns white)
+    // line:   2.9s → 6.9s   (~4.0s reading time)
+    // brand:  7.0s → 13.5s  (~6.5s — cursive 'Görsel Sanat' fully in by ~8.9s, then held ~4.6s)
+    // out:    13.5s (0.9s fade-out)
     const timers = [];
-    timers.push(setTimeout(() => { setPhase("flash"); playSound(); }, 1400));
+    timers.push(setTimeout(() => { playSound(); }, 1150));        // shutter click lands 250ms early
+    timers.push(setTimeout(() => setPhase("flash"), 1400));       // visual white burst
     timers.push(setTimeout(() => setPhase("line"),  2900));
     timers.push(setTimeout(() => setPhase("brand"), 7000));
     timers.push(setTimeout(finish, 13500));
