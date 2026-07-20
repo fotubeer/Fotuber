@@ -119,8 +119,6 @@ const CameraLens = () => (
     {/* Pupil */}
     <circle cx="100" cy="100" r="22" fill="#0b0b0b" stroke="#d4af37" strokeWidth="1" />
     <circle cx="88" cy="88" r="10" fill="url(#reflect)" />
-    {/* Text “Fotuber” engraved on ring */}
-    <text x="100" y="20" textAnchor="middle" fill="#d4af37" fontSize="8" letterSpacing="4" opacity="0.85">FOTUBER · f/1.4</text>
   </motion.svg>
 );
 
@@ -143,11 +141,17 @@ const IntroSplash = () => {
     if (!visible || authLoading) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    // Total timeline ≈ 10.4s so every stage is comfortably readable.
+    // lens:  0.0s → 1.9s
+    // flash: 1.9s (with ~1.1s decay)
+    // line:  2.9s → 6.4s  (visible ~3.5s)
+    // brand: 6.6s → 10.0s (visible ~3.4s)
+    // out:   10.0s (0.9s fade-out)
     const timers = [];
-    timers.push(setTimeout(() => { setPhase("flash"); playSound(); }, 1250));
-    timers.push(setTimeout(() => setPhase("line"),  2400));
-    timers.push(setTimeout(() => setPhase("brand"), 3800));
-    timers.push(setTimeout(finish, 5600));
+    timers.push(setTimeout(() => { setPhase("flash"); playSound(); }, 1900));
+    timers.push(setTimeout(() => setPhase("line"),  2900));
+    timers.push(setTimeout(() => setPhase("brand"), 6600));
+    timers.push(setTimeout(finish, 10000));
     return () => {
       timers.forEach(clearTimeout);
       document.body.style.overflow = prevOverflow;
@@ -210,10 +214,10 @@ const IntroSplash = () => {
             {phase === "line" && (
               <motion.div
                 key="line"
-                initial={{ opacity: 0, y: 16, filter: "blur(6px)" }}
+                initial={{ opacity: 0, y: 20, filter: "blur(8px)" }}
                 animate={{ opacity: 1, y: 0,  filter: "blur(0px)" }}
-                exit={{ opacity: 0, y: -12, filter: "blur(4px)" }}
-                transition={{ duration: 1.0, ease: "easeOut" }}
+                exit={{ opacity: 0, y: -14, filter: "blur(6px)" }}
+                transition={{ duration: 1.4, ease: "easeOut" }}
                 className="text-white text-2xl sm:text-3xl md:text-5xl font-light tracking-[0.18em] drop-shadow-[0_2px_20px_rgba(255,255,255,0.35)]"
                 style={{ fontFamily: "'Cormorant Garamond', 'Times New Roman', serif" }}
               >
@@ -230,20 +234,20 @@ const IntroSplash = () => {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.6 }}
-                className="flex flex-col items-center gap-5 md:gap-7"
+                transition={{ duration: 0.8 }}
+                className="flex flex-col items-center gap-6 md:gap-8"
               >
-                {/* Logo */}
+                {/* Logo — customer's actual uploaded logo */}
                 <motion.div
-                  initial={{ scale: 0.6, opacity: 0 }}
-                  animate={{ scale: 1,   opacity: 1 }}
-                  transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-                  className="w-16 h-16 md:w-24 md:h-24 rounded-full border-2 border-[#d4af37] flex items-center justify-center bg-black overflow-hidden shadow-[0_0_60px_rgba(212,175,55,0.35)]"
+                  initial={{ scale: 0.4, opacity: 0, rotate: -6 }}
+                  animate={{ scale: 1,   opacity: 1, rotate: 0 }}
+                  transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
+                  className="w-28 h-28 sm:w-32 sm:h-32 md:w-44 md:h-44 rounded-full border-2 border-[#d4af37] flex items-center justify-center bg-black overflow-hidden shadow-[0_0_80px_rgba(212,175,55,0.5)]"
                 >
                   {logoUrl ? (
                     <img src={logoUrl} alt="Fotuber logo" className="w-full h-full object-cover" />
                   ) : (
-                    <svg viewBox="0 0 40 40" className="w-9 h-9 md:w-12 md:h-12 text-[#d4af37]" fill="none" stroke="currentColor" strokeWidth="1.6">
+                    <svg viewBox="0 0 40 40" className="w-16 h-16 md:w-24 md:h-24 text-[#d4af37]" fill="none" stroke="currentColor" strokeWidth="1.6">
                       <rect x="6" y="12" width="28" height="20" rx="3" />
                       <circle cx="20" cy="22" r="6" />
                       <path d="M14 12 l3 -4 h6 l3 4" />
@@ -254,18 +258,18 @@ const IntroSplash = () => {
                 {/* Wordmark */}
                 <div className="flex flex-col items-center leading-none">
                   <motion.div
-                    initial={{ opacity: 0, y: 24, letterSpacing: "0.4em" }}
+                    initial={{ opacity: 0, y: 26, letterSpacing: "0.4em" }}
                     animate={{ opacity: 1, y: 0,  letterSpacing: "0.02em" }}
-                    transition={{ duration: 0.9, ease: "easeOut", delay: 0.15 }}
+                    transition={{ duration: 1.1, ease: "easeOut", delay: 0.55 }}
                     className="text-white text-6xl sm:text-7xl md:text-9xl font-black drop-shadow-[0_4px_30px_rgba(255,255,255,0.15)]"
                     style={{ fontFamily: "'Manrope','Helvetica Neue',Arial,sans-serif", fontWeight: 900, letterSpacing: "-0.02em" }}
                   >
                     Fotuber
                   </motion.div>
                   <motion.div
-                    initial={{ opacity: 0, y: 22, scale: 0.85 }}
+                    initial={{ opacity: 0, y: 24, scale: 0.85 }}
                     animate={{ opacity: 1, y: 0,  scale: 1 }}
-                    transition={{ duration: 1.1, ease: "easeOut", delay: 0.55 }}
+                    transition={{ duration: 1.3, ease: "easeOut", delay: 1.15 }}
                     className="mt-4 md:mt-5 text-[#d4af37] text-4xl sm:text-5xl md:text-7xl italic drop-shadow-[0_2px_18px_rgba(212,175,55,0.55)]"
                     style={{
                       fontFamily: "'Great Vibes','Pinyon Script','Dancing Script','Segoe Script','Brush Script MT',cursive",
@@ -279,8 +283,8 @@ const IntroSplash = () => {
                 {/* Tiny sub-label */}
                 <motion.div
                   initial={{ opacity: 0 }}
-                  animate={{ opacity: 0.7 }}
-                  transition={{ duration: 0.8, delay: 1.15 }}
+                  animate={{ opacity: 0.75 }}
+                  transition={{ duration: 1.0, delay: 2.0 }}
                   className="mt-2 text-[10px] md:text-xs tracking-[0.4em] uppercase text-neutral-400"
                 >
                   fotuber.com.tr
