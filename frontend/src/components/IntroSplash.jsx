@@ -141,17 +141,17 @@ const IntroSplash = () => {
     if (!visible || authLoading) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    // Total timeline ≈ 10.4s so every stage is comfortably readable.
-    // lens:  0.0s → 1.9s
-    // flash: 1.9s (with ~1.1s decay)
-    // line:  2.9s → 6.4s  (visible ~3.5s)
-    // brand: 6.6s → 10.0s (visible ~3.4s)
-    // out:   10.0s (0.9s fade-out)
+    // Total timeline ≈ 14.6s — every stage has generous reading time.
+    // lens:  0.0s → 2.5s
+    // flash: 2.5s (with ~1.2s decay)
+    // line:  3.6s → 8.4s  (visible ~4.8s)
+    // brand: 8.6s → 14.0s (logo pops fast, wordmark cascades — full brand held ~3.6s after 'Görsel Sanat' lands at ~10.9s)
+    // out:   14.0s (0.9s fade-out)
     const timers = [];
-    timers.push(setTimeout(() => { setPhase("flash"); playSound(); }, 1900));
-    timers.push(setTimeout(() => setPhase("line"),  2900));
-    timers.push(setTimeout(() => setPhase("brand"), 6600));
-    timers.push(setTimeout(finish, 10000));
+    timers.push(setTimeout(() => { setPhase("flash"); playSound(); }, 2500));
+    timers.push(setTimeout(() => setPhase("line"),  3600));
+    timers.push(setTimeout(() => setPhase("brand"), 8600));
+    timers.push(setTimeout(finish, 14000));
     return () => {
       timers.forEach(clearTimeout);
       document.body.style.overflow = prevOverflow;
@@ -237,17 +237,28 @@ const IntroSplash = () => {
                 transition={{ duration: 0.8 }}
                 className="flex flex-col items-center gap-6 md:gap-8"
               >
-                {/* Logo — customer's actual uploaded logo */}
+                {/* Logo — customer's uploaded logo displayed die-cut on the dark stage.
+                    'mixBlendMode: screen' turns any pure-black background of the source PNG transparent
+                    (perfect for logos with dark or transparent backgrounds). If the source is a
+                    transparent-background PNG, it renders natively; if it has a solid dark bg, that bg is
+                    removed by the blend. No circular frame — the logo shows in its native shape. */}
                 <motion.div
-                  initial={{ scale: 0.4, opacity: 0, rotate: -6 }}
-                  animate={{ scale: 1,   opacity: 1, rotate: 0 }}
+                  initial={{ scale: 0.5, opacity: 0 }}
+                  animate={{ scale: 1,   opacity: 1 }}
                   transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }}
-                  className="w-28 h-28 sm:w-32 sm:h-32 md:w-44 md:h-44 rounded-full border-2 border-[#d4af37] flex items-center justify-center bg-black overflow-hidden shadow-[0_0_80px_rgba(212,175,55,0.5)]"
+                  className="relative flex items-center justify-center"
                 >
+                  {/* Soft ambient glow behind the logo (no visible frame) */}
+                  <div className="absolute inset-0 blur-3xl bg-[#d4af37]/25 rounded-full" />
                   {logoUrl ? (
-                    <img src={logoUrl} alt="Fotuber logo" className="w-full h-full object-cover" />
+                    <img
+                      src={logoUrl}
+                      alt="Fotuber logo"
+                      className="relative w-48 h-48 sm:w-56 sm:h-56 md:w-72 md:h-72 object-contain drop-shadow-[0_0_45px_rgba(255,255,255,0.45)]"
+                      style={{ mixBlendMode: "screen" }}
+                    />
                   ) : (
-                    <svg viewBox="0 0 40 40" className="w-16 h-16 md:w-24 md:h-24 text-[#d4af37]" fill="none" stroke="currentColor" strokeWidth="1.6">
+                    <svg viewBox="0 0 40 40" className="relative w-40 h-40 md:w-56 md:h-56 text-white" fill="none" stroke="currentColor" strokeWidth="1.6">
                       <rect x="6" y="12" width="28" height="20" rx="3" />
                       <circle cx="20" cy="22" r="6" />
                       <path d="M14 12 l3 -4 h6 l3 4" />
