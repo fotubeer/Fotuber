@@ -43,6 +43,7 @@ import AdminProductOptions from "@/pages/admin/AdminProductOptions";
 import AdminVenues from "@/pages/admin/AdminVenues";
 import AdminIntroSettings from "@/pages/admin/AdminIntroSettings";
 import AdminInstagramSlideshow from "@/pages/admin/AdminInstagramSlideshow";
+import AdminAIAssistant from "@/pages/admin/AdminAIAssistant";
 
 import DiscountCode from "@/pages/DiscountCode";
 import FotuberMedya from "@/pages/FotuberMedya";
@@ -121,6 +122,7 @@ function App() {
               <Route path="/admin/urun-secenekleri" element={<AdminGuard><AdminProductOptions /></AdminGuard>} />
               <Route path="/admin/animasyon-ayarlari" element={<AdminGuard><AdminIntroSettings /></AdminGuard>} />
               <Route path="/admin/instagram-slayt" element={<AdminGuard><AdminInstagramSlideshow /></AdminGuard>} />
+              <Route path="/admin/fotuber-asistan" element={<AdminGuard><AdminAIAssistant /></AdminGuard>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

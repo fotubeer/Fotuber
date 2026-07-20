@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, CalendarDays, CalendarClock, Users, Wallet,
   ImageIcon, Camera, LogOut, Menu, X, Package, Settings, Coins, Ticket, Film, KeyRound, ArrowLeftRight,
-  Images, QrCode, Frame, MapPin, Instagram,
+  Images, QrCode, Frame, MapPin, Instagram, Bot,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
@@ -31,6 +31,7 @@ const items = [
   { to: "/admin/ayarlar", label: "Site Ayarları", icon: Settings, ownerOnly: true },
   { to: "/admin/animasyon-ayarlari", label: "Açılış Animasyonu", icon: Film, ownerOnly: true },
   { to: "/admin/instagram-slayt", label: "Instagram Slayt", icon: Instagram, ownerOnly: true },
+  { to: "/admin/fotuber-asistan", label: "Fotuber Asistan (AI)", icon: Bot, ownerOnly: true },
 ];
 
 export const AdminLayout = ({ children }) => {

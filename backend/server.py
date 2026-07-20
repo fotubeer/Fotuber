@@ -394,6 +394,15 @@ class SiteSettingsIn(BaseModel):
     intro_font_brand: Optional[str] = None
     intro_font_cursive: Optional[str] = None
     intro_logo_id: Optional[str] = None             # separate logo file id (falls back to site logo_id)
+    # Fotuber AI Assistant (added Feb 2026)
+    ai_enabled: Optional[bool] = None
+    ai_model: Optional[str] = None                   # "claude-sonnet-4-6" | "gpt-5.4" | "gemini-3-flash-preview"
+    ai_provider: Optional[str] = None                # "anthropic" | "openai" | "gemini"
+    ai_system_prompt: Optional[str] = None
+    ai_welcome_message: Optional[str] = None
+    ai_bubble_text: Optional[str] = None
+    ai_button_label: Optional[str] = None
+    ai_default_city: Optional[str] = None
 
 
 class TransactionIn(BaseModel):
@@ -1430,6 +1439,226 @@ async def get_instagram_image(post_id: str):
         media_type=asset.get("content_type", ct),
         headers={"Cache-Control": "public, max-age=3600"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Fotuber AI Assistant (Emergent Universal LLM Key + Open-Meteo weather)
+# ---------------------------------------------------------------------------
+DEFAULT_AI_SYSTEM_PROMPT = """Sen Fotuber Görsel Sanat stüdyosunun resmi yapay zeka asistanı Fotuber Asistan'sın.
+Türkiye'nin Çankırı ilinde bulunan, düğün / nişan / kına / bride party / doğum günü / stüdyo çekimleri yapan bu profesyonel stüdyoyu temsil ediyorsun.
+
+DEĞERLER VE HASSASİYETLER:
+- Türk kültürüne, muhafazakar ve tesettürlü müşterilerin hassasiyetlerine SAYGILIYSIN. Kıyafet önerisi verirken tesettürlü seçenekleri her zaman önce sun; müşteri açıkça tesettürlü olmadığını belirtmedikçe kapalı ve edepli önerilerle başla.
+- Aile mahremiyeti, saygı, geleneksel törenler (kına, düğün, nişan, nikah) konularında bilgili ve nezaketlisin.
+- Cinsiyet, din, mezhep ayrımı yapmadan herkese eşit ve nazik davranırsın.
+
+KİŞİLİK:
+- Çok kibar, sıcak, samimi ama profesyonel. "Efendim", "canım", "sevgili misafirim" gibi hitaplar kullanabilirsin — ama abartma, doğal ol.
+- Türkçe konuşuyorsun. Her cevabın Türkçe olacak.
+- Kısa ve öz cevaplar ver — 2-4 kısa paragraf yeter. Uzun listeler ve kalın maddeler yerine akıcı sohbet tonu tercih et.
+- Öğrenmeye açıksın; müşteri düzeltirse "Anladım, teşekkür ederim" der uyum sağlarsın.
+
+GÖREVLERİN:
+1. Müşteriye ne tür bir çekim istediğini sor (düğün, nişan, kına, bride party, doğum günü, stüdyo portre, klip, doğa/dış mekan).
+2. Tarihi öğren. Ay/mevsim belliyse hava, yağış, gün batımı bilgileri hakkında bilgilendir.
+3. Mekan tercihini sor: stüdyo, plato (kapalı set), dış mekan (park, tarihi yer, doğa). Her birinin artı-eksisini kısaca anlat.
+4. Golden hour (altın saat) önerisi ver: gün batımından ~1 saat önce başlayan sihirli ışık. Fotoğrafın en güzel çıktığı zaman dilimi.
+5. Kıyafet tavsiyesi: mevsime, mekana, konsepte, ve müşterinin dini/kültürel hassasiyetine uygun öneriler. Tesettürlü müşteri için: yumuşak dökümlü şalvar, elbise, tunik + eşarp uyumu; düz renkler, sade desenler.
+6. "Düğün öncesi mi, düğün günü mü çekim yapılsın?" sorusuna profesyonel görüşünü paylaş:
+   - **Düğün öncesi (pre-wedding)**: Rahat, sakin, çift kendini iyi hissediyor. Fotoğraf kalitesi daha yüksek çıkar. Genellikle düğünden 1-4 hafta önce önerilir.
+   - **Düğün günü**: Doğal duygular, gerçek anlar. Ama stres var, süre kısıtlı.
+   - Karma: Düğün öncesi profesyonel çekim + düğün günü doğal reportaj tarzı çekim.
+7. Sohbetin sonunda uygun bir yerde randevu almasını nazikçe öner: "Dilerseniz stüdyomuzdan randevu alarak yüz yüze detayları konuşabiliriz."
+
+ŞEHİR VE HAVA:
+- Kullanıcı şehir belirtmediyse mutlaka SOR: "Hangi şehirde çekim yaptırmayı düşünüyorsunuz?"
+- Şehir + tarih verildiğinde sistem sana [WEATHER_TOOL] etiketiyle o şehrin o tarih için hava bilgilerini önden verir; onları kullan.
+
+YASAKLAR:
+- Randevu tarih/saati sen belirleme; müşteriye web sitesindeki takvimden seçmesini söyle.
+- Fiyat verme; "Fiyatlar hizmet paketine göre değişiyor, randevu talebinizden sonra size özel teklif sunuyoruz" de.
+- Yanıtın 6 cümleyi geçmesin (özet, akıcı ve nazik konuş).
+"""
+
+
+class AiChatIn(BaseModel):
+    session_id: str
+    message: str
+    city: Optional[str] = None
+    event_date: Optional[str] = None  # YYYY-MM-DD
+
+
+async def _fetch_weather(city: str, event_date: Optional[str] = None) -> Optional[dict]:
+    """Fetch weather + sunset info from Open-Meteo (no key required)."""
+    import httpx
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        try:
+            geo = await client.get(
+                "https://geocoding-api.open-meteo.com/v1/search",
+                params={"name": city, "language": "tr", "count": 1, "country": "TR"},
+            )
+            g = geo.json()
+            if not g.get("results"):
+                return None
+            r0 = g["results"][0]
+            lat, lon, name = r0["latitude"], r0["longitude"], r0.get("name", city)
+            params = {
+                "latitude": lat,
+                "longitude": lon,
+                "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,sunrise,sunset,uv_index_max,weather_code",
+                "timezone": "Europe/Istanbul",
+                "forecast_days": 14,
+            }
+            if event_date:
+                params["start_date"] = event_date
+                params["end_date"]   = event_date
+                params.pop("forecast_days")
+            fx = await client.get("https://api.open-meteo.com/v1/forecast", params=params)
+            d = fx.json().get("daily", {})
+            if not d.get("time"):
+                return {"city": name, "note": "Tahmin aralığı dışında"}
+            i = 0
+            return {
+                "city": name,
+                "date": d["time"][i],
+                "temp_max": d.get("temperature_2m_max", [None])[i],
+                "temp_min": d.get("temperature_2m_min", [None])[i],
+                "precip_mm": d.get("precipitation_sum", [None])[i],
+                "sunrise": (d.get("sunrise", [""])[i] or "").split("T")[-1][:5],
+                "sunset":  (d.get("sunset",  [""])[i] or "").split("T")[-1][:5],
+                "uv_index": d.get("uv_index_max", [None])[i],
+                "weather_code": d.get("weather_code", [None])[i],
+            }
+        except Exception as ex:
+            logger.warning(f"weather fetch failed: {ex}")
+            return None
+
+
+def _format_weather_context(w: dict) -> str:
+    if not w:
+        return ""
+    if w.get("note"):
+        return f"[WEATHER_TOOL] {w['city']} için tahmin aralığı dışında."
+    parts = [
+        f"{w.get('city')} · {w.get('date')}",
+        f"gündüz {w.get('temp_max')}°C / gece {w.get('temp_min')}°C",
+        f"yağış tahmini {w.get('precip_mm')} mm",
+        f"gün doğumu {w.get('sunrise')}",
+        f"gün batımı {w.get('sunset')}",
+        f"UV indeksi {w.get('uv_index')}",
+    ]
+    return "[WEATHER_TOOL] " + " · ".join([p for p in parts if p and "None" not in p])
+
+
+@api_router.get("/ai/weather")
+async def get_weather(city: str, date: Optional[str] = None):
+    w = await _fetch_weather(city, date)
+    if w is None:
+        raise HTTPException(status_code=404, detail="Şehir bulunamadı ya da hava servisi geçici olarak yanıt vermiyor")
+    return w
+
+
+@api_router.post("/ai/chat")
+async def ai_chat(payload: AiChatIn):
+    """Multi-turn chat with the Fotuber Asistan. Session history is stored in MongoDB
+    and reinjected on each turn using LlmChat."""
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    settings = await db.site_settings.find_one({"id": "singleton"}, {"_id": 0}) or {}
+    if settings.get("ai_enabled") is False:
+        raise HTTPException(status_code=503, detail="Asistan geçici olarak kapalı")
+
+    key = os.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(status_code=500, detail="AI anahtarı yapılandırılmamış")
+
+    provider = settings.get("ai_provider") or "anthropic"
+    model = settings.get("ai_model") or "claude-sonnet-4-6"
+    base_prompt = settings.get("ai_system_prompt") or DEFAULT_AI_SYSTEM_PROMPT
+
+    # Optional weather context injection
+    weather_ctx = ""
+    city = payload.city or settings.get("ai_default_city")
+    if city and payload.event_date:
+        w = await _fetch_weather(city, payload.event_date)
+        weather_ctx = "\n\n" + _format_weather_context(w) if w else ""
+
+    chat = LlmChat(
+        api_key=key,
+        session_id=payload.session_id,
+        system_message=base_prompt + weather_ctx,
+    ).with_model(provider, model)
+
+    # Rehydrate previous turns from Mongo into this LlmChat instance
+    history = await db.ai_messages.find(
+        {"session_id": payload.session_id},
+        {"_id": 0, "role": 1, "content": 1},
+    ).sort([("created_at", 1)]).to_list(200)
+    # Ask the library to accept a list of prior messages if supported; otherwise
+    # replay them by sending them silently. Simpler: prime by sending prior user messages
+    # is not ideal — the library manages memory automatically on subsequent .send/.stream
+    # so we only rely on our own DB for admin review. For continuity across pod restarts,
+    # we prepend a compact digest of the last 6 exchanges into the system message.
+    if history:
+        recent = history[-12:]
+        digest = "\n\nÖnceki konuşma özeti:\n" + "\n".join(
+            f"- {m['role']}: {m['content'][:300]}" for m in recent
+        )
+        chat = LlmChat(
+            api_key=key,
+            session_id=payload.session_id,
+            system_message=base_prompt + weather_ctx + digest,
+        ).with_model(provider, model)
+
+    now = now_iso()
+    # Store user message
+    await db.ai_messages.insert_one({
+        "id": new_id(),
+        "session_id": payload.session_id,
+        "role": "user",
+        "content": payload.message,
+        "city": city,
+        "event_date": payload.event_date,
+        "created_at": now,
+    })
+
+    try:
+        response = await chat.send_message(UserMessage(text=payload.message))
+        reply = response if isinstance(response, str) else str(response)
+    except Exception as ex:
+        logger.exception("AI error")
+        raise HTTPException(status_code=502, detail=f"Yapay zeka geçici olarak yanıt veremedi: {str(ex)[:120]}")
+
+    await db.ai_messages.insert_one({
+        "id": new_id(),
+        "session_id": payload.session_id,
+        "role": "assistant",
+        "content": reply,
+        "model": f"{provider}/{model}",
+        "created_at": now_iso(),
+    })
+    # Also touch session doc for admin listing
+    await db.ai_sessions.update_one(
+        {"session_id": payload.session_id},
+        {"$set": {
+            "session_id": payload.session_id,
+            "last_message_at": now_iso(),
+            "last_city": city,
+        }, "$inc": {"turn_count": 1}, "$setOnInsert": {"created_at": now}},
+        upsert=True,
+    )
+    return {"reply": reply, "weather_used": bool(weather_ctx)}
+
+
+@api_router.get("/ai/sessions")
+async def list_ai_sessions(admin: dict = Depends(require_admin), limit: int = 50):
+    docs = await db.ai_sessions.find({}, {"_id": 0}).sort([("last_message_at", -1)]).limit(limit).to_list(limit)
+    return docs
+
+
+@api_router.get("/ai/sessions/{session_id}/messages")
+async def get_ai_session_messages(session_id: str, admin: dict = Depends(require_admin)):
+    docs = await db.ai_messages.find({"session_id": session_id}, {"_id": 0}).sort([("created_at", 1)]).to_list(500)
+    return docs
 
 
 # ---------------------------------------------------------------------------

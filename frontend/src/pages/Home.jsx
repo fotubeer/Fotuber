@@ -8,6 +8,7 @@ import { useSettings } from "@/context/SettingsContext";
 import { SEO, buildLocalBusinessLd } from "@/components/SEO";
 import IntroSplash from "@/components/IntroSplash";
 import InstagramSlideshow from "@/components/InstagramSlideshow";
+import FotuberAI from "@/components/FotuberAI";
 
 const DEFAULT_HERO = "https://images.pexels.com/photos/5762880/pexels-photo-5762880.jpeg";
 
@@ -43,6 +44,7 @@ const Home = () => {
   return (
     <div>
       <IntroSplash />
+      <FotuberAI />
       <SEO path="/" jsonLd={buildLocalBusinessLd(settings)} />
       {/* Hero */}
       <section className="relative min-h-[92vh] overflow-hidden">

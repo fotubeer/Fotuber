@@ -85,16 +85,24 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
 ### Instagram Slideshow (Manual, admin-managed)
 - Backend `instagram_posts` collection + `site_assets` for images.
 - Endpoints: `GET /api/instagram-posts` (public active), `GET /api/instagram-posts/all` (admin), `POST /api/instagram-posts` (multipart file+form fields), `PATCH /api/instagram-posts/{id}`, `DELETE /api/instagram-posts/{id}`, `GET /api/instagram-posts/{id}/image`.
-- **`pages/admin/AdminInstagramSlideshow.jsx`** (route: `/admin/instagram-slayt`, sidebar: "Instagram Slayt"):
-  - Upload photo + set Instagram URL, account label (@fotuberphotography / @cankirinisanevii), caption, order, active.
-  - Grid view with reorder (up/down arrows), active/inactive toggle, delete confirm.
-- **`components/InstagramSlideshow.jsx`** — Home page section between FOMO banner and discount CTA:
-  - Auto-rotating slideshow with 5.5s interval (pauses on hover).
-  - Left column: heading, account chips linking to both Instagram profiles, slide counter.
-  - Right column: 16:10 aspect card with cinematic fade+scale transitions, bottom gradient overlay showing account label + caption + "Instagram'da Aç" pill.
-  - Prev/next arrows (shown on hover) + dot indicators.
-  - Clicking anywhere on the slide opens the associated Instagram URL in a new tab.
-  - Renders nothing when no posts exist.
+- **`pages/admin/AdminInstagramSlideshow.jsx`** (route: `/admin/instagram-slayt`, sidebar: "Instagram Slayt")
+- **`components/InstagramSlideshow.jsx`** — Home page section with cinematic auto-rotating slideshow.
+
+### Fotuber Asistan (AI Chatbot)
+- Uses Emergent Universal Key with Claude Sonnet 4.6 (default). Multi-turn with Mongo-backed session digest.
+- Backend endpoints:
+  - `POST /api/ai/chat` — accepts {session_id, message, city, event_date}. Optionally fetches Open-Meteo weather (city geocoded + forecast + sunset).
+  - `GET /api/ai/weather?city=&date=` — Open-Meteo proxy.
+  - `GET /api/ai/sessions` (admin) + `GET /api/ai/sessions/{id}/messages` (admin) — session monitoring for training / review.
+- **`components/FotuberAI.jsx`** — Floating camera-robot FAB on Home page bottom-right + animated speech bubble "Fotuber yapay zekaya sor ve öğren".
+  - Panel: header with online status, city+date context inputs, chat log, thinking indicator, "Şimdi randevu al" CTA (auto-detects event_type from convo), message input.
+  - SVG camera-bot with animated pupil/flash/blinking recording light.
+  - Session id persists in sessionStorage (`fotuber_ai_session_v1`).
+- **`pages/admin/AdminAIAssistant.jsx`** (route: `/admin/fotuber-asistan`, sidebar: "Fotuber Asistan (AI)"):
+  - Enable/disable toggle, model dropdown (Claude/GPT/Gemini variants), default city, bubble/welcome/system-prompt editing, live session review.
+- Default system prompt is Turkish-culture-aware, conservative-friendly for tesettürlü / muhafazakar müşteriler, 6-sentence limit, no pricing, redirects to booking calendar.
+- Adds `EMERGENT_LLM_KEY` to `/app/backend/.env`.
+- Adds `emergentintegrations` pip package.
   - Camera lens SVG animates in (aperture blades, gold engraving "FOTUBER · f/1.4").
   - Procedurally synthesised sound via Web Audio API (mechanical shutter click + high-freq flash whine decay + mirror thunk) — no external asset.
   - White flash burst overlay + expanding gold ring on shutter fire.

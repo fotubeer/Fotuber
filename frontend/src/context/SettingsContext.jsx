@@ -34,6 +34,15 @@ const DEFAULTS = {
   intro_font_brand: "'Manrope', 'Helvetica Neue', Arial, sans-serif",
   intro_font_cursive: "'Great Vibes', 'Pinyon Script', 'Dancing Script', cursive",
   intro_logo_id: null,
+  // Fotuber AI Assistant
+  ai_enabled: true,
+  ai_model: "claude-sonnet-4-6",
+  ai_provider: "anthropic",
+  ai_system_prompt: "",
+  ai_welcome_message: "Merhaba! Ben Fotuber Asistan. Size özel çekim önerileri, hava durumu, gün batımı saati ve kıyafet tavsiyeleri için buradayım. Hangi tarih ve şehir için sorunuz var?",
+  ai_bubble_text: "Fotuber yapay zekaya sor ve öğren",
+  ai_button_label: "Fotuber Asistan",
+  ai_default_city: "Çankırı",
 };
 
 const applyTypography = (s) => {
