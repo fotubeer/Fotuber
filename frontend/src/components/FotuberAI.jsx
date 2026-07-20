@@ -156,7 +156,7 @@ const FotuberAI = () => {
             exit={{ opacity: 0, y: 40, scale: 0.6 }}
             transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
             className="fixed z-[60] right-4 sm:right-6 flex items-end gap-2 pointer-events-none"
-            style={{ bottom: "5rem" }}
+            style={{ bottom: "11rem" }}
             data-testid="ai-fab-wrap"
           >
             {/* Speech bubble */}
@@ -193,20 +193,47 @@ const FotuberAI = () => {
               )}
             </AnimatePresence>
 
-            {/* Robot camera button */}
+            {/* Robot camera button with jumping animation + waving hand peek */}
             <button
               onClick={() => { setOpen(true); setBubbleVisible(false); }}
               className="pointer-events-auto relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-black border border-[#d4af37]/60 hover:border-[#d4af37] shadow-[0_0_35px_rgba(212,175,55,0.35)] hover:shadow-[0_0_60px_rgba(212,175,55,0.55)] transition-shadow"
               data-testid="ai-open-btn"
               aria-label="Fotuber Asistan'ı aç"
             >
+              {/* Jumping robot */}
               <motion.div
-                animate={{ y: [0, -3, 0] }}
-                transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+                animate={{
+                  y: [0, -14, 0, -6, 0, 0, 0, 0, 0, 0],
+                  scaleY: [1, 1, 0.92, 1, 1, 1, 1, 1, 1, 1],
+                }}
+                transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut", times: [0, 0.08, 0.16, 0.22, 0.30, 0.40, 0.55, 0.70, 0.85, 1] }}
                 className="w-full h-full p-1"
               >
                 <CameraBot />
               </motion.div>
+
+              {/* Waving hand that peeks from the left every ~5s */}
+              <motion.div
+                initial={{ opacity: 0, x: 0, rotate: 0 }}
+                animate={{
+                  opacity: [0, 0, 1, 1, 1, 1, 0, 0],
+                  x:       [0, 0, -22, -22, -22, -22, -8, 0],
+                  rotate:  [0, 0, -18, 14, -18, 14, 0, 0],
+                }}
+                transition={{
+                  duration: 5.2,
+                  repeat: Infinity,
+                  repeatDelay: 3,
+                  times: [0, 0.15, 0.25, 0.40, 0.55, 0.70, 0.85, 1],
+                  ease: "easeInOut",
+                }}
+                style={{ transformOrigin: "80% 90%" }}
+                className="absolute left-0 top-1/2 -translate-y-1/2 pointer-events-none text-3xl sm:text-4xl select-none drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)]"
+                aria-hidden="true"
+              >
+                👋
+              </motion.div>
+
               <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-500 border-2 border-black">
                 <span className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-60" />
               </span>
