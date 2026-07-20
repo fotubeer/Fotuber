@@ -15,10 +15,23 @@ import { API_BASE } from "@/lib/api";
  * Sound: procedurally synthesised via Web Audio API — no external asset.
  */
 
-const SESSION_KEY = "fotuber_intro_seen_v3";
+const SESSION_KEY = "fotuber_intro_seen_v4";
 let INTRO_ALREADY_PLAYED_THIS_TAB = false;
 
+// Debug helper: append `?intro=1` (or `#intro`) to any URL to always play the intro,
+// regardless of previous session state.
+const isForcedIntro = () => {
+  try {
+    if (typeof window === "undefined") return false;
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get("intro") === "1") return true;
+    if ((window.location.hash || "").toLowerCase().includes("intro")) return true;
+  } catch (_) {}
+  return false;
+};
+
 const hasSeenIntroThisSession = () => {
+  if (isForcedIntro()) return false;
   if (INTRO_ALREADY_PLAYED_THIS_TAB) return true;
   try { return sessionStorage.getItem(SESSION_KEY) === "1"; } catch { return false; }
 };
