@@ -141,17 +141,17 @@ const IntroSplash = () => {
     if (!visible || authLoading) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    // Total timeline ≈ 14.6s — every stage has generous reading time.
-    // lens:  0.0s → 2.5s
-    // flash: 2.5s (with ~1.2s decay)
-    // line:  3.6s → 8.4s  (visible ~4.8s)
-    // brand: 8.6s → 14.0s (logo pops fast, wordmark cascades — full brand held ~3.6s after 'Görsel Sanat' lands at ~10.9s)
-    // out:   14.0s (0.9s fade-out)
+    // Total timeline ≈ 14.4s — lens/flash tightened, brand held longer so cursive lands well before end.
+    // lens:  0.0s → 1.4s   (opens quickly)
+    // flash: 1.4s          (~1.4s decay; peak white blankets the screen ~0.35s)
+    // line:  2.9s → 6.9s   (~4.0s reading time)
+    // brand: 7.0s → 13.5s  (~6.5s — 'Görsel Sanat' fully in by ~9.2s, then held ~4.3s)
+    // out:   13.5s (0.9s fade-out)
     const timers = [];
-    timers.push(setTimeout(() => { setPhase("flash"); playSound(); }, 2500));
-    timers.push(setTimeout(() => setPhase("line"),  3600));
-    timers.push(setTimeout(() => setPhase("brand"), 8600));
-    timers.push(setTimeout(finish, 14000));
+    timers.push(setTimeout(() => { setPhase("flash"); playSound(); }, 1400));
+    timers.push(setTimeout(() => setPhase("line"),  2900));
+    timers.push(setTimeout(() => setPhase("brand"), 7000));
+    timers.push(setTimeout(finish, 13500));
     return () => {
       timers.forEach(clearTimeout);
       document.body.style.overflow = prevOverflow;
@@ -266,25 +266,25 @@ const IntroSplash = () => {
                   )}
                 </motion.div>
 
-                {/* Wordmark */}
-                <div className="flex flex-col items-center leading-none">
+                {/* Wordmark — extra padding-right so the cursive 't' flourish never clips at any viewport */}
+                <div className="flex flex-col items-center leading-none pr-2 md:pr-4 max-w-[95vw]">
                   <motion.div
                     initial={{ opacity: 0, y: 26, letterSpacing: "0.4em" }}
                     animate={{ opacity: 1, y: 0,  letterSpacing: "0.02em" }}
-                    transition={{ duration: 1.1, ease: "easeOut", delay: 0.55 }}
+                    transition={{ duration: 1.0, ease: "easeOut", delay: 0.4 }}
                     className="text-white text-6xl sm:text-7xl md:text-9xl font-black drop-shadow-[0_4px_30px_rgba(255,255,255,0.15)]"
                     style={{ fontFamily: "'Manrope','Helvetica Neue',Arial,sans-serif", fontWeight: 900, letterSpacing: "-0.02em" }}
                   >
                     Fotuber
                   </motion.div>
                   <motion.div
-                    initial={{ opacity: 0, y: 24, scale: 0.85 }}
+                    initial={{ opacity: 0, y: 22, scale: 0.9 }}
                     animate={{ opacity: 1, y: 0,  scale: 1 }}
-                    transition={{ duration: 1.3, ease: "easeOut", delay: 1.15 }}
-                    className="mt-4 md:mt-5 text-[#d4af37] text-4xl sm:text-5xl md:text-7xl italic drop-shadow-[0_2px_18px_rgba(212,175,55,0.55)]"
+                    transition={{ duration: 1.0, ease: "easeOut", delay: 0.9 }}
+                    className="mt-4 md:mt-5 text-[#d4af37] text-4xl sm:text-5xl md:text-7xl italic drop-shadow-[0_2px_18px_rgba(212,175,55,0.6)] whitespace-nowrap pr-4 md:pr-8"
                     style={{
                       fontFamily: "'Great Vibes','Pinyon Script','Dancing Script','Segoe Script','Brush Script MT',cursive",
-                      lineHeight: 1.1,
+                      lineHeight: 1.25,
                     }}
                   >
                     Görsel Sanat
@@ -295,7 +295,7 @@ const IntroSplash = () => {
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 0.75 }}
-                  transition={{ duration: 1.0, delay: 2.0 }}
+                  transition={{ duration: 1.0, delay: 1.6 }}
                   className="mt-2 text-[10px] md:text-xs tracking-[0.4em] uppercase text-neutral-400"
                 >
                   fotuber.com.tr
@@ -305,15 +305,29 @@ const IntroSplash = () => {
           </AnimatePresence>
         </div>
 
-        {/* Flash overlay — white burst */}
+        {/* Flash overlay — massive white burst that whitens the whole environment before the reveal */}
         <AnimatePresence>
           {phase === "flash" && (
             <motion.div
               key="flash-white"
               className="pointer-events-none absolute inset-0 bg-white"
               initial={{ opacity: 0 }}
-              animate={{ opacity: [0, 1, 0.85, 0.35, 0] }}
-              transition={{ duration: 1.05, times: [0, 0.06, 0.22, 0.55, 1], ease: "easeOut" }}
+              animate={{ opacity: [0, 1, 1, 0.9, 0.55, 0.18, 0] }}
+              transition={{ duration: 1.5, times: [0, 0.06, 0.22, 0.35, 0.55, 0.8, 1], ease: "easeOut" }}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Additional soft-bloom layer to keep the whole scene bright a moment longer */}
+        <AnimatePresence>
+          {phase === "flash" && (
+            <motion.div
+              key="flash-bloom"
+              className="pointer-events-none absolute inset-0"
+              style={{ background: "radial-gradient(ellipse at center, rgba(255,255,255,0.85), rgba(255,255,255,0.4) 45%, rgba(255,255,255,0) 75%)" }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: [0, 1, 0.7, 0.3, 0] }}
+              transition={{ duration: 1.8, times: [0, 0.1, 0.35, 0.65, 1], ease: "easeOut" }}
             />
           )}
         </AnimatePresence>
