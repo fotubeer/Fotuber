@@ -382,6 +382,18 @@ class SiteSettingsIn(BaseModel):
     seo_opening_hours: Optional[str] = None  # e.g. "Mo-Sa 09:00-19:00"
     seo_price_range: Optional[str] = None    # e.g. "₺₺"
     google_search_console_verification: Optional[str] = None
+    # Intro animation configuration (added Feb 2026)
+    intro_enabled: Optional[bool] = None
+    intro_sound_enabled: Optional[bool] = None
+    intro_volume: Optional[float] = None            # 0.0 - 1.0
+    intro_greeting_text: Optional[str] = None       # supports {ad} placeholder
+    intro_brand_top: Optional[str] = None           # bold headline (e.g. "Fotuber")
+    intro_brand_bottom: Optional[str] = None        # cursive subtitle (e.g. "Görsel Sanat")
+    intro_subtitle_domain: Optional[str] = None     # tiny label (e.g. "fotuber.com.tr")
+    intro_font_greeting: Optional[str] = None       # CSS font-family stack
+    intro_font_brand: Optional[str] = None
+    intro_font_cursive: Optional[str] = None
+    intro_logo_id: Optional[str] = None             # separate logo file id (falls back to site logo_id)
 
 
 class TransactionIn(BaseModel):
@@ -1242,6 +1254,32 @@ async def update_settings(payload: SiteSettingsIn, admin: dict = Depends(require
     updates["updated_at"] = now_iso()
     await db.site_settings.update_one({"id": "singleton"}, {"$set": updates}, upsert=True)
     return await db.site_settings.find_one({"id": "singleton"}, {"_id": 0})
+
+
+@api_router.post("/settings/intro-logo")
+async def upload_intro_logo(file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+    """Upload a dedicated logo used only for the cinematic intro splash.
+    Does NOT change the main site logo (`logo_id`)."""
+    ext = (file.filename or "png").split(".")[-1].lower()
+    content_type = file.content_type or "image/png"
+    logo_id = new_id()
+    path = f"{APP_NAME}/branding/intro-logo-{logo_id}.{ext}"
+    data = await file.read()
+    put_object(path, data, content_type)
+
+    await db.site_assets.insert_one({
+        "id": logo_id,
+        "storage_path": path,
+        "content_type": content_type,
+        "kind": "intro_logo",
+        "created_at": now_iso(),
+    })
+    await db.site_settings.update_one(
+        {"id": "singleton"},
+        {"$set": {"intro_logo_id": logo_id, "updated_at": now_iso()}},
+        upsert=True,
+    )
+    return {"intro_logo_id": logo_id}
 
 
 @api_router.post("/settings/logo")

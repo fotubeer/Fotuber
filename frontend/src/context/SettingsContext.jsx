@@ -22,6 +22,18 @@ const DEFAULTS = {
   font_heading: "",
   font_body: "",
   font_scale: 1.0,
+  // Intro animation
+  intro_enabled: true,
+  intro_sound_enabled: true,
+  intro_volume: 0.8,
+  intro_greeting_text: "Bugün harika görünüyorsunuz{comma_name}.",
+  intro_brand_top: "Fotuber",
+  intro_brand_bottom: "Görsel Sanat",
+  intro_subtitle_domain: "fotuber.com.tr",
+  intro_font_greeting: "'Cormorant Garamond', 'Times New Roman', serif",
+  intro_font_brand: "'Manrope', 'Helvetica Neue', Arial, sans-serif",
+  intro_font_cursive: "'Great Vibes', 'Pinyon Script', 'Dancing Script', cursive",
+  intro_logo_id: null,
 };
 
 const applyTypography = (s) => {

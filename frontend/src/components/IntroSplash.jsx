@@ -55,7 +55,7 @@ const useProceduralShutterSound = () => {
    * so the shutter click leads the visual, then flash+heartbeat
    * hit exactly when the screen turns white.
    */
-  const play = () => {
+  const play = (volume = 0.8) => {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
@@ -66,6 +66,10 @@ const useProceduralShutterSound = () => {
         try { ctx.resume(); } catch (_) {}
       }
       const now = ctx.currentTime;
+      // Master gain node — lets admin control overall intro loudness
+      const master = ctx.createGain();
+      master.gain.value = Math.max(0, Math.min(1, volume));
+      master.connect(ctx.destination);
 
       // === 1) SHUTTER CLICK (t=0) — sharp mechanical percussion ===
       const clickBufSize = Math.floor(ctx.sampleRate * 0.09);
@@ -83,7 +87,7 @@ const useProceduralShutterSound = () => {
       const clickGain = ctx.createGain();
       clickGain.gain.setValueAtTime(1.1, now);
       clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.10);
-      clickSrc.connect(clickBp).connect(clickGain).connect(ctx.destination);
+      clickSrc.connect(clickBp).connect(clickGain).connect(master);
       clickSrc.start(now);
 
       // === 2) FLASH BURST (t=0.25) — xenon whine + bright top-end sizzle ===
@@ -97,7 +101,7 @@ const useProceduralShutterSound = () => {
       whineGain.gain.setValueAtTime(0.0001, flashStart);
       whineGain.gain.exponentialRampToValueAtTime(0.22, flashStart + 0.05);
       whineGain.gain.exponentialRampToValueAtTime(0.0001, flashStart + 1.2);
-      whine.connect(whineGain).connect(ctx.destination);
+      whine.connect(whineGain).connect(master);
       whine.start(flashStart);
       whine.stop(flashStart + 1.25);
 
@@ -116,7 +120,7 @@ const useProceduralShutterSound = () => {
       const sizzleGain = ctx.createGain();
       sizzleGain.gain.setValueAtTime(0.4, flashStart);
       sizzleGain.gain.exponentialRampToValueAtTime(0.001, flashStart + 0.3);
-      sizzleSrc.connect(sizzleHp).connect(sizzleGain).connect(ctx.destination);
+      sizzleSrc.connect(sizzleHp).connect(sizzleGain).connect(master);
       sizzleSrc.start(flashStart);
 
       // === 3) HEARTBEAT (thump #1 at flash + thump #2 slightly later) ===
@@ -138,8 +142,8 @@ const useProceduralShutterSound = () => {
         subGain.gain.setValueAtTime(0.0001, t);
         subGain.gain.exponentialRampToValueAtTime(level * 0.9, t + 0.04);
         subGain.gain.exponentialRampToValueAtTime(0.0001, t + dur * 1.2);
-        osc.connect(gain).connect(ctx.destination);
-        subOsc.connect(subGain).connect(ctx.destination);
+        osc.connect(gain).connect(master);
+        subOsc.connect(subGain).connect(master);
         osc.start(t);
         subOsc.start(t);
         osc.stop(t + dur + 0.05);
@@ -156,7 +160,7 @@ const useProceduralShutterSound = () => {
       const thunkGain = ctx.createGain();
       thunkGain.gain.setValueAtTime(0.35, now + 0.40);
       thunkGain.gain.exponentialRampToValueAtTime(0.001, now + 0.56);
-      thunk.connect(thunkGain).connect(ctx.destination);
+      thunk.connect(thunkGain).connect(master);
       thunk.start(now + 0.40);
       thunk.stop(now + 0.58);
     } catch (_) { /* silent */ }
@@ -205,10 +209,13 @@ const CameraLens = () => (
 );
 
 const IntroSplash = () => {
-  const { settings } = useSettings();
+  const { settings, loading: settingsLoading } = useSettings();
   const { user, loading: authLoading } = useAuth();
   const [visible, setVisible] = useState(() => !hasSeenIntroThisSession());
   const [phase, setPhase] = useState("lens"); // lens -> flash -> line -> brand -> out
+  const [muted, setMuted] = useState(() => {
+    try { return localStorage.getItem("fotuber_intro_muted") === "1"; } catch { return false; }
+  });
   const playSound = useProceduralShutterSound();
 
   const finish = () => {
@@ -217,23 +224,57 @@ const IntroSplash = () => {
     setTimeout(() => setVisible(false), 900);
   };
 
-  // Start the animation timeline only after auth has resolved,
-  // so we know whether to personalise the greeting.
+  // Try to unlock audio on the first user gesture anywhere on the page
+  // (helps when browsers suspend AudioContext due to autoplay policy).
   useEffect(() => {
-    if (!visible || authLoading) return;
+    if (!visible) return;
+    const unlock = () => {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        if (ctx.state === "suspended") ctx.resume().catch(() => {});
+      } catch (_) {}
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+      window.removeEventListener("touchstart", unlock);
+    };
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    window.addEventListener("touchstart", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+      window.removeEventListener("touchstart", unlock);
+    };
+  }, [visible]);
+
+  const toggleMute = (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    setMuted((m) => {
+      const nv = !m;
+      try { localStorage.setItem("fotuber_intro_muted", nv ? "1" : "0"); } catch (_) {}
+      return nv;
+    });
+  };
+
+  // Start the animation timeline only after auth + settings have resolved,
+  // so we know whether to personalise the greeting and read admin overrides.
+  useEffect(() => {
+    if (!visible || authLoading || settingsLoading) return;
+    // Respect the admin master toggle: if disabled, skip immediately.
+    if (settings?.intro_enabled === false) {
+      markIntroSeen();
+      setVisible(false);
+      return;
+    }
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    // Total timeline ≈ 13.5s — sound is fired 250ms BEFORE the visible flash
-    // so the shutter click leads, then flash whine + heartbeat sync with the white burst.
-    // sound:  1.15s (shutter click)
-    // lens:   0.0s → 1.4s
-    // flash:  1.4s   (sound whine + heartbeat land here as the screen turns white)
-    // line:   2.9s → 6.9s   (~4.0s reading time)
-    // brand:  7.0s → 13.5s  (~6.5s — cursive 'Görsel Sanat' fully in by ~8.9s, then held ~4.6s)
-    // out:    13.5s (0.9s fade-out)
+    const soundEnabled = settings?.intro_sound_enabled !== false && !muted;
+    const volume = Math.max(0, Math.min(1, Number(settings?.intro_volume ?? 0.8)));
     const timers = [];
-    timers.push(setTimeout(() => { playSound(); }, 1150));        // shutter click lands 250ms early
-    timers.push(setTimeout(() => setPhase("flash"), 1400));       // visual white burst
+    timers.push(setTimeout(() => { if (soundEnabled) playSound(volume); }, 1150));
+    timers.push(setTimeout(() => setPhase("flash"), 1400));
     timers.push(setTimeout(() => setPhase("line"),  2900));
     timers.push(setTimeout(() => setPhase("brand"), 7000));
     timers.push(setTimeout(finish, 13500));
@@ -242,15 +283,25 @@ const IntroSplash = () => {
       document.body.style.overflow = prevOverflow;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, authLoading]);
+  }, [visible, authLoading, settingsLoading]);
 
   if (!visible) return null;
 
-  const logoUrl = settings?.logo_id ? `${API_BASE}/settings/logo/${settings.logo_id}` : null;
+  // Prefer dedicated intro logo, fall back to site logo.
+  const introLogoId = settings?.intro_logo_id || settings?.logo_id;
+  const logoUrl = introLogoId ? `${API_BASE}/settings/logo/${introLogoId}` : null;
+
   const firstName = (user?.name || "").trim().split(/\s+/)[0] || "";
-  const greetingLine = firstName
-    ? `Bugün harika görünüyorsunuz, ${firstName}.`
-    : "Bugün harika görünüyorsunuz.";
+  const template  = settings?.intro_greeting_text || "Bugün harika görünüyorsunuz{comma_name}.";
+  const greetingLine = template
+    .replaceAll("{ad}", firstName)
+    .replaceAll("{comma_name}", firstName ? `, ${firstName}` : "");
+  const brandTop      = settings?.intro_brand_top      ?? "Fotuber";
+  const brandBottom   = settings?.intro_brand_bottom   ?? "Görsel Sanat";
+  const domainLabel   = settings?.intro_subtitle_domain ?? "fotuber.com.tr";
+  const fontGreeting  = settings?.intro_font_greeting  || "'Cormorant Garamond', serif";
+  const fontBrand     = settings?.intro_font_brand     || "'Manrope', sans-serif";
+  const fontCursive   = settings?.intro_font_cursive   || "'Great Vibes', cursive";
 
   return (
     <AnimatePresence>
@@ -271,11 +322,33 @@ const IntroSplash = () => {
         {/* Skip hint */}
         <button
           onClick={(e) => { e.stopPropagation(); finish(); }}
-          className="absolute top-5 right-5 md:top-6 md:right-8 text-[10px] md:text-xs uppercase tracking-[0.35em] text-neutral-500 hover:text-[#d4af37] transition-colors"
+          className="absolute top-5 right-5 md:top-6 md:right-8 text-[10px] md:text-xs uppercase tracking-[0.35em] text-neutral-500 hover:text-[#d4af37] transition-colors z-10"
           data-testid="intro-skip-btn"
         >
           Atla →
         </button>
+
+        {/* Mute / unmute toggle */}
+        {settings?.intro_sound_enabled !== false && (
+          <button
+            onClick={toggleMute}
+            className="absolute top-5 left-5 md:top-6 md:left-8 flex items-center gap-2 text-[10px] md:text-xs uppercase tracking-[0.35em] text-neutral-400 hover:text-[#d4af37] transition-colors z-10 border border-neutral-700 hover:border-[#d4af37]/60 rounded-full px-3 py-1.5 bg-black/50 backdrop-blur"
+            data-testid="intro-mute-btn"
+            aria-label={muted ? "Sesi aç" : "Sesi kapat"}
+          >
+            {muted ? (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                <span>Sesi Aç</span>
+              </>
+            ) : (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                <span>Ses Açık</span>
+              </>
+            )}
+          </button>
+        )}
 
         {/* Center stage */}
         <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
@@ -304,7 +377,7 @@ const IntroSplash = () => {
                 exit={{ opacity: 0, y: -14, filter: "blur(6px)" }}
                 transition={{ duration: 1.4, ease: "easeOut" }}
                 className="text-white text-2xl sm:text-3xl md:text-5xl font-light tracking-[0.18em] drop-shadow-[0_2px_20px_rgba(255,255,255,0.35)]"
-                style={{ fontFamily: "'Cormorant Garamond', 'Times New Roman', serif" }}
+                style={{ fontFamily: fontGreeting }}
               >
                 {greetingLine}
               </motion.div>
@@ -358,21 +431,18 @@ const IntroSplash = () => {
                     animate={{ opacity: 1, y: 0,  letterSpacing: "0.02em" }}
                     transition={{ duration: 1.0, ease: "easeOut", delay: 0.4 }}
                     className="text-white text-6xl sm:text-7xl md:text-9xl font-black drop-shadow-[0_4px_30px_rgba(255,255,255,0.15)]"
-                    style={{ fontFamily: "'Manrope','Helvetica Neue',Arial,sans-serif", fontWeight: 900, letterSpacing: "-0.02em" }}
+                    style={{ fontFamily: fontBrand, fontWeight: 900, letterSpacing: "-0.02em" }}
                   >
-                    Fotuber
+                    {brandTop}
                   </motion.div>
                   <motion.div
                     initial={{ opacity: 0, y: 22, scale: 0.9 }}
                     animate={{ opacity: 1, y: 0,  scale: 1 }}
                     transition={{ duration: 1.0, ease: "easeOut", delay: 0.9 }}
                     className="mt-4 md:mt-5 text-[#d4af37] text-4xl sm:text-5xl md:text-7xl italic drop-shadow-[0_2px_18px_rgba(212,175,55,0.6)] whitespace-nowrap pr-4 md:pr-8"
-                    style={{
-                      fontFamily: "'Great Vibes','Pinyon Script','Dancing Script','Segoe Script','Brush Script MT',cursive",
-                      lineHeight: 1.25,
-                    }}
+                    style={{ fontFamily: fontCursive, lineHeight: 1.25 }}
                   >
-                    Görsel Sanat
+                    {brandBottom}
                   </motion.div>
                 </div>
 
@@ -383,7 +453,7 @@ const IntroSplash = () => {
                   transition={{ duration: 1.0, delay: 1.6 }}
                   className="mt-2 text-[10px] md:text-xs tracking-[0.4em] uppercase text-neutral-400"
                 >
-                  fotuber.com.tr
+                  {domainLabel}
                 </motion.div>
               </motion.div>
             )}

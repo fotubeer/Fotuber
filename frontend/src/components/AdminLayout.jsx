@@ -29,6 +29,7 @@ const items = [
   { to: "/admin/personel", label: "Personel Listesi", icon: Users },
   { to: "/admin/kullanicilar", label: "Personel Hesapları", icon: KeyRound, ownerOnly: true },
   { to: "/admin/ayarlar", label: "Site Ayarları", icon: Settings, ownerOnly: true },
+  { to: "/admin/animasyon-ayarlari", label: "Açılış Animasyonu", icon: Film, ownerOnly: true },
 ];
 
 export const AdminLayout = ({ children }) => {
