@@ -60,12 +60,41 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
   - Slot grid: 30-min grid, approved appointments render as GREEN "locked" cells with customer name; empty cells stay clickable "block" buttons.
   - Explains blocking behavior via footer note.
 
-### Session E addon — Cinematic Intro Splash
+### Session E addon — Cinematic Intro Splash + Admin Control Panel + Instagram Slideshow
 - `components/IntroSplash.jsx` — luxury intro shown **once per browser session (per tab)** on Home page:
-  - Guard: module flag `INTRO_ALREADY_PLAYED_THIS_TAB` + sessionStorage `fotuber_intro_seen_v3`.
+  - Guard: module flag `INTRO_ALREADY_PLAYED_THIS_TAB` + sessionStorage `fotuber_intro_seen_v4`.
+  - Debug: append `?intro=1` (or `#intro`) to any URL to force play (bypasses session flag).
   - Same tab F5 / SPA back-to-home → NO replay. New tab / new session → replays.
-  - Personalised greeting: if user is logged in, line reads "Bugün harika görünüyorsunuz, {ilk_ad}." else generic.
-  - Waits for `useAuth().loading === false` before starting phase timers to guarantee correct greeting.
+  - Personalised greeting: template with `{ad}`/`{comma_name}` placeholders.
+  - Waits for `useAuth().loading === false` && `useSettings().loading === false` before starting timers.
+  - Timeline ≈ 13.5s: lens 0-1.4s, flash 1.4s (with shutter click fired at 1.15s), line 2.9-6.9s, brand 7.0-13.5s.
+  - Web Audio API procedural sound: shutter click + xenon whine + heartbeat bass + mirror thunk + sizzle. Master gain node routes volume from admin setting.
+  - Mute toggle button + skip button visible during intro.
+  - AudioContext resume on any first user gesture (fights browser autoplay policy).
+- **`pages/admin/AdminIntroSettings.jsx`** (route: `/admin/animasyon-ayarlari`, sidebar: "Açılış Animasyonu"):
+  - Toggle intro on/off master switch.
+  - Toggle sound on/off + volume slider.
+  - Greeting text with `{ad}`/`{comma_name}` variables.
+  - Brand top/bottom + domain label editing.
+  - Font dropdowns (3 curated font stacks each: greeting/brand/cursive) with live preview.
+  - Dedicated intro logo upload (separate from site logo; falls back if empty).
+  - "Önizle" opens `/?intro=1` in new tab. "Varsayılana Dön" resets.
+- Backend `SiteSettingsIn` extended: `intro_enabled`, `intro_sound_enabled`, `intro_volume`, `intro_greeting_text`, `intro_brand_top`, `intro_brand_bottom`, `intro_subtitle_domain`, `intro_font_greeting`, `intro_font_brand`, `intro_font_cursive`, `intro_logo_id`.
+- Google Fonts extended: Playfair Display, Poppins, Poiret One, Dancing Script, Pinyon Script (in addition to prior Manrope/Great Vibes/Cormorant).
+
+### Instagram Slideshow (Manual, admin-managed)
+- Backend `instagram_posts` collection + `site_assets` for images.
+- Endpoints: `GET /api/instagram-posts` (public active), `GET /api/instagram-posts/all` (admin), `POST /api/instagram-posts` (multipart file+form fields), `PATCH /api/instagram-posts/{id}`, `DELETE /api/instagram-posts/{id}`, `GET /api/instagram-posts/{id}/image`.
+- **`pages/admin/AdminInstagramSlideshow.jsx`** (route: `/admin/instagram-slayt`, sidebar: "Instagram Slayt"):
+  - Upload photo + set Instagram URL, account label (@fotuberphotography / @cankirinisanevii), caption, order, active.
+  - Grid view with reorder (up/down arrows), active/inactive toggle, delete confirm.
+- **`components/InstagramSlideshow.jsx`** — Home page section between FOMO banner and discount CTA:
+  - Auto-rotating slideshow with 5.5s interval (pauses on hover).
+  - Left column: heading, account chips linking to both Instagram profiles, slide counter.
+  - Right column: 16:10 aspect card with cinematic fade+scale transitions, bottom gradient overlay showing account label + caption + "Instagram'da Aç" pill.
+  - Prev/next arrows (shown on hover) + dot indicators.
+  - Clicking anywhere on the slide opens the associated Instagram URL in a new tab.
+  - Renders nothing when no posts exist.
   - Camera lens SVG animates in (aperture blades, gold engraving "FOTUBER · f/1.4").
   - Procedurally synthesised sound via Web Audio API (mechanical shutter click + high-freq flash whine decay + mirror thunk) — no external asset.
   - White flash burst overlay + expanding gold ring on shutter fire.

@@ -7,6 +7,7 @@ import { api, galleryFileUrl } from "@/lib/api";
 import { useSettings } from "@/context/SettingsContext";
 import { SEO, buildLocalBusinessLd } from "@/components/SEO";
 import IntroSplash from "@/components/IntroSplash";
+import InstagramSlideshow from "@/components/InstagramSlideshow";
 
 const DEFAULT_HERO = "https://images.pexels.com/photos/5762880/pexels-photo-5762880.jpeg";
 
@@ -173,6 +174,9 @@ const Home = () => {
           </motion.div>
         </div>
       </section>
+
+      {/* Instagram Slideshow — aesthetic mid-section, admin-managed */}
+      <InstagramSlideshow />
 
       {/* Discount code CTA (animated) */}
       {discountActive && (

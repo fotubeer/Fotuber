@@ -1320,6 +1320,119 @@ async def download_logo(logo_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Instagram Slideshow (Manual — admin uploads photos + Instagram link per photo)
+# ---------------------------------------------------------------------------
+class InstagramPostIn(BaseModel):
+    instagram_url: str
+    caption: Optional[str] = ""
+    account_label: Optional[str] = ""      # e.g. "@fotuberphotography"
+    order: Optional[int] = 0
+    active: Optional[bool] = True
+
+
+@api_router.get("/instagram-posts")
+async def list_instagram_posts(active_only: bool = True):
+    q = {"active": True} if active_only else {}
+    docs = await db.instagram_posts.find(q, {"_id": 0}).sort([("order", 1), ("created_at", -1)]).to_list(200)
+    return docs
+
+
+@api_router.get("/instagram-posts/all")
+async def list_instagram_posts_all(admin: dict = Depends(require_admin)):
+    docs = await db.instagram_posts.find({}, {"_id": 0}).sort([("order", 1), ("created_at", -1)]).to_list(500)
+    return docs
+
+
+@api_router.post("/instagram-posts")
+async def create_instagram_post(
+    file: UploadFile = File(...),
+    instagram_url: str = Form(...),
+    caption: str = Form(""),
+    account_label: str = Form(""),
+    order: int = Form(0),
+    active: bool = Form(True),
+    admin: dict = Depends(require_admin),
+):
+    # Store image in object storage
+    ext = (file.filename or "jpg").split(".")[-1].lower()
+    content_type = file.content_type or "image/jpeg"
+    asset_id = new_id()
+    path = f"{APP_NAME}/instagram/{asset_id}.{ext}"
+    data = await file.read()
+    put_object(path, data, content_type)
+
+    await db.site_assets.insert_one({
+        "id": asset_id,
+        "storage_path": path,
+        "content_type": content_type,
+        "kind": "instagram",
+        "created_at": now_iso(),
+    })
+
+    post_id = new_id()
+    doc = {
+        "id": post_id,
+        "image_id": asset_id,
+        "instagram_url": instagram_url,
+        "caption": caption or "",
+        "account_label": account_label or "",
+        "order": int(order or 0),
+        "active": bool(active),
+        "created_at": now_iso(),
+        "created_by": admin.get("id"),
+    }
+    await db.instagram_posts.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.patch("/instagram-posts/{post_id}")
+async def update_instagram_post(post_id: str, payload: InstagramPostIn, admin: dict = Depends(require_admin)):
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    updates["updated_at"] = now_iso()
+    res = await db.instagram_posts.update_one({"id": post_id}, {"$set": updates})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
+    doc = await db.instagram_posts.find_one({"id": post_id}, {"_id": 0})
+    return doc
+
+
+@api_router.delete("/instagram-posts/{post_id}")
+async def delete_instagram_post(post_id: str, admin: dict = Depends(require_admin)):
+    doc = await db.instagram_posts.find_one({"id": post_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
+    # Best-effort image cleanup
+    if doc.get("image_id"):
+        try:
+            asset = await db.site_assets.find_one({"id": doc["image_id"]})
+            if asset:
+                try: delete_object(asset["storage_path"])
+                except Exception: pass
+                await db.site_assets.delete_one({"id": doc["image_id"]})
+        except Exception:
+            pass
+    await db.instagram_posts.delete_one({"id": post_id})
+    return {"ok": True}
+
+
+@api_router.get("/instagram-posts/{post_id}/image")
+async def get_instagram_image(post_id: str):
+    post = await db.instagram_posts.find_one({"id": post_id})
+    if not post or not post.get("image_id"):
+        raise HTTPException(status_code=404, detail="Fotoğraf bulunamadı")
+    asset = await db.site_assets.find_one({"id": post["image_id"]})
+    if not asset:
+        raise HTTPException(status_code=404, detail="Fotoğraf bulunamadı")
+    data, ct = get_object(asset["storage_path"])
+    return StarletteResponse(
+        content=data,
+        media_type=asset.get("content_type", ct),
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Cash Flow / Transactions (owner-admin only)
 # ---------------------------------------------------------------------------
 @api_router.post("/transactions")
