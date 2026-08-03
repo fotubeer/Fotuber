@@ -49,24 +49,35 @@ export const PAPER_SIZES = [
   { code: "30x40", label: "30 × 40 cm", w: 300, h: 400 },
 ];
 
-// Best-fit paper size for a given photo count and photo dimensions
+// Best-fit paper size for a given photo count and photo dimensions.
+// Photo labs print edge-to-edge with slight bleed, so we allow a 2mm tolerance
+// against the nominal paper size and use zero margin / gap for the fit check —
+// this is what makes 4 × biometric (50×60mm) fit tightly on a 10×15 print.
 export const suggestPaper = (photo, count) => {
-  const gap = 3;    // 3mm gap between photos
-  const margin = 5; // 5mm outer margin
-  const footer = 8; // 8mm footer for watermark
+  const bleedTol = 2; // paper labs give ~1–2mm bleed
+  // Try each paper from smallest to largest; for the same paper try layouts
+  // that come closest to 2×2 style arrangements first (better looking prints).
+  const layoutsFor = (n) => {
+    const opts = [];
+    for (let cols = 1; cols <= n; cols++) {
+      const rows = Math.ceil(n / cols);
+      opts.push({ cols, rows });
+    }
+    // Prefer the most square-ish layout (smallest |cols-rows|), then fewer cols
+    return opts.sort((a, b) => Math.abs(a.cols - a.rows) - Math.abs(b.cols - b.rows) || a.cols - b.cols);
+  };
+  const fits = (cols, rows, pw, ph) => {
+    const w1 = cols * photo.w, h1 = rows * photo.h;
+    const w2 = cols * photo.h, h2 = rows * photo.w;
+    return (w1 <= pw + bleedTol && h1 <= ph + bleedTol) ||
+           (w2 <= pw + bleedTol && h2 <= ph + bleedTol);
+  };
   for (const p of PAPER_SIZES) {
-    for (const cols of [1, 2, 3, 4, 5, 6]) {
-      const rows = Math.ceil(count / cols);
-      const totalW = margin * 2 + cols * photo.w + (cols - 1) * gap;
-      const totalH = margin * 2 + rows * photo.h + (rows - 1) * gap + footer;
-      const totalW2 = margin * 2 + cols * photo.h + (cols - 1) * gap; // landscape try
-      const totalH2 = margin * 2 + rows * photo.w + (rows - 1) * gap + footer;
-      if ((totalW <= p.w && totalH <= p.h) || (totalW2 <= p.w && totalH2 <= p.h)) {
-        return { paper: p, cols, rows };
-      }
+    for (const { cols, rows } of layoutsFor(count)) {
+      if (fits(cols, rows, p.w, p.h)) return { paper: p, cols, rows };
     }
   }
-  return { paper: PAPER_SIZES[PAPER_SIZES.length - 1], cols: 3, rows: Math.ceil(count / 3) };
+  return { paper: PAPER_SIZES[PAPER_SIZES.length - 1], cols: Math.ceil(Math.sqrt(count)), rows: Math.ceil(count / Math.ceil(Math.sqrt(count))) };
 };
 
 // Preset counts

@@ -223,16 +223,23 @@ const AdminPassportPhoto = () => {
     drawSingle();
     const single = singleCanvasRef.current;
     // Layout params (mm → px)
-    const gap = mmToPx(3);
-    const margin = mmToPx(5);
-    const footer = mmToPx(8);
+    // Photo-lab convention: print edge-to-edge with no visible gap so cut lines
+    // sit exactly between adjacent photos. Watermark strip is overlaid below
+    // the last row inside any leftover paper area.
+    const gap = 0;
+    const margin = 0;
+    const footer = mmToPx(6);
     // Determine cols/rows: try suggested; if paper overridden, fit
     let cols = layout.cols, rows = layout.rows;
     while (rows * cols < count) rows++;
     const cellW = mmToPx(spec.w);
     const cellH = mmToPx(spec.h);
-    const startX = Math.max(margin, (pw - (cols * cellW + (cols - 1) * gap)) / 2);
-    const startY = margin;
+    // Center the photo block horizontally & vertically inside the paper so
+    // any leftover space is distributed as trim margin
+    const blockW = cols * cellW + (cols - 1) * gap;
+    const blockH = rows * cellH + (rows - 1) * gap;
+    const startX = Math.max(0, (pw - blockW) / 2);
+    const startY = Math.max(0, Math.min((ph - blockH - footer) / 2, mmToPx(3)));
     let idx = 0;
     for (let r = 0; r < rows && idx < count; r++) {
       for (let c = 0; c < cols && idx < count; c++) {
@@ -242,18 +249,20 @@ const AdminPassportPhoto = () => {
         idx++;
       }
     }
-    // Cutting lines
+    // Cutting lines — sit exactly on the shared edge between adjacent photos
     if (cutWidth > 0) {
       ctx.strokeStyle = cutColor;
       ctx.lineWidth = Math.max(1, mmToPx(cutWidth));
       ctx.setLineDash([mmToPx(2), mmToPx(1)]);
-      for (let r = 0; r <= rows; r++) {
-        const y = startY + r * (cellH + gap) - (r === 0 ? 0 : gap / 2);
-        if (r > 0 && r < rows) { ctx.beginPath(); ctx.moveTo(startX - gap / 2, y); ctx.lineTo(startX + cols * cellW + (cols - 1) * gap + gap / 2, y); ctx.stroke(); }
+      const rightEdge = startX + blockW;
+      const bottomEdge = startY + blockH;
+      for (let r = 1; r < rows; r++) {
+        const y = startY + r * cellH;
+        ctx.beginPath(); ctx.moveTo(startX, y); ctx.lineTo(rightEdge, y); ctx.stroke();
       }
-      for (let c = 0; c <= cols; c++) {
-        const x = startX + c * (cellW + gap) - (c === 0 ? 0 : gap / 2);
-        if (c > 0 && c < cols) { ctx.beginPath(); ctx.moveTo(x, startY - gap / 2); ctx.lineTo(x, startY + rows * cellH + (rows - 1) * gap + gap / 2); ctx.stroke(); }
+      for (let c = 1; c < cols; c++) {
+        const x = startX + c * cellW;
+        ctx.beginPath(); ctx.moveTo(x, startY); ctx.lineTo(x, bottomEdge); ctx.stroke();
       }
       ctx.setLineDash([]);
     }
@@ -268,10 +277,10 @@ const AdminPassportPhoto = () => {
       const wmW = wmH * ratio;
       ctx.drawImage(wmImg, (pw - wmW) / 2, stripY, wmW, wmH);
     }
-    // Code label
+    // Code label — placed inside the bottom bleed strip
     ctx.fillStyle = "#666";
     ctx.font = `${mmToPx(2.5)}px sans-serif`;
-    ctx.fillText(code, margin, ph - mmToPx(2));
+    ctx.fillText(code, mmToPx(2), ph - mmToPx(2));
     return canvas;
   }, [image, spec, paper, layout, count, cutColor, cutWidth, watermark, code, drawSingle]);
 
