@@ -64,7 +64,9 @@ const detectServiceKind = (name = "") => {
   const n = name.toLocaleLowerCase("tr");
   if (/iris/.test(n)) return "iris";
   if (/ürün|urun/.test(n)) return "product";
+  if (/gelin.?al|konvoy/.test(n)) return "gelin_alma";
   if (/nişan.?ev|nisan.?ev/.test(n)) return "engagement_venue";
+  if (/nişan|nisan/.test(n)) return "engagement";
   if (/aile/.test(n)) return "family";
   if (/doğum g|dogum g/.test(n)) return "birthday";
   if (/düğün|dugun/.test(n)) return "wedding";
@@ -72,37 +74,52 @@ const detectServiceKind = (name = "") => {
   return "other";
 };
 
+// Common addon set for Düğün & Nişan (same structure — only "hikaye" label differs)
+const buildWeddingLikeConfig = (hikayeKey, hikayeLabel) => ({
+  groups: [
+    {
+      key: "aktuel_kamera",
+      label: "Aktüel Kamera Çekimi",
+      radio: true,
+      options: [
+        { key: "aktuel_kamera_usb_dahil", label: "USB Bellek Dahil (64GB)" },
+        { key: "aktuel_kamera_usb_haric", label: "USB Hariç" },
+      ],
+    },
+    {
+      key: "aktuel_foto",
+      label: "Aktüel Fotoğraf Çekimi",
+      radio: true,
+      options: [
+        { key: "aktuel_foto_baskili",  label: "Baskılı" },
+        { key: "aktuel_foto_baskisiz", label: "Baskısız" },
+      ],
+    },
+  ],
+  checkboxes: [
+    { key: "dis_cekim",       label: "Dış Çekim" },
+    { key: "klip",            label: "Klip" },
+    { key: "drone",           label: "Drone Çekimi" },
+    { key: "dijital_teslim",  label: "Dijital Teslim" },
+  ],
+  hikayeKey,
+  hikayeLabel,
+});
+
 // Addon config per detected service kind
 const SERVICE_ADDONS = {
-  wedding: {
-    // Grouped: paket seçenekleri
+  wedding:    buildWeddingLikeConfig("dugun_hikayesi", "Düğün Hikayesi (Hepsi Dahil — Aktüel + Klip + Dış Çekim + Drone)"),
+  engagement: buildWeddingLikeConfig("nisan_hikayesi", "Nişan Hikayesi (Hepsi Dahil — Aktüel + Klip + Dış Çekim + Drone)"),
+  gelin_alma: {
     groups: [
-      {
-        key: "aktuel_kamera",
-        label: "Aktüel Kamera Çekimi",
-        radio: true,
-        options: [
-          { key: "aktuel_kamera_usb_dahil", label: "USB Bellek Dahil (64GB)" },
-          { key: "aktuel_kamera_usb_haric", label: "USB Hariç" },
-        ],
-      },
-      {
-        key: "aktuel_foto",
-        label: "Aktüel Fotoğraf Çekimi",
-        radio: true,
-        options: [
-          { key: "aktuel_foto_baskili",  label: "Baskılı" },
-          { key: "aktuel_foto_baskisiz", label: "Baskısız" },
-        ],
-      },
+      { key: "gelin_alma_paket", label: "Gelin Alma + Konvoy Paket", radio: true, options: [
+        { key: "kamera",                label: "Kamera" },
+        { key: "kamera_foto",           label: "Kamera + Fotoğraf" },
+        { key: "profesyonel_klip",      label: "Profesyonel Klip" },
+        { key: "profesyonel_fotograf",  label: "Profesyonel Fotoğraf Çekimi" },
+        { key: "drone",                 label: "Drone" },
+      ]},
     ],
-    checkboxes: [
-      { key: "dis_cekim",       label: "Dış Çekim" },
-      { key: "klip",            label: "Klip" },
-      { key: "dijital_teslim",  label: "Dijital Teslim" },
-    ],
-    hikayeKey: "dugun_hikayesi",
-    hikayeLabel: "Düğün Hikayesi (Hepsi Dahil — Aktüel + Klip + Dış Çekim)",
   },
   family: {
     groups: [
@@ -163,7 +180,7 @@ const Booking = () => {
 
   const kind = selectedService ? detectServiceKind(selectedService.name) : null;
   const config = SERVICE_ADDONS[kind];
-  const hikayeSelected = kind === "wedding" && eventAddons.includes(SERVICE_ADDONS.wedding.hikayeKey);
+  const hikayeSelected = !!(config?.hikayeKey && eventAddons.includes(config.hikayeKey));
 
   // Reset addons when service changes
   useEffect(() => { setEventAddons([]); setRadioChoices({}); }, [selectedService?.id]);
@@ -289,19 +306,19 @@ const Booking = () => {
               <div>
                 <div className="text-sm uppercase tracking-[0.25em] text-emerald-400 mb-4">2 · Paket Seçenekleri</div>
 
-                {/* Düğün Hikayesi — special exclusive package */}
-                {kind === "wedding" && (
+                {/* Düğün / Nişan Hikayesi — special exclusive package for wedding-like services */}
+                {(kind === "wedding" || kind === "engagement") && config?.hikayeKey && (
                   <label
-                    data-testid="wedding-hikaye"
+                    data-testid={`${kind}-hikaye`}
                     className={`flex items-start gap-3 rounded-2xl border p-4 cursor-pointer transition-colors mb-4 ${hikayeSelected ? "border-emerald-400 bg-emerald-500/10" : "border-neutral-800 hover:border-neutral-700"}`}
                   >
                     <Checkbox
                       checked={hikayeSelected}
-                      onCheckedChange={() => toggleCheckbox(SERVICE_ADDONS.wedding.hikayeKey)}
+                      onCheckedChange={() => toggleCheckbox(config.hikayeKey)}
                       className="mt-1 border-neutral-700 data-[state=checked]:bg-emerald-500 data-[state=checked]:text-black data-[state=checked]:border-emerald-500"
                     />
                     <div>
-                      <div className="text-white font-medium">{SERVICE_ADDONS.wedding.hikayeLabel}</div>
+                      <div className="text-white font-medium">{config.hikayeLabel}</div>
                       <div className="text-xs text-neutral-500 mt-1">Bu paketi seçtiğinizde diğer seçeneklere gerek kalmaz — tümü dahildir.</div>
                     </div>
                   </label>
