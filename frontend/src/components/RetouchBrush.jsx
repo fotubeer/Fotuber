@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Eraser, Undo2, RotateCcw, Check, X, Wand2, Paintbrush } from "lucide-react";
+import { Eraser, Undo2, RotateCcw, Check, X, Wand2, Paintbrush, Pipette } from "lucide-react";
 
 // Professional-grade retouch dialog.
 //   - "Onarım" (spot heal) samples surrounding pixels and blends them over
@@ -22,12 +22,16 @@ const fitSize = (w, h) => {
 const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply }) => {
   const canvasRef = useRef(null);
   const [brush, setBrush] = useState(32);
-  const [mode, setMode] = useState("heal"); // "heal" | "paint"
+  const [mode, setMode] = useState("heal"); // "heal" | "paint" | "pick"
+  const [paintColor, setPaintColor] = useState(color);
   const [displaySize, setDisplaySize] = useState({ w: 0, h: 0 });
   const [ready, setReady] = useState(false);
   const historyRef = useRef([]);
   const drawingRef = useRef(false);
   const HISTORY_MAX = 20;
+
+  // Sync paint color with the incoming default when the dialog is reopened
+  useEffect(() => { setPaintColor(color); }, [color, open]);
 
   useEffect(() => {
     if (!open) { setReady(false); historyRef.current = []; }
@@ -85,11 +89,21 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
   const paintDot = (x, y, r) => {
     const ctx = canvasRef.current.getContext("2d");
     ctx.save();
-    ctx.fillStyle = color || "#ffffff";
+    ctx.fillStyle = paintColor || "#ffffff";
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+  };
+
+  // --- Eyedropper: sample the pixel under the cursor ----------------------
+  const pickColor = (x, y) => {
+    const ctx = canvasRef.current.getContext("2d");
+    const d = ctx.getImageData(Math.round(x), Math.round(y), 1, 1).data;
+    const hex = "#" + [d[0], d[1], d[2]].map((v) => v.toString(16).padStart(2, "0")).join("");
+    setPaintColor(hex);
+    // Auto-switch back to paint after picking so the operator can use the sample
+    setMode("paint");
   };
 
   // --- Spot healing: sample nearby "clean" pixels, feathered blend --------
@@ -144,6 +158,7 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
   const applyStroke = (p) => {
     const rSrc = Math.max(2, (brush / 2) * p.scale);
     if (mode === "heal") spotHeal(p.x, p.y, rSrc);
+    else if (mode === "pick") pickColor(p.x, p.y);
     else paintDot(p.x, p.y, rSrc);
   };
 
@@ -151,8 +166,11 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
     if (!ready) return;
     ev.preventDefault();
     canvasRef.current.setPointerCapture(ev.pointerId);
-    drawingRef.current = true;
-    pushHistory();
+    // Eyedropper doesn't modify pixels, so no history push and no drag
+    if (mode !== "pick") {
+      drawingRef.current = true;
+      pushHistory();
+    }
     applyStroke(pointerToCanvas(ev));
   };
   const onPointerMove = (ev) => {
@@ -199,7 +217,9 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
 
   const modeTip = mode === "heal"
     ? "Sivilce, benek, iz gibi bozuklukların üzerine dokun. Fırça yakınından temiz doku örneği alıp yumuşak kenarla üstüne bindirir."
-    : "Fırçayı sürükleyerek istediğin yeri düz beyaza boyar. Arka planda kalan saç/gölge temizliği için idealdir.";
+    : mode === "pick"
+    ? "Fotoğraf üzerinde herhangi bir noktaya tıkla — o pikselin rengini boya rengi olarak alır ve otomatik Boya moduna geçer."
+    : "Fırçayı sürükleyerek istediğin yeri seçili renkle boyar. Arka planda kalan saç/gölge temizliği için idealdir.";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -223,7 +243,7 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
               onPointerLeave={onPointerUp}
-              className="touch-none cursor-crosshair shadow border border-white"
+              className={`touch-none shadow border border-white ${mode === "pick" ? "cursor-copy" : "cursor-crosshair"}`}
               style={{
                 width: displaySize.w ? `${displaySize.w}px` : undefined,
                 height: displaySize.h ? `${displaySize.h}px` : undefined,
@@ -237,7 +257,7 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
           <div className="space-y-4">
             <div>
               <Label className="text-xs mb-1 block">Mod</Label>
-              <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg" data-testid="retouch-mode">
+              <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-lg" data-testid="retouch-mode">
                 <button
                   type="button"
                   onClick={() => setMode("heal")}
@@ -254,7 +274,28 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
                 >
                   <Paintbrush className="w-3.5 h-3.5" /> Boya
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("pick")}
+                  className={`flex items-center justify-center gap-1 py-2 text-xs rounded-md transition-colors ${mode === "pick" ? "bg-white shadow font-semibold text-amber-700" : "text-slate-600"}`}
+                  data-testid="retouch-mode-pick"
+                >
+                  <Pipette className="w-3.5 h-3.5" /> Emici
+                </button>
               </div>
+              {(mode === "paint" || mode === "pick") && (
+                <div className="mt-2 flex items-center gap-2" data-testid="retouch-color-swatch">
+                  <Label className="text-xs">Renk</Label>
+                  <input
+                    type="color"
+                    value={paintColor}
+                    onChange={(e) => setPaintColor(e.target.value)}
+                    className="w-8 h-8 rounded border border-slate-300 cursor-pointer"
+                    data-testid="retouch-color-input"
+                  />
+                  <span className="text-[11px] text-slate-500 tabular-nums">{paintColor.toUpperCase()}</span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -272,14 +313,14 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
               />
               <div className="flex items-center justify-center mt-3 h-16">
                 <div
-                  className="rounded-full border border-slate-400"
+                  className="rounded-full border"
                   style={{
                     width: brush,
                     height: brush,
-                    backgroundColor: mode === "paint" ? color : "transparent",
-                    borderStyle: mode === "heal" ? "dashed" : "solid",
-                    borderWidth: mode === "heal" ? 2 : 1,
-                    borderColor: mode === "heal" ? "#6366f1" : "#94a3b8",
+                    backgroundColor: mode === "paint" ? paintColor : "transparent",
+                    borderStyle: mode === "heal" ? "dashed" : mode === "pick" ? "dotted" : "solid",
+                    borderWidth: 2,
+                    borderColor: mode === "heal" ? "#6366f1" : mode === "pick" ? "#d97706" : "#94a3b8",
                   }}
                 />
               </div>

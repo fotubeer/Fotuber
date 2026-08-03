@@ -59,7 +59,7 @@ const AdminPassportPhoto = () => {
   const [wmScale, setWmScale] = useState(14); // % of photo height
   const [wmOpacity, setWmOpacity] = useState(85); // 0-100
   const [sheetOffset, setSheetOffset] = useState({ x: 0, y: 0 }); // mm manual offset
-  const [adj, setAdj] = useState({ brightness: 100, contrast: 100, saturation: 100, warmth: 0, sharpness: 0, retouch: false });
+  const [adj, setAdj] = useState({ brightness: 100, contrast: 100, saturation: 100, warmth: 0, sharpness: 0, retouch: false, retouchIntensity: 60 });
   const [cutColor, setCutColor] = useState("#000000");
   const [cutWidth, setCutWidth] = useState(0.5); // mm
   const [watermark, setWatermark] = useState(null); // dataUrl
@@ -271,29 +271,25 @@ const AdminPassportPhoto = () => {
       ctx.drawImage(image.el, sx, sy, cropW, cropH, 0, 0, targetW, targetH);
     }
     ctx.restore();
-    // Retouch — proper "portrait skin softening" using frequency separation:
-    //   1. Build a heavily blurred low-frequency copy → smooth skin tones
-    //   2. Overlay the ORIGINAL result with soft-light blend @ moderate alpha
-    //      → the eyes/lips/hair edges pop back but blemishes stay softened.
-    // This preserves detail unlike a plain blur, mimicking a light Portrait
-    // filter used in Photoshop/Instagram beauty tools.
+    // Retouch — frequency-separation style skin softening with adjustable
+    // intensity. `retouchIntensity` (10–100) linearly scales the low-freq
+    // (blurred) contribution, so at 100% the effect is very soft and at 10%
+    // it barely nudges the base image.
     if (adj.retouch) {
-      // Snapshot the original (post-crop) result before we mutate the canvas
+      const intensity = Math.min(1, Math.max(0.1, (adj.retouchIntensity ?? 60) / 100));
       const orig = document.createElement("canvas");
       orig.width = targetW; orig.height = targetH;
       orig.getContext("2d").drawImage(canvas, 0, 0);
 
-      // Blurred (low-frequency) copy
       const blurred = document.createElement("canvas");
       blurred.width = targetW; blurred.height = targetH;
       const bctx = blurred.getContext("2d");
-      const blurPx = Math.max(6, Math.round(targetW * 0.025));
+      const blurPx = Math.max(6, Math.round(targetW * (0.015 + 0.02 * intensity)));
       if ("filter" in bctx) {
         bctx.filter = `blur(${blurPx}px)`;
         bctx.drawImage(orig, 0, 0);
         bctx.filter = "none";
       } else {
-        // Safari fallback: heavy downscale + upscale
         const scale = 0.18;
         const tw = Math.max(4, Math.round(targetW * scale));
         const th = Math.max(4, Math.round(targetH * scale));
@@ -308,23 +304,18 @@ const AdminPassportPhoto = () => {
         bctx.drawImage(tmp, 0, 0, tw, th, 0, 0, targetW, targetH);
       }
 
-      // Replace canvas with smoothed version
-      ctx.clearRect(0, 0, targetW, targetH);
-      ctx.fillStyle = spec.bg;
-      ctx.fillRect(0, 0, targetW, targetH);
-      ctx.drawImage(blurred, 0, 0);
-
-      // Bring back structural detail via soft-light overlay of the original
+      // Compose: start from original, overlay blurred at (intensity) alpha,
+      // then bring back structural detail with a soft-light pass whose
+      // strength scales INVERSELY with intensity — heavier smoothing keeps
+      // less detail on top.
       ctx.save();
-      ctx.globalCompositeOperation = "soft-light";
-      ctx.globalAlpha = 0.85;
-      ctx.drawImage(orig, 0, 0);
+      ctx.globalAlpha = intensity;
+      ctx.drawImage(blurred, 0, 0);
       ctx.restore();
 
-      // A tiny second pass: draw a small amount of the original for luminance
-      // fidelity so skin tones don't drift too pale
       ctx.save();
-      ctx.globalAlpha = 0.15;
+      ctx.globalCompositeOperation = "soft-light";
+      ctx.globalAlpha = 0.6 + 0.3 * (1 - intensity);
       ctx.drawImage(orig, 0, 0);
       ctx.restore();
     }
@@ -643,6 +634,12 @@ const AdminPassportPhoto = () => {
                 <Switch checked={adj.retouch} onCheckedChange={(v) => setAdj({ ...adj, retouch: v })} data-testid="switch-retouch" />
                 <span className="text-sm">Rötuş (cilt yumuşatma)</span>
               </label>
+              {adj.retouch && (
+                <div className="pl-1" data-testid="retouch-intensity-wrap">
+                  <div className="flex justify-between text-xs"><span>Yumuşatma Şiddeti</span><span className="tabular-nums text-slate-500">{adj.retouchIntensity}%</span></div>
+                  <input type="range" min={10} max={100} step={5} value={adj.retouchIntensity} onChange={(e) => setAdj({ ...adj, retouchIntensity: Number(e.target.value) })} className="w-full" data-testid="retouch-intensity" />
+                </div>
+              )}
             </CardContent>
           </Card>
 
