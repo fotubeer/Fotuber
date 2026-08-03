@@ -88,7 +88,7 @@ const Home = () => {
               className="flex flex-wrap items-center gap-4"
             >
               <Link to="/randevu">
-                <Button data-testid="hero-cta-book" className="rounded-full bg-[#d4af37] hover:bg-[#b5952f] text-black px-8 h-12 text-sm tracking-wide">
+                <Button data-testid="hero-cta-book" className="rounded-full bg-emerald-500 hover:bg-emerald-600 text-black font-semibold px-8 h-12 text-sm tracking-wide shadow-[0_0_35px_rgba(16,185,129,0.5)]">
                   Hemen Randevu Al <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </Link>
@@ -309,7 +309,7 @@ const Home = () => {
             Şimdi randevu alın; ekibimiz sizi arayarak kapora ile tarihinizi kesinleştirsin.
           </p>
           <Link to="/randevu">
-            <Button data-testid="cta-bottom-book" className="rounded-full bg-[#d4af37] hover:bg-[#b5952f] text-black h-12 px-10">
+            <Button data-testid="cta-bottom-book" className="rounded-full bg-emerald-500 hover:bg-emerald-600 text-black font-semibold h-12 px-10 shadow-[0_0_35px_rgba(16,185,129,0.5)]">
               Randevu Oluştur
             </Button>
           </Link>

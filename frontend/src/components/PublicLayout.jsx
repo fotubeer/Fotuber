@@ -73,7 +73,7 @@ export const PublicLayout = ({ children }) => {
 
           <div className="hidden lg:flex items-center gap-3">
             <Link to="/randevu">
-              <Button data-testid="cta-book-appointment" className="rounded-full bg-[#d4af37] text-black hover:bg-[#b5952f] px-6">
+              <Button data-testid="cta-book-appointment" className="rounded-full bg-emerald-500 hover:bg-emerald-600 text-black font-semibold px-6 shadow-[0_0_25px_rgba(16,185,129,0.45)] hover:shadow-[0_0_45px_rgba(16,185,129,0.7)] transition-all">
                 Randevu Al
               </Button>
             </Link>
@@ -147,7 +147,7 @@ export const PublicLayout = ({ children }) => {
                 </NavLink>
               ))}
               <Link to="/randevu" onClick={() => setOpen(false)}>
-                <Button className="w-full rounded-full bg-[#d4af37] text-black">Randevu Al</Button>
+                <Button className="w-full rounded-full bg-emerald-500 hover:bg-emerald-600 text-black font-semibold">Randevu Al</Button>
               </Link>
               {user && user.role === "admin" && (
                 <Link to="/admin/dashboard" onClick={() => setOpen(false)}>
