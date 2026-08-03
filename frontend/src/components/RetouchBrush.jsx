@@ -106,53 +106,127 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
     setMode("paint");
   };
 
-  // --- Spot healing: sample nearby "clean" pixels, feathered blend --------
+  // --- Photoshop-style healing brush -------------------------------------
+  //
+  // Algorithm (per stroke point):
+  //  1. Auto-source: try 12 candidate patches around the target and pick the
+  //     one with the LOWEST color variance — this is the smoothest, cleanest
+  //     nearby skin/fabric.
+  //  2. Compute ring-annulus mean RGB for BOTH the source and target — this
+  //     is each patch's "local color".
+  //  3. For every pixel inside the brush circle transplant the source pixel
+  //     but ADD the color offset (target_mean − source_mean). This carries
+  //     the source's TEXTURE while inheriting the target's local TONE, so
+  //     the patch fuses seamlessly instead of leaving a visible spot.
+  //  4. Blend into the existing pixels through a feathered radial mask so
+  //     there is no hard circle edge.
+  //
+  // This is the additive-transfer approximation of Poisson blending used by
+  // most healing brushes in professional editors.
+  const clamp255 = (v) => Math.max(0, Math.min(255, Math.round(v)));
+
+  const ringMean = (imgData, R, innerFrac, outerFrac) => {
+    const { data, width: W, height: H } = imgData;
+    const cx = W / 2, cy = H / 2;
+    const rIn = R * innerFrac, rOut = R * outerFrac;
+    let sr = 0, sg = 0, sb = 0, n = 0;
+    for (let py = 0; py < H; py++) {
+      const dy = py - cy;
+      for (let px = 0; px < W; px++) {
+        const dx = px - cx;
+        const dr = Math.sqrt(dx * dx + dy * dy);
+        if (dr >= rIn && dr <= rOut) {
+          const i = (py * W + px) * 4;
+          sr += data[i]; sg += data[i + 1]; sb += data[i + 2];
+          n++;
+        }
+      }
+    }
+    if (!n) return { r: 128, g: 128, b: 128 };
+    return { r: sr / n, g: sg / n, b: sb / n };
+  };
+
+  const patchVariance = (imgData) => {
+    const { data } = imgData;
+    const n = data.length / 4;
+    let sr = 0, sg = 0, sb = 0;
+    for (let i = 0; i < data.length; i += 4) { sr += data[i]; sg += data[i + 1]; sb += data[i + 2]; }
+    const mr = sr / n, mg = sg / n, mb = sb / n;
+    let vr = 0, vg = 0, vb = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const dr = data[i] - mr, dg = data[i + 1] - mg, db = data[i + 2] - mb;
+      vr += dr * dr; vg += dg * dg; vb += db * db;
+    }
+    return (vr + vg + vb) / (3 * n);
+  };
+
   const spotHeal = (x, y, r) => {
     const cvs = canvasRef.current;
     const ctx = cvs.getContext("2d");
-    const R = Math.max(4, r);
-    // Try 8 offset directions to find a source patch fully inside the image.
-    const offsets = [
-      [ R * 2.4, 0], [-R * 2.4, 0], [0, R * 2.4], [0, -R * 2.4],
-      [ R * 1.8,  R * 1.8], [-R * 1.8,  R * 1.8],
-      [ R * 1.8, -R * 1.8], [-R * 1.8, -R * 1.8],
-    ];
-    let src = null;
-    for (const [dx, dy] of offsets) {
-      const sx = x + dx, sy = y + dy;
-      if (sx - R > 0 && sx + R < cvs.width && sy - R > 0 && sy + R < cvs.height) {
-        src = { x: sx, y: sy }; break;
+    const R = Math.max(6, Math.round(r));
+    const D = R * 2;
+    // Target must be fully inside the canvas
+    if (x - R < 0 || y - R < 0 || x + R >= cvs.width || y + R >= cvs.height) return;
+
+    // ---- 1) Pick the smoothest nearby source patch ----------------------
+    let best = null;
+    const dist = R * 2.4;
+    for (let k = 0; k < 12; k++) {
+      const angle = (k / 12) * Math.PI * 2;
+      const sx = Math.round(x + Math.cos(angle) * dist);
+      const sy = Math.round(y + Math.sin(angle) * dist);
+      if (sx - R < 0 || sy - R < 0 || sx + R >= cvs.width || sy + R >= cvs.height) continue;
+      // Sample a small central subregion for the variance check (cheap)
+      const probe = ctx.getImageData(sx - R / 2, sy - R / 2, R, R);
+      const v = patchVariance(probe);
+      if (!best || v < best.v) best = { sx, sy, v };
+    }
+    if (!best) {
+      // fall back to clamped position
+      const sx = Math.min(Math.max(x + R * 1.5, R + 1), cvs.width - R - 1);
+      const sy = Math.min(Math.max(y, R + 1), cvs.height - R - 1);
+      best = { sx: Math.round(sx), sy: Math.round(sy) };
+    }
+
+    // ---- 2) Grab source + target patches + compute local means ----------
+    const srcData = ctx.getImageData(best.sx - R, best.sy - R, D, D);
+    const tgtData = ctx.getImageData(x - R, y - R, D, D);
+    const srcMean = ringMean(srcData, R, 0.7, 1.0);
+    const tgtMean = ringMean(tgtData, R, 0.7, 1.0);
+    const oR = tgtMean.r - srcMean.r;
+    const oG = tgtMean.g - srcMean.g;
+    const oB = tgtMean.b - srcMean.b;
+
+    // ---- 3+4) Per-pixel transplant with additive color transfer + mask --
+    const out = ctx.createImageData(D, D);
+    const sd = srcData.data, td = tgtData.data, od = out.data;
+    for (let py = 0; py < D; py++) {
+      const dy = py - R;
+      for (let px = 0; px < D; px++) {
+        const dx = px - R;
+        const dr = Math.sqrt(dx * dx + dy * dy);
+        const i = (py * D + px) * 4;
+        if (dr > R) {
+          od[i] = td[i]; od[i + 1] = td[i + 1]; od[i + 2] = td[i + 2]; od[i + 3] = 255;
+          continue;
+        }
+        // Feathered radial mask: full inside 0.6R, fades linearly to 0 at R
+        let m = 1;
+        if (dr > R * 0.6) m = 1 - (dr - R * 0.6) / (R * 0.4);
+        if (m < 0) m = 0;
+        // Extra squared falloff for smoother blend
+        m = m * m * (3 - 2 * m);
+
+        const hR = sd[i] + oR;
+        const hG = sd[i + 1] + oG;
+        const hB = sd[i + 2] + oB;
+        od[i]     = clamp255(td[i]     * (1 - m) + hR * m);
+        od[i + 1] = clamp255(td[i + 1] * (1 - m) + hG * m);
+        od[i + 2] = clamp255(td[i + 2] * (1 - m) + hB * m);
+        od[i + 3] = 255;
       }
     }
-    if (!src) { // fall back to clamped inside-canvas point
-      src = { x: Math.min(Math.max(x + R * 1.5, R + 1), cvs.width - R - 1),
-              y: Math.min(Math.max(y, R + 1), cvs.height - R - 1) };
-    }
-    const D = R * 2;
-
-    // Patch = pixels sampled from source location
-    const patch = document.createElement("canvas");
-    patch.width = D; patch.height = D;
-    const pctx = patch.getContext("2d");
-    pctx.drawImage(cvs, src.x - R, src.y - R, D, D, 0, 0, D, D);
-
-    // Feathered radial mask (opaque center, transparent edge)
-    const mask = document.createElement("canvas");
-    mask.width = D; mask.height = D;
-    const mctx = mask.getContext("2d");
-    const g = mctx.createRadialGradient(R, R, R * 0.15, R, R, R);
-    g.addColorStop(0, "rgba(0,0,0,1)");
-    g.addColorStop(0.7, "rgba(0,0,0,0.85)");
-    g.addColorStop(1, "rgba(0,0,0,0)");
-    mctx.fillStyle = g;
-    mctx.fillRect(0, 0, D, D);
-
-    // Apply mask to patch (destination-in keeps only where mask alpha > 0)
-    pctx.globalCompositeOperation = "destination-in";
-    pctx.drawImage(mask, 0, 0);
-
-    // Composite patch on target — feathered so no hard circle edge
-    ctx.drawImage(patch, x - R, y - R);
+    ctx.putImageData(out, x - R, y - R);
   };
 
   const applyStroke = (p) => {
