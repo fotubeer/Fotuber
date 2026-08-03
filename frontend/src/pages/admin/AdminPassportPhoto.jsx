@@ -271,53 +271,83 @@ const AdminPassportPhoto = () => {
       ctx.drawImage(image.el, sx, sy, cropW, cropH, 0, 0, targetW, targetH);
     }
     ctx.restore();
-    // Retouch — frequency-separation style skin softening with adjustable
-    // intensity. `retouchIntensity` (10–100) linearly scales the low-freq
-    // (blurred) contribution, so at 100% the effect is very soft and at 10%
-    // it barely nudges the base image.
+    // Skin retouch — luminance-diff edge-preserving smoother (surface-blur
+    // family). Small luminance deviations (blemishes, fine lines, under-eye
+    // circles, minor unevenness) are pulled towards the local LF colour;
+    // large deviations (eyes, lips, hair, eyebrows) pass through untouched.
+    // Because attenuation is driven by LUMINANCE only and applied UNIFORMLY
+    // across R/G/B, hue and saturation are mathematically preserved. The
+    // per-pixel LF (heavy blur) also preserves the local average colour so
+    // overall brightness/tone doesn't shift — no makeup/filter look.
     if (adj.retouch) {
       const intensity = Math.min(1, Math.max(0.1, (adj.retouchIntensity ?? 60) / 100));
-      const orig = document.createElement("canvas");
-      orig.width = targetW; orig.height = targetH;
-      orig.getContext("2d").drawImage(canvas, 0, 0);
+      const W = targetW, H = targetH;
 
-      const blurred = document.createElement("canvas");
-      blurred.width = targetW; blurred.height = targetH;
-      const bctx = blurred.getContext("2d");
-      const blurPx = Math.max(6, Math.round(targetW * (0.015 + 0.02 * intensity)));
-      if ("filter" in bctx) {
-        bctx.filter = `blur(${blurPx}px)`;
-        bctx.drawImage(orig, 0, 0);
-        bctx.filter = "none";
+      // Snapshot the pre-smoothing pixels
+      const orig = ctx.getImageData(0, 0, W, H);
+
+      // Build LF (heavy blur) into an offscreen canvas
+      const lf = document.createElement("canvas");
+      lf.width = W; lf.height = H;
+      const lctx = lf.getContext("2d");
+      const blurPx = Math.max(4, Math.round(W * (0.012 + 0.02 * intensity)));
+      if ("filter" in lctx) {
+        lctx.filter = `blur(${blurPx}px)`;
+        lctx.drawImage(canvas, 0, 0);
+        lctx.filter = "none";
       } else {
-        const scale = 0.18;
-        const tw = Math.max(4, Math.round(targetW * scale));
-        const th = Math.max(4, Math.round(targetH * scale));
+        const scale = 0.22;
+        const tw = Math.max(4, Math.round(W * scale));
+        const th = Math.max(4, Math.round(H * scale));
         const tmp = document.createElement("canvas");
         tmp.width = tw; tmp.height = th;
         const tctx = tmp.getContext("2d");
         tctx.imageSmoothingEnabled = true;
         tctx.imageSmoothingQuality = "high";
-        tctx.drawImage(orig, 0, 0, tw, th);
-        bctx.imageSmoothingEnabled = true;
-        bctx.imageSmoothingQuality = "high";
-        bctx.drawImage(tmp, 0, 0, tw, th, 0, 0, targetW, targetH);
+        tctx.drawImage(canvas, 0, 0, tw, th);
+        lctx.imageSmoothingEnabled = true;
+        lctx.imageSmoothingQuality = "high";
+        lctx.drawImage(tmp, 0, 0, tw, th, 0, 0, W, H);
       }
+      const lfData = lctx.getImageData(0, 0, W, H);
 
-      // Compose: start from original, overlay blurred at (intensity) alpha,
-      // then bring back structural detail with a soft-light pass whose
-      // strength scales INVERSELY with intensity — heavier smoothing keeps
-      // less detail on top.
-      ctx.save();
-      ctx.globalAlpha = intensity;
-      ctx.drawImage(blurred, 0, 0);
-      ctx.restore();
+      // Thresholds (in luminance units, 0-255). Deviations under `lo` are
+      // considered "skin texture / blemishes" — attenuate. Deviations above
+      // `hi` are "features" — leave alone. Between the two we smoothstep so
+      // there's no hard cutoff (which would create posterization).
+      const lo = 4 + 2  * (1 - intensity);   // ~4-6
+      const hi = 22 + 8 * (1 - intensity);   // ~22-30
+      const clamp255 = (v) => v < 0 ? 0 : v > 255 ? 255 : v | 0;
 
-      ctx.save();
-      ctx.globalCompositeOperation = "soft-light";
-      ctx.globalAlpha = 0.6 + 0.3 * (1 - intensity);
-      ctx.drawImage(orig, 0, 0);
-      ctx.restore();
+      const od = orig.data, ld = lfData.data;
+      for (let i = 0; i < od.length; i += 4) {
+        const oR = od[i], oG = od[i + 1], oB = od[i + 2];
+        const lR = ld[i], lG = ld[i + 1], lB = ld[i + 2];
+        // Rec.601 luminance is fine here — we only need a relative edge signal
+        const oL = 0.299 * oR + 0.587 * oG + 0.114 * oB;
+        const lL = 0.299 * lR + 0.587 * lG + 0.114 * lB;
+        const absDiff = oL > lL ? oL - lL : lL - oL;
+        // strength=0 → replace with LF (blemish erased). strength=1 → keep original (feature preserved).
+        let strength;
+        if (absDiff <= lo) strength = 0;
+        else if (absDiff >= hi) strength = 1;
+        else {
+          const t = (absDiff - lo) / (hi - lo);
+          strength = t * t * (3 - 2 * t);
+        }
+        // Uniform strength across R/G/B → hue/saturation of the smoothed
+        // value equals hue/saturation of the LF (which comes from surrounding
+        // skin), so no colour cast.
+        const nR = lR + (oR - lR) * strength;
+        const nG = lG + (oG - lG) * strength;
+        const nB = lB + (oB - lB) * strength;
+        // Global intensity slider blends the smoothed pixel back with the
+        // original, so operators can dial the strength from subtle to strong.
+        od[i]     = clamp255(oR * (1 - intensity) + nR * intensity);
+        od[i + 1] = clamp255(oG * (1 - intensity) + nG * intensity);
+        od[i + 2] = clamp255(oB * (1 - intensity) + nB * intensity);
+      }
+      ctx.putImageData(orig, 0, 0);
     }
     return canvas;
   }, [image, spec, crop, rotate, adj]);

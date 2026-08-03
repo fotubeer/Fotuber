@@ -160,36 +160,50 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
     return (vr + vg + vb) / (3 * n);
   };
 
+  const strokeSourceRef = useRef(null); // Locked source offset for the whole drag stroke
+
   const spotHeal = (x, y, r) => {
     const cvs = canvasRef.current;
     const ctx = cvs.getContext("2d");
     const R = Math.max(6, Math.round(r));
     const D = R * 2;
-    // Target must be fully inside the canvas
     if (x - R < 0 || y - R < 0 || x + R >= cvs.width || y + R >= cvs.height) return;
 
-    // ---- 1) Pick the smoothest nearby source patch ----------------------
-    let best = null;
-    const dist = R * 2.4;
-    for (let k = 0; k < 12; k++) {
-      const angle = (k / 12) * Math.PI * 2;
-      const sx = Math.round(x + Math.cos(angle) * dist);
-      const sy = Math.round(y + Math.sin(angle) * dist);
-      if (sx - R < 0 || sy - R < 0 || sx + R >= cvs.width || sy + R >= cvs.height) continue;
-      // Sample a small central subregion for the variance check (cheap)
-      const probe = ctx.getImageData(sx - R / 2, sy - R / 2, R, R);
-      const v = patchVariance(probe);
-      if (!best || v < best.v) best = { sx, sy, v };
-    }
-    if (!best) {
-      // fall back to clamped position
-      const sx = Math.min(Math.max(x + R * 1.5, R + 1), cvs.width - R - 1);
-      const sy = Math.min(Math.max(y, R + 1), cvs.height - R - 1);
-      best = { sx: Math.round(sx), sy: Math.round(sy) };
+    // ---- 1) Pick source location -----------------------------------------
+    // Aligned clone: if a stroke is in progress use the SAME offset that was
+    // chosen at pointerdown, so a drag doesn't leave a streak of mismatched
+    // patches. Otherwise scan 12 directions and pick the smoothest patch.
+    let srcX, srcY;
+    if (strokeSourceRef.current) {
+      srcX = x + strokeSourceRef.current.dx;
+      srcY = y + strokeSourceRef.current.dy;
+      // Clamp to canvas
+      srcX = Math.min(Math.max(srcX, R + 1), cvs.width  - R - 1);
+      srcY = Math.min(Math.max(srcY, R + 1), cvs.height - R - 1);
+    } else {
+      let best = null;
+      const dist = R * 2.4;
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        const sx = Math.round(x + Math.cos(a) * dist);
+        const sy = Math.round(y + Math.sin(a) * dist);
+        if (sx - R < 0 || sy - R < 0 || sx + R >= cvs.width || sy + R >= cvs.height) continue;
+        const probe = ctx.getImageData(sx - R / 2, sy - R / 2, R, R);
+        const v = patchVariance(probe);
+        if (!best || v < best.v) best = { sx, sy, v };
+      }
+      if (!best) {
+        srcX = Math.min(Math.max(x + R * 1.5, R + 1), cvs.width - R - 1);
+        srcY = Math.min(Math.max(y, R + 1), cvs.height - R - 1);
+      } else {
+        srcX = best.sx; srcY = best.sy;
+      }
+      // Lock this offset for the rest of the stroke
+      strokeSourceRef.current = { dx: srcX - x, dy: srcY - y };
     }
 
     // ---- 2) Grab source + target patches + compute local means ----------
-    const srcData = ctx.getImageData(best.sx - R, best.sy - R, D, D);
+    const srcData = ctx.getImageData(srcX - R, srcY - R, D, D);
     const tgtData = ctx.getImageData(x - R, y - R, D, D);
     const srcMean = ringMean(srcData, R, 0.7, 1.0);
     const tgtMean = ringMean(tgtData, R, 0.7, 1.0);
@@ -210,12 +224,12 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
           od[i] = td[i]; od[i + 1] = td[i + 1]; od[i + 2] = td[i + 2]; od[i + 3] = 255;
           continue;
         }
-        // Feathered radial mask: full inside 0.6R, fades linearly to 0 at R
+        // Very soft feather (starts fading from 0.35R) so overlapping stroke
+        // patches blend into each other instead of leaving hard rings.
         let m = 1;
-        if (dr > R * 0.6) m = 1 - (dr - R * 0.6) / (R * 0.4);
+        if (dr > R * 0.35) m = 1 - (dr - R * 0.35) / (R * 0.65);
         if (m < 0) m = 0;
-        // Extra squared falloff for smoother blend
-        m = m * m * (3 - 2 * m);
+        m = m * m * (3 - 2 * m); // smoothstep
 
         const hR = sd[i] + oR;
         const hG = sd[i + 1] + oG;
@@ -240,10 +254,10 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
     if (!ready) return;
     ev.preventDefault();
     canvasRef.current.setPointerCapture(ev.pointerId);
-    // Eyedropper doesn't modify pixels, so no history push and no drag
     if (mode !== "pick") {
       drawingRef.current = true;
       pushHistory();
+      strokeSourceRef.current = null; // reset so a fresh source is picked
     }
     applyStroke(pointerToCanvas(ev));
   };
@@ -256,6 +270,7 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
       canvasRef.current.releasePointerCapture(ev.pointerId);
     }
     drawingRef.current = false;
+    strokeSourceRef.current = null;
   };
 
   const undo = () => {
