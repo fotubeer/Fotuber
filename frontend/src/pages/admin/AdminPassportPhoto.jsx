@@ -271,29 +271,34 @@ const AdminPassportPhoto = () => {
       ctx.drawImage(image.el, sx, sy, cropW, cropH, 0, 0, targetW, targetH);
     }
     ctx.restore();
-    // Retouch — proper skin smoothing via an offscreen blur pass.
-    // `ctx.filter` on Chrome/Firefox blurs on draw; on Safari (no filter
-    // support) we fall back to a light downscale-upscale trick which
-    // approximates a low-radius Gaussian. Alpha is bumped high enough for
-    // the effect to be visible.
+    // Retouch — proper skin smoothing via an offscreen blur pass. Blur radius
+    // scales with photo size so the effect is visible on any spec. Alpha kept
+    // high so operators can actually see a difference the moment the switch
+    // flips on.
     if (adj.retouch) {
       const off = document.createElement("canvas");
       off.width = targetW;
       off.height = targetH;
       const octx = off.getContext("2d");
-      const supportsFilter = typeof octx.filter === "string";
+      const supportsFilter = "filter" in octx;
+      const blurPx = Math.max(4, Math.round(targetW * 0.02)); // ~2% of width
       if (supportsFilter) {
-        octx.filter = "blur(5px)";
+        octx.filter = `blur(${blurPx}px)`;
         octx.drawImage(canvas, 0, 0);
+        octx.filter = "none";
       } else {
-        // Downscale to 40% and back up — cheap Gaussian approximation
-        const tw = Math.max(1, Math.round(targetW * 0.4));
-        const th = Math.max(1, Math.round(targetH * 0.4));
-        octx.drawImage(canvas, 0, 0, tw, th);
-        octx.drawImage(off, 0, 0, tw, th, 0, 0, targetW, targetH);
+        // Cheap Gaussian: downscale then upscale (works on very old Safari)
+        const tw = Math.max(1, Math.round(targetW * 0.25));
+        const th = Math.max(1, Math.round(targetH * 0.25));
+        const tmp = document.createElement("canvas");
+        tmp.width = tw; tmp.height = th;
+        tmp.getContext("2d").drawImage(canvas, 0, 0, tw, th);
+        octx.imageSmoothingEnabled = true;
+        octx.imageSmoothingQuality = "high";
+        octx.drawImage(tmp, 0, 0, tw, th, 0, 0, targetW, targetH);
       }
       ctx.save();
-      ctx.globalAlpha = 0.55;
+      ctx.globalAlpha = 0.7;
       ctx.drawImage(off, 0, 0);
       ctx.restore();
     }
