@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Sparkles, Undo2, Eye, Circle, Shirt, Loader2, SplitSquareHorizontal, Palette } from "lucide-react";
+import { Sparkles, Undo2, Eye, Circle, Shirt, Loader2, SplitSquareHorizontal, Palette, Wand2, Droplet } from "lucide-react";
 import { toast } from "sonner";
 import { detectFaceRegions } from "@/lib/faceDetect";
 
@@ -45,6 +45,109 @@ const GARMENTS_F = [
 const authHeaders = () => {
   const t = localStorage.getItem("token");
   return t ? { Authorization: `Bearer ${t}` } : {};
+};
+
+// ---- HSL helpers ---------------------------------------------------------
+const rgbToHsl = (r, g, b) => {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  let h, s, l = (mx + mn) / 2;
+  if (mx === mn) { h = 0; s = 0; }
+  else {
+    const d = mx - mn;
+    s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+    switch (mx) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      default: h = (r - g) / d + 4;
+    }
+    h /= 6;
+  }
+  return { h, s, l };
+};
+const hslToRgb = (h, s, l) => {
+  if (s === 0) return { r: l * 255, g: l * 255, b: l * 255 };
+  const hue2rgb = (p, q, t) => {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return {
+    r: hue2rgb(p, q, h + 1 / 3) * 255,
+    g: hue2rgb(p, q, h) * 255,
+    b: hue2rgb(p, q, h - 1 / 3) * 255,
+  };
+};
+
+// Client-side garment RE-COLOR: preserves face/skin/background completely.
+// Detects clothing pixels as "not-background AND not-skin AND below chin",
+// then transfers only Hue+Saturation from the target while keeping the
+// original Lightness — so fabric folds, shadows and highlights survive.
+const recolorGarment = async (imgEl, targetHex) => {
+  const regions = await detectFaceRegions(imgEl);
+  if (!regions.ok) throw new Error(regions.message || "Yüz tespit edilemedi");
+  const W = imgEl.naturalWidth || imgEl.width;
+  const H = imgEl.naturalHeight || imgEl.height;
+  const cvs = document.createElement("canvas");
+  cvs.width = W; cvs.height = H;
+  const ctx = cvs.getContext("2d");
+  ctx.drawImage(imgEl, 0, 0);
+  const data = ctx.getImageData(0, 0, W, H);
+
+  // Background sample = mean of 4 corner 30×30 patches
+  const sampleMean = (x, y, w, h) => {
+    const p = ctx.getImageData(x, y, w, h).data;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < p.length; i += 4) { r += p[i]; g += p[i + 1]; b += p[i + 2]; n++; }
+    return { r: r / n, g: g / n, b: b / n };
+  };
+  const bgSamples = [
+    sampleMean(0, 0, 30, 30),
+    sampleMean(W - 30, 0, 30, 30),
+    sampleMean(0, H - 30, 30, 30),
+    sampleMean(W - 30, H - 30, 30, 30),
+  ];
+  const bgR = bgSamples.reduce((s, p) => s + p.r, 0) / bgSamples.length;
+  const bgG = bgSamples.reduce((s, p) => s + p.g, 0) / bgSamples.length;
+  const bgB = bgSamples.reduce((s, p) => s + p.b, 0) / bgSamples.length;
+
+  const box = regions.box;
+  const chinY = box.y + box.height;
+  // Skin tone reference from cheek area (below eyes, above chin)
+  const cheekR = data.data[((Math.floor(box.y + box.height * 0.7)) * W + Math.floor(box.x + box.width * 0.25)) * 4];
+  const cheekG = data.data[((Math.floor(box.y + box.height * 0.7)) * W + Math.floor(box.x + box.width * 0.25)) * 4 + 1];
+  const cheekB = data.data[((Math.floor(box.y + box.height * 0.7)) * W + Math.floor(box.x + box.width * 0.25)) * 4 + 2];
+
+  const target = { r: parseInt(targetHex.slice(1, 3), 16), g: parseInt(targetHex.slice(3, 5), 16), b: parseInt(targetHex.slice(5, 7), 16) };
+  const t = rgbToHsl(target.r, target.g, target.b);
+
+  const bgDist = (r, g, b) => Math.abs(r - bgR) + Math.abs(g - bgG) + Math.abs(b - bgB);
+  const skinDist = (r, g, b) => Math.abs(r - cheekR) + Math.abs(g - cheekG) + Math.abs(b - cheekB);
+
+  const d = data.data;
+  // Everything above (chinY + neckGap) is off-limits (face/hair). Neck is
+  // handled by the skin-tone exclusion below.
+  const startY = Math.max(0, Math.floor(chinY + Math.min(H * 0.02, 20)));
+  for (let y = startY; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      if (bgDist(r, g, b) < 55) continue;    // background — skip
+      if (skinDist(r, g, b) < 55) continue;  // exposed neck skin — skip
+      const src = rgbToHsl(r, g, b);
+      // Keep original lightness; take hue + saturation from target
+      const out = hslToRgb(t.h, t.s, src.l);
+      d[i]     = out.r < 0 ? 0 : out.r > 255 ? 255 : out.r;
+      d[i + 1] = out.g < 0 ? 0 : out.g > 255 ? 255 : out.g;
+      d[i + 2] = out.b < 0 ? 0 : out.b > 255 ? 255 : out.b;
+    }
+  }
+  ctx.putImageData(data, 0, 0);
+  return cvs.toDataURL("image/jpeg", 0.95);
 };
 
 // Manipulate the pixel data of a canvas rect: dampen red-channel bloom in
@@ -147,7 +250,9 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
   const [collar, setCollar] = useState("collar");
   const [color, setColor] = useState("#1e293b");
   const [colorName, setColorName] = useState("Lacivert");
+  const [mode, setMode] = useState("recolor"); // "recolor" | "ai"
   const [aiBusy, setAiBusy] = useState(false);
+  const [recolorBusy, setRecolorBusy] = useState(false);
   const [redEyeBusy, setRedEyeBusy] = useState(false);
   const [sharpenBusy, setSharpenBusy] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
@@ -172,6 +277,21 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
     const im = await loadImageFromSrc(prev);
     applyImage(im);
     toast.success("Son işlem geri alındı");
+  };
+
+  const doRecolor = async () => {
+    if (!image?.el) { toast.error("Önce fotoğraf yükleyin"); return; }
+    setRecolorBusy(true);
+    try {
+      pushUndo();
+      const dataUrl = await recolorGarment(image.el, color);
+      const im = await loadImageFromSrc(dataUrl);
+      applyImage(im);
+      toast.success(`Rengi ${colorName || color} yapıldı`);
+    } catch (e) {
+      toast.error(e.message || "Renk değiştirme başarısız");
+      undoRef.current.pop();
+    } finally { setRecolorBusy(false); }
   };
 
   const doAiEdit = async () => {
@@ -257,9 +377,37 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* AI Garment Editor */}
+          {/* Mode toggle */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium flex items-center gap-2"><Shirt className="w-3.5 h-3.5" /> Kıyafet Değiştir (AI)</Label>
+            <Label className="text-sm font-medium flex items-center gap-2"><Shirt className="w-3.5 h-3.5" /> Kıyafet Modu</Label>
+            <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg text-xs" data-testid="studio-mode-switch">
+              <button
+                type="button"
+                onClick={() => setMode("recolor")}
+                className={`flex items-center justify-center gap-1 py-2 rounded-md transition-colors ${mode === "recolor" ? "bg-emerald-600 text-white shadow font-semibold" : "text-slate-600"}`}
+                data-testid="studio-mode-recolor"
+              >
+                <Droplet className="w-3.5 h-3.5" /> Renk (ücretsiz)
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("ai")}
+                className={`flex items-center justify-center gap-1 py-2 rounded-md transition-colors ${mode === "ai" ? "bg-indigo-600 text-white shadow font-semibold" : "text-slate-600"}`}
+                data-testid="studio-mode-ai"
+              >
+                <Wand2 className="w-3.5 h-3.5" /> AI Kıyafet
+              </button>
+            </div>
+            <div className={`text-[11px] rounded px-2 py-1 border ${mode === "recolor" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-indigo-50 border-indigo-200 text-indigo-800"}`} data-testid="studio-mode-tip">
+              {mode === "recolor"
+                ? "🟢 Sadece renk değişir — kanvas maskeleme, AI yok, ücretsiz. Yüz/cilt/arka plan korunur."
+                : "🟣 Kıyafetin tamamı AI ile değişir. \"Kıyafeti Değiştir\" butonuna bastığında çalışır."}
+            </div>
+          </div>
+
+          {/* AI Garment Editor (visible only in AI mode) */}
+          {mode === "ai" && (
+          <div className="space-y-2">
             <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg text-xs">
               <button type="button" onClick={() => setGender("male")}   className={`py-2 rounded-md ${gender==="male"   ? "bg-white shadow font-semibold" : "text-slate-600"}`} data-testid="studio-gender-male">Erkek</button>
               <button type="button" onClick={() => setGender("female")} className={`py-2 rounded-md ${gender==="female" ? "bg-white shadow font-semibold" : "text-slate-600"}`} data-testid="studio-gender-female">Kadın</button>
@@ -280,7 +428,11 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
               <button type="button" onClick={() => setCollar("no_collar")} className={`py-1.5 rounded-md ${collar==="no_collar" ? "bg-white shadow font-semibold" : "text-slate-600"}`} data-testid="studio-collar-no">Yakasız</button>
               <button type="button" onClick={() => setCollar("none")}      className={`py-1.5 rounded-md ${collar==="none"      ? "bg-white shadow font-semibold" : "text-slate-600"}`} data-testid="studio-collar-none">Fark Etmez</button>
             </div>
-            <div>
+          </div>
+          )}
+
+          {/* Color palette (common to both modes) */}
+          <div>
               <Label className="text-xs flex items-center gap-2"><Palette className="w-3 h-3" /> Renk Paleti</Label>
               <div className="grid grid-cols-8 gap-1 mt-1" data-testid="studio-palette">
                 {PALETTE.map((p) => (
@@ -301,12 +453,23 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
                 <Input type="text" placeholder="Renk adı (ops.)" value={colorName} onChange={(e) => setColorName(e.target.value)} className="h-8 text-xs" data-testid="studio-color-name" />
               </div>
             </div>
-            <Button onClick={doAiEdit} disabled={aiBusy || !image} className="w-full bg-emerald-600 hover:bg-emerald-700" data-testid="studio-ai-apply">
-              {aiBusy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-              {aiBusy ? "AI çalışıyor..." : "Kıyafeti Değiştir"}
-            </Button>
-            <div className="text-[10px] text-slate-500 leading-tight">AI: Gemini Nano Banana. Yüz, saç ve arka plan korunur. Her uygulama ~5-15 sn sürer.</div>
-          </div>
+
+            {mode === "recolor" ? (
+              <Button onClick={doRecolor} disabled={recolorBusy || !image} className="w-full bg-emerald-600 hover:bg-emerald-700" data-testid="studio-recolor-apply">
+                {recolorBusy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Droplet className="w-4 h-4 mr-2" />}
+                {recolorBusy ? "İşleniyor..." : "Rengi Değiştir"}
+              </Button>
+            ) : (
+              <Button onClick={doAiEdit} disabled={aiBusy || !image} className="w-full bg-indigo-600 hover:bg-indigo-700" data-testid="studio-ai-apply">
+                {aiBusy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Wand2 className="w-4 h-4 mr-2" />}
+                {aiBusy ? "AI çalışıyor..." : "Kıyafeti Değiştir (AI)"}
+              </Button>
+            )}
+            <div className="text-[10px] text-slate-500 leading-tight">
+              {mode === "recolor"
+                ? "Kanvas: yüz altındaki kıyafet piksellerine sadece hue+saturation transfer, luminance korunur — kumaş kıvrımları ve gölgeler değişmez."
+                : "AI: Gemini Nano Banana. Yüz/saç/arka plan korunur. Her uygulama ~5-15 sn sürer."}
+            </div>
 
           <div className="border-t border-slate-200 pt-3 space-y-2">
             <Label className="text-sm font-medium">Yüz Ayrıntıları</Label>
