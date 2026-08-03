@@ -84,9 +84,19 @@ const hslToRgb = (h, s, l) => {
 };
 
 // Client-side garment RE-COLOR: preserves face/skin/background completely.
-// Detects clothing pixels as "not-background AND not-skin AND below chin",
-// then transfers only Hue+Saturation from the target while keeping the
-// original Lightness — so fabric folds, shadows and highlights survive.
+// Uses face-detected chin line + robust skin-tone detection + background
+// sampling. Only pixels that are clearly clothing (below chin, not-bg,
+// not-skin) get their Hue+Saturation shifted while keeping Lightness — so
+// fabric folds and shadows are preserved.
+const YCBCR_SKIN = (r, g, b) => {
+  // ITU-R BT.601 YCbCr skin gate — standard heuristic used in face
+  // detection literature. Works across a wide range of skin tones.
+  const Y  =  0.299 * r + 0.587 * g + 0.114 * b;
+  const Cb = -0.169 * r - 0.331 * g + 0.500 * b + 128;
+  const Cr =  0.500 * r - 0.419 * g - 0.081 * b + 128;
+  return Y > 60 && Cb >= 77 && Cb <= 135 && Cr >= 133 && Cr <= 180;
+};
+
 const recolorGarment = async (imgEl, targetHex) => {
   const regions = await detectFaceRegions(imgEl);
   if (!regions.ok) throw new Error(regions.message || "Yüz tespit edilemedi");
@@ -98,7 +108,6 @@ const recolorGarment = async (imgEl, targetHex) => {
   ctx.drawImage(imgEl, 0, 0);
   const data = ctx.getImageData(0, 0, W, H);
 
-  // Background sample = mean of 4 corner 30×30 patches
   const sampleMean = (x, y, w, h) => {
     const p = ctx.getImageData(x, y, w, h).data;
     let r = 0, g = 0, b = 0, n = 0;
@@ -111,35 +120,31 @@ const recolorGarment = async (imgEl, targetHex) => {
     sampleMean(0, H - 30, 30, 30),
     sampleMean(W - 30, H - 30, 30, 30),
   ];
-  const bgR = bgSamples.reduce((s, p) => s + p.r, 0) / bgSamples.length;
-  const bgG = bgSamples.reduce((s, p) => s + p.g, 0) / bgSamples.length;
-  const bgB = bgSamples.reduce((s, p) => s + p.b, 0) / bgSamples.length;
+  const bgR = bgSamples.reduce((s, p) => s + p.r, 0) / 4;
+  const bgG = bgSamples.reduce((s, p) => s + p.g, 0) / 4;
+  const bgB = bgSamples.reduce((s, p) => s + p.b, 0) / 4;
 
   const box = regions.box;
-  const chinY = box.y + box.height;
-  // Skin tone reference from cheek area (below eyes, above chin)
-  const cheekR = data.data[((Math.floor(box.y + box.height * 0.7)) * W + Math.floor(box.x + box.width * 0.25)) * 4];
-  const cheekG = data.data[((Math.floor(box.y + box.height * 0.7)) * W + Math.floor(box.x + box.width * 0.25)) * 4 + 1];
-  const cheekB = data.data[((Math.floor(box.y + box.height * 0.7)) * W + Math.floor(box.x + box.width * 0.25)) * 4 + 2];
+  // Push the "start of clothing" further below the face box. face-api's box
+  // is often tight to the eyes/jaw; skin/neck sits several % below it.
+  const startY = Math.min(H - 2, Math.floor(box.y + box.height * 1.35));
 
   const target = { r: parseInt(targetHex.slice(1, 3), 16), g: parseInt(targetHex.slice(3, 5), 16), b: parseInt(targetHex.slice(5, 7), 16) };
   const t = rgbToHsl(target.r, target.g, target.b);
 
   const bgDist = (r, g, b) => Math.abs(r - bgR) + Math.abs(g - bgG) + Math.abs(b - bgB);
-  const skinDist = (r, g, b) => Math.abs(r - cheekR) + Math.abs(g - cheekG) + Math.abs(b - cheekB);
 
   const d = data.data;
-  // Everything above (chinY + neckGap) is off-limits (face/hair). Neck is
-  // handled by the skin-tone exclusion below.
-  const startY = Math.max(0, Math.floor(chinY + Math.min(H * 0.02, 20)));
   for (let y = startY; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 4;
       const r = d[i], g = d[i + 1], b = d[i + 2];
-      if (bgDist(r, g, b) < 55) continue;    // background — skip
-      if (skinDist(r, g, b) < 55) continue;  // exposed neck skin — skip
+      if (bgDist(r, g, b) < 55) continue;       // background — skip
+      if (YCBCR_SKIN(r, g, b)) continue;        // exposed skin (neck/chest) — skip
       const src = rgbToHsl(r, g, b);
-      // Keep original lightness; take hue + saturation from target
+      // Very light and very dark pixels (highlights / deep shadows) also
+      // stay untouched — recoloring them wrecks the luminance range.
+      if (src.l > 0.95 || src.l < 0.05) continue;
       const out = hslToRgb(t.h, t.s, src.l);
       d[i]     = out.r < 0 ? 0 : out.r > 255 ? 255 : out.r;
       d[i + 1] = out.g < 0 ? 0 : out.g > 255 ? 255 : out.g;

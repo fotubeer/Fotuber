@@ -3688,13 +3688,15 @@ async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(re
             "SADECE istenen kıyafeti değiştir ve tam çözünürlükte düzenlenmiş "
             "fotoğrafı geri ver. Yüz, cilt, saç, arka plan hiçbir şekilde değişmemeli."
         ),
-    ).with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
+    ).with_model("gemini", "gemini-2.5-flash-image").with_params(modalities=["image", "text"])
 
     msg = UserMessage(text=prompt, file_contents=[ImageContent(b64)])
     try:
         _text, images = await chat.send_message_multimodal_response(msg)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"AI servisi hata verdi: {str(e)[:200]}")
+        # Bubble the real reason up so the frontend can show something useful
+        logger.exception("Nano Banana clothing edit failed")
+        raise HTTPException(status_code=502, detail=f"AI servisi hata verdi: {str(e)[:300]}")
     if not images:
         raise HTTPException(status_code=502, detail="AI görüntü üretmedi, farklı bir kıyafet/renk deneyin")
     out = images[0]

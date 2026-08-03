@@ -132,6 +132,7 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
 - **Vesikalık — Otomatik Yüz Tespiti**: Added `@vladmandic/face-api` integration.
   - `src/lib/faceDetect.js`: lazy-loads TinyFaceDetector + FaceLandmark68 from jsdelivr CDN; returns a biometric-compliant crop rect `{cx, cy, w}` computed from eye-line + chin using ICAO ratios (head 72% of photo height, eyes 55% from bottom).
   - `AdminPassportPhoto.jsx`: crop model refactored from fractional to pixel-space (`{cx, cy, w}`). Auto-detect fires on upload and re-runs when the country/format changes. Manual "Otomatik Yüz Tespiti" button + loader + emerald status pill.
+- **Vesikalık — Kritik Bug Fixes (v9)**: (yukarıda)
 - **Vesikalık — İki Ayrı Kıyafet Modu (v8)**:
   - **Renk (ücretsiz, kanvas)**: Yeni `recolorGarment()` fonksiyonu — face-api ile çene çizgisi tespit ediliyor, 4 köşeden arka plan tonu örneği alınıyor, yanaktan cilt tonu referansı çıkarılıyor. Çene altındaki her piksel için: bg/skin değilse HUE + SATURATION target renkten, LIGHTNESS orijinalden → kumaş kıvrımları, gölge ve dokular aynı kalır. Yüz/cilt/arka plana **hiç dokunmaz**, AI çağrısı yok.
   - **AI Kıyafet (Nano Banana)**: Mevcut flow — cinsiyet + kıyafet tipi + yakalı/yakasız seçimi, "Kıyafeti Değiştir (AI)" ile manuel tetiklenir, otomatik değil.

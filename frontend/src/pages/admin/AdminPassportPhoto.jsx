@@ -151,8 +151,18 @@ const AdminPassportPhoto = () => {
 
   const applyRetouch = useCallback(async (dataUrl) => {
     const updated = await loadImageFromSrc(dataUrl);
-    // Preserve the current crop rectangle — the pixel dimensions are unchanged
-    setImage(updated);
+    // Retouch dialog downscales huge photos to MAX_EDGE=1600. If the returned
+    // image is smaller than the current one, our crop rect is in old-pixel
+    // space and would fall outside the new image, producing a blank canvas.
+    // Rescale the crop to the new dimensions.
+    setImage((prev) => {
+      if (prev && (prev.w !== updated.w || prev.h !== updated.h)) {
+        const sx = updated.w / prev.w;
+        const sy = updated.h / prev.h;
+        setCrop((c) => ({ cx: c.cx * sx, cy: c.cy * sy, w: c.w * sx }));
+      }
+      return updated;
+    });
     toast.success("Rötuş uygulandı");
   }, []);
 
