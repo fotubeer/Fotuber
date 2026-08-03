@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn, ZoomOut, Sparkles, ScanFace, Loader2, Eraser, Paintbrush } from "lucide-react";
+import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn, ZoomOut, Sparkles, ScanFace, Loader2, Eraser, Paintbrush, Move } from "lucide-react";
 import { toast } from "sonner";
 import { PHOTO_SPECS, PAPER_SIZES, suggestPaper, COUNT_PRESETS } from "@/lib/passportSpecs";
 import { detectBiometricCrop, loadFaceModels } from "@/lib/faceDetect";
@@ -53,6 +53,12 @@ const AdminPassportPhoto = () => {
   const [bgRemoved, setBgRemoved] = useState(false);
   const [originalImage, setOriginalImage] = useState(null); // {src, w, h, el} of the raw upload
   const [retouchOpen, setRetouchOpen] = useState(false);
+  // Baskı dizilimi ve filigran
+  const [photoGap, setPhotoGap] = useState(0); // mm gap between photos on sheet
+  const [wmPos, setWmPos] = useState("bc"); // 3x3 grid: tl tc tr ml mc mr bl bc br
+  const [wmScale, setWmScale] = useState(14); // % of photo height
+  const [wmOpacity, setWmOpacity] = useState(85); // 0-100
+  const [sheetOffset, setSheetOffset] = useState({ x: 0, y: 0 }); // mm manual offset
   const [adj, setAdj] = useState({ brightness: 100, contrast: 100, saturation: 100, warmth: 0, sharpness: 0, retouch: false });
   const [cutColor, setCutColor] = useState("#000000");
   const [cutWidth, setCutWidth] = useState(0.5); // mm
@@ -149,6 +155,65 @@ const AdminPassportPhoto = () => {
     toast.success("Rötuş uygulandı");
   }, []);
 
+  // ---------- Pointer drag: pan the crop on the Tekli preview -------------
+  const singleDragRef = useRef(null);
+  const onSinglePointerDown = (ev) => {
+    if (!image) return;
+    ev.preventDefault();
+    singleCanvasRef.current.setPointerCapture(ev.pointerId);
+    singleDragRef.current = { startX: ev.clientX, startY: ev.clientY, startCx: crop.cx, startCy: crop.cy };
+  };
+  const onSinglePointerMove = (ev) => {
+    const d = singleDragRef.current;
+    if (!d || !image || !spec) return;
+    const rect = singleCanvasRef.current.getBoundingClientRect();
+    // Convert pointer delta from CSS px → source-image px
+    const targetW = mmToPx(spec.w);
+    const dispScale = rect.width / targetW; // display px per source px
+    const sourceScale = crop.w / targetW;   // source px per target output px
+    // If user drags right in display, the visible content moves right, so
+    // crop.cx should DECREASE by the equivalent source-image distance.
+    const dxSrc = ((ev.clientX - d.startX) / dispScale) * sourceScale;
+    const dySrc = ((ev.clientY - d.startY) / dispScale) * sourceScale;
+    const halfW = crop.w / 2;
+    const halfH = (crop.w * spec.h / spec.w) / 2;
+    const cx = Math.min(Math.max(d.startCx - dxSrc, halfW), image.w - halfW);
+    const cy = Math.min(Math.max(d.startCy - dySrc, halfH), image.h - halfH);
+    setCrop((c) => ({ ...c, cx, cy }));
+  };
+  const onSinglePointerUp = (ev) => {
+    if (singleCanvasRef.current?.hasPointerCapture(ev.pointerId)) {
+      singleCanvasRef.current.releasePointerCapture(ev.pointerId);
+    }
+    singleDragRef.current = null;
+  };
+
+  // ---------- Pointer drag: nudge the entire block on the Baskı preview ----
+  const sheetDragRef = useRef(null);
+  const onSheetPointerDown = (ev) => {
+    if (!image || !paper) return;
+    ev.preventDefault();
+    sheetCanvasRef.current.setPointerCapture(ev.pointerId);
+    sheetDragRef.current = { startX: ev.clientX, startY: ev.clientY, startOx: sheetOffset.x, startOy: sheetOffset.y };
+  };
+  const onSheetPointerMove = (ev) => {
+    const d = sheetDragRef.current;
+    if (!d || !paper) return;
+    const rect = sheetCanvasRef.current.getBoundingClientRect();
+    // Convert CSS pixel delta into mm on the paper
+    const mmPerCssX = paper.w / rect.width;
+    const mmPerCssY = paper.h / rect.height;
+    const dx = (ev.clientX - d.startX) * mmPerCssX;
+    const dy = (ev.clientY - d.startY) * mmPerCssY;
+    setSheetOffset({ x: Math.round((d.startOx + dx) * 10) / 10, y: Math.round((d.startOy + dy) * 10) / 10 });
+  };
+  const onSheetPointerUp = (ev) => {
+    if (sheetCanvasRef.current?.hasPointerCapture(ev.pointerId)) {
+      sheetCanvasRef.current.releasePointerCapture(ev.pointerId);
+    }
+    sheetDragRef.current = null;
+  };
+
   const runAutoDetect = useCallback(async () => {
     if (!image?.el || !spec) { toast.error("Önce fotoğraf yükleyin"); return; }
     setDetecting(true);
@@ -228,36 +293,52 @@ const AdminPassportPhoto = () => {
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, pw, ph);
-    // Draw one photo into an offscreen canvas
     drawSingle();
     const single = singleCanvasRef.current;
-    // Layout params (mm → px)
-    // Photo-lab convention: print edge-to-edge with no visible gap so cut lines
-    // sit exactly between adjacent photos. Watermark strip is overlaid below
-    // the last row inside any leftover paper area.
-    const gap = 0;
-    const margin = 0;
-    const footer = mmToPx(6);
-    // Determine cols/rows: try suggested; if paper overridden, fit
+    const gap = mmToPx(photoGap);
     let cols = layout.cols, rows = layout.rows;
     while (rows * cols < count) rows++;
     const cellW = mmToPx(spec.w);
     const cellH = mmToPx(spec.h);
-    // Center the photo block horizontally & vertically inside the paper so
-    // any leftover space is distributed as trim margin
     const blockW = cols * cellW + (cols - 1) * gap;
     const blockH = rows * cellH + (rows - 1) * gap;
-    const startX = Math.max(0, (pw - blockW) / 2);
-    const startY = Math.max(0, Math.min((ph - blockH - footer) / 2, mmToPx(3)));
+    // True centering — allow overflow into the paper's bleed area on both sides
+    // instead of pinning the block to the top-left corner. `sheetOffset` lets
+    // the operator nudge the block with the mouse when it doesn't fit.
+    const startX = (pw - blockW) / 2 + mmToPx(sheetOffset.x);
+    const startY = (ph - blockH) / 2 + mmToPx(sheetOffset.y);
+
+    // Optional PNG watermark loaded once — reused inside every cell
+    let wmImg = null;
+    if (watermark) {
+      wmImg = await new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = watermark; });
+    }
+
     let idx = 0;
     for (let r = 0; r < rows && idx < count; r++) {
       for (let c = 0; c < cols && idx < count; c++) {
         const x = startX + c * (cellW + gap);
         const y = startY + r * (cellH + gap);
         ctx.drawImage(single, x, y, cellW, cellH);
+        // Per-photo watermark
+        if (wmImg) {
+          const wmH = cellH * (wmScale / 100);
+          const ratio = wmImg.width / wmImg.height;
+          const wmW = wmH * ratio;
+          const marg = mmToPx(2);
+          const posH = wmPos[1]; // l | c | r
+          const posV = wmPos[0]; // t | m | b
+          const wx = posH === "l" ? x + marg : posH === "r" ? x + cellW - wmW - marg : x + (cellW - wmW) / 2;
+          const wy = posV === "t" ? y + marg : posV === "b" ? y + cellH - wmH - marg : y + (cellH - wmH) / 2;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, Math.min(1, wmOpacity / 100));
+          ctx.drawImage(wmImg, wx, wy, wmW, wmH);
+          ctx.restore();
+        }
         idx++;
       }
     }
+
     // Cutting lines — sit exactly on the shared edge between adjacent photos
     if (cutWidth > 0) {
       ctx.strokeStyle = cutColor;
@@ -266,32 +347,22 @@ const AdminPassportPhoto = () => {
       const rightEdge = startX + blockW;
       const bottomEdge = startY + blockH;
       for (let r = 1; r < rows; r++) {
-        const y = startY + r * cellH;
+        const y = startY + r * (cellH + gap) - gap / 2;
         ctx.beginPath(); ctx.moveTo(startX, y); ctx.lineTo(rightEdge, y); ctx.stroke();
       }
       for (let c = 1; c < cols; c++) {
-        const x = startX + c * cellW;
+        const x = startX + c * (cellW + gap) - gap / 2;
         ctx.beginPath(); ctx.moveTo(x, startY); ctx.lineTo(x, bottomEdge); ctx.stroke();
       }
       ctx.setLineDash([]);
     }
-    // Watermark strip at the bottom
-    if (watermark) {
-      const wmImg = new Image();
-      await new Promise((res, rej) => { wmImg.onload = res; wmImg.onerror = rej; wmImg.src = watermark; });
-      const stripY = ph - footer - mmToPx(2);
-      const maxH = footer;
-      const ratio = wmImg.width / wmImg.height;
-      const wmH = maxH;
-      const wmW = wmH * ratio;
-      ctx.drawImage(wmImg, (pw - wmW) / 2, stripY, wmW, wmH);
-    }
-    // Code label — placed inside the bottom bleed strip
+
+    // Code label — small marker in the bottom bleed strip
     ctx.fillStyle = "#666";
     ctx.font = `${mmToPx(2.5)}px sans-serif`;
     ctx.fillText(code, mmToPx(2), ph - mmToPx(2));
     return canvas;
-  }, [image, spec, paper, layout, count, cutColor, cutWidth, watermark, code, drawSingle]);
+  }, [image, spec, paper, layout, count, cutColor, cutWidth, watermark, code, drawSingle, photoGap, sheetOffset, wmPos, wmScale, wmOpacity]);
 
   // When spec changes, re-run auto detection so the aspect matches the new format
   useEffect(() => {
@@ -394,9 +465,18 @@ const AdminPassportPhoto = () => {
             <CardContent>
               <div className="grid md:grid-cols-2 gap-6">
                 <div>
-                  <div className="text-xs text-slate-500 mb-2">Tekli — {spec?.label} ({spec?.w}×{spec?.h}mm)</div>
+                  <div className="text-xs text-slate-500 mb-2">Tekli — {spec?.label} ({spec?.w}×{spec?.h}mm) <span className="text-[10px] text-slate-400">· fare ile sürükleyebilirsin</span></div>
                   <div className="relative bg-slate-100 p-2 rounded flex items-center justify-center min-h-[200px]">
-                    <canvas ref={singleCanvasRef} className="max-w-full max-h-[350px] shadow" style={{ filter: cssFilter() }} data-testid="canvas-single" />
+                    <canvas
+                      ref={singleCanvasRef}
+                      onPointerDown={onSinglePointerDown}
+                      onPointerMove={onSinglePointerMove}
+                      onPointerUp={onSinglePointerUp}
+                      onPointerLeave={onSinglePointerUp}
+                      className="max-w-full max-h-[350px] shadow touch-none cursor-move"
+                      style={{ filter: cssFilter() }}
+                      data-testid="canvas-single"
+                    />
                     {bgProcessing && (
                       <div className="absolute inset-0 rounded bg-white/85 backdrop-blur-sm flex flex-col items-center justify-center gap-3 z-10" data-testid="bg-processing-overlay">
                         <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
@@ -418,9 +498,17 @@ const AdminPassportPhoto = () => {
                   )}
                 </div>
                 <div>
-                  <div className="text-xs text-slate-500 mb-2">Baskı — {paper?.label} · {count} adet</div>
+                  <div className="text-xs text-slate-500 mb-2">Baskı — {paper?.label} · {count} adet <span className="text-[10px] text-slate-400">· fare ile kaydırabilirsin</span></div>
                   <div className="bg-slate-100 p-2 rounded flex items-center justify-center min-h-[200px]">
-                    <canvas ref={sheetCanvasRef} className="max-w-full max-h-[350px] shadow" data-testid="canvas-sheet" />
+                    <canvas
+                      ref={sheetCanvasRef}
+                      onPointerDown={onSheetPointerDown}
+                      onPointerMove={onSheetPointerMove}
+                      onPointerUp={onSheetPointerUp}
+                      onPointerLeave={onSheetPointerUp}
+                      className="max-w-full max-h-[350px] shadow touch-none cursor-move"
+                      data-testid="canvas-sheet"
+                    />
                   </div>
                 </div>
               </div>
@@ -518,8 +606,17 @@ const AdminPassportPhoto = () => {
                 <Label className="text-xs">Kalınlık (mm)</Label>
                 <Input type="number" step="0.1" min="0" max="3" value={cutWidth} onChange={(e) => setCutWidth(Number(e.target.value))} className="w-20" data-testid="cut-width" />
               </div>
+
               <div>
-                <Label className="text-xs">Filigran PNG (4'lünün altına)</Label>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <Label>Fotoğraflar arası boşluk</Label>
+                  <span className="text-slate-500">{photoGap} mm</span>
+                </div>
+                <input type="range" min={0} max={5} step={0.5} value={photoGap} onChange={(e) => setPhotoGap(Number(e.target.value))} className="w-full" data-testid="photo-gap" />
+              </div>
+
+              <div>
+                <Label className="text-xs">Filigran PNG (her fotoğrafın içine)</Label>
                 <Input type="file" accept="image/png,image/jpeg" onChange={(e) => {
                   const f = e.target.files?.[0]; if (!f) return;
                   const r = new FileReader(); r.onload = () => setWatermark(r.result); r.readAsDataURL(f);
@@ -527,9 +624,63 @@ const AdminPassportPhoto = () => {
                 {watermark && (
                   <div className="mt-2 flex items-center gap-2">
                     <img src={watermark} alt="wm" className="h-10 border" />
-                    <Button size="sm" variant="outline" onClick={() => setWatermark(null)}>Kaldır</Button>
+                    <Button size="sm" variant="outline" onClick={() => setWatermark(null)} data-testid="watermark-remove">Kaldır</Button>
                   </div>
                 )}
+              </div>
+
+              {watermark && (
+                <>
+                  <div>
+                    <Label className="text-xs">Filigran Konumu</Label>
+                    <div className="grid grid-cols-3 gap-1 mt-1 p-2 bg-slate-50 rounded border border-slate-200 w-max" data-testid="wm-pos-grid">
+                      {["tl","tc","tr","ml","mc","mr","bl","bc","br"].map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setWmPos(p)}
+                          className={`w-7 h-7 rounded transition-colors ${wmPos === p ? "bg-emerald-600 text-white" : "bg-white border border-slate-300 hover:bg-emerald-50"}`}
+                          title={p.toUpperCase()}
+                          data-testid={`wm-pos-${p}`}
+                        >
+                          <span className="text-[10px]">•</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <Label>Filigran Boyutu</Label>
+                      <span className="text-slate-500">{wmScale}%</span>
+                    </div>
+                    <input type="range" min={4} max={40} step={1} value={wmScale} onChange={(e) => setWmScale(Number(e.target.value))} className="w-full" data-testid="wm-scale" />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <Label>Filigran Şeffaflığı</Label>
+                      <span className="text-slate-500">{wmOpacity}%</span>
+                    </div>
+                    <input type="range" min={20} max={100} step={5} value={wmOpacity} onChange={(e) => setWmOpacity(Number(e.target.value))} className="w-full" data-testid="wm-opacity" />
+                  </div>
+                </>
+              )}
+
+              <div className="pt-2 border-t border-slate-200">
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <Label className="flex items-center gap-1"><Move className="w-3 h-3" />Manuel Konum (mm)</Label>
+                  <Button size="sm" variant="ghost" onClick={() => setSheetOffset({ x: 0, y: 0 })} className="h-6 text-[10px]" data-testid="sheet-offset-reset">Sıfırla</Button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[10px] text-slate-500">Yatay</Label>
+                    <Input type="number" step="0.5" value={sheetOffset.x} onChange={(e) => setSheetOffset({ ...sheetOffset, x: Number(e.target.value) })} className="h-8 text-xs" data-testid="sheet-offset-x" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] text-slate-500">Dikey</Label>
+                    <Input type="number" step="0.5" value={sheetOffset.y} onChange={(e) => setSheetOffset({ ...sheetOffset, y: Number(e.target.value) })} className="h-8 text-xs" data-testid="sheet-offset-y" />
+                  </div>
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">Baskı önizlemesini fare ile sürükleyerek de kaydırabilirsin.</div>
               </div>
             </CardContent>
           </Card>
