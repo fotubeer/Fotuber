@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Eraser, Undo2, RotateCcw, Check, X, Wand2, Paintbrush, Pipette } from "lucide-react";
+import { Eraser, Undo2, RotateCcw, Check, X, Wand2, Paintbrush, Pipette, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 
 // Professional-grade retouch dialog.
 //   - "Onarım" (spot heal) samples surrounding pixels and blends them over
@@ -21,17 +21,19 @@ const fitSize = (w, h) => {
 
 const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply }) => {
   const canvasRef = useRef(null);
+  const scrollRef = useRef(null);
   const [brush, setBrush] = useState(32);
-  const [mode, setMode] = useState("heal"); // "heal" | "paint" | "pick"
+  const [mode, setMode] = useState("heal");
   const [paintColor, setPaintColor] = useState(color);
   const [displaySize, setDisplaySize] = useState({ w: 0, h: 0 });
+  const [zoom, setZoom] = useState(1);
   const [ready, setReady] = useState(false);
   const historyRef = useRef([]);
   const drawingRef = useRef(false);
   const HISTORY_MAX = 20;
 
-  // Sync paint color with the incoming default when the dialog is reopened
   useEffect(() => { setPaintColor(color); }, [color, open]);
+  useEffect(() => { if (open) setZoom(1); }, [open]);
 
   useEffect(() => {
     if (!open) { setReady(false); historyRef.current = []; }
@@ -320,10 +322,18 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
         </DialogHeader>
 
         <div className="grid md:grid-cols-[1fr_240px] gap-4">
-          <div className="bg-slate-100 rounded p-3 flex items-center justify-center min-h-[320px] relative">
+          <div ref={scrollRef} className="bg-slate-100 rounded p-3 flex items-center justify-center min-h-[420px] max-h-[65vh] relative overflow-auto">
             {!ready && (
-              <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500" data-testid="retouch-loading">
+              <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500 z-10" data-testid="retouch-loading">
                 Fotoğraf yükleniyor…
+              </div>
+            )}
+            {ready && (
+              <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/95 backdrop-blur rounded-lg shadow border border-slate-200 p-1 z-20" data-testid="retouch-zoom-controls">
+                <Button type="button" size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} data-testid="retouch-zoom-out"><ZoomOut className="w-3.5 h-3.5" /></Button>
+                <span className="text-xs tabular-nums text-slate-700 min-w-[40px] text-center" data-testid="retouch-zoom-value">{Math.round(zoom * 100)}%</span>
+                <Button type="button" size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setZoom((z) => Math.min(6, +(z + 0.25).toFixed(2)))} data-testid="retouch-zoom-in"><ZoomIn className="w-3.5 h-3.5" /></Button>
+                <Button type="button" size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setZoom(1)} data-testid="retouch-zoom-reset" title="1:1"><Maximize2 className="w-3.5 h-3.5" /></Button>
               </div>
             )}
             <canvas
@@ -332,12 +342,19 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
               onPointerLeave={onPointerUp}
+              onWheel={(e) => {
+                if (!ready) return;
+                e.preventDefault();
+                const dz = e.deltaY < 0 ? 0.15 : -0.15;
+                setZoom((z) => Math.min(6, Math.max(0.5, +(z + dz).toFixed(2))));
+              }}
               className={`touch-none shadow border border-white ${mode === "pick" ? "cursor-copy" : "cursor-crosshair"}`}
               style={{
-                width: displaySize.w ? `${displaySize.w}px` : undefined,
-                height: displaySize.h ? `${displaySize.h}px` : undefined,
+                width: displaySize.w ? `${displaySize.w * zoom}px` : undefined,
+                height: displaySize.h ? `${displaySize.h * zoom}px` : undefined,
                 visibility: ready ? "visible" : "hidden",
                 background: "#e5e7eb",
+                flexShrink: 0,
               }}
               data-testid="retouch-canvas"
             />

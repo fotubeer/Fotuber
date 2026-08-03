@@ -531,7 +531,7 @@ const AdminPassportPhoto = () => {
 
           {/* Preview */}
           <Card className="border-slate-200">
-            <CardHeader><CardTitle className="text-base">Önizleme</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-lg">Önizleme</CardTitle></CardHeader>
             <CardContent>
               <div className="grid md:grid-cols-2 gap-6">
                 <div>
@@ -609,7 +609,7 @@ const AdminPassportPhoto = () => {
         {/* Right: Controls */}
         <div className="lg:col-span-4 space-y-6">
           <Card className="border-slate-200">
-            <CardHeader><CardTitle className="text-base">Ölçü & Kağıt</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-lg">Ölçü & Kağıt</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div>
                 <Label className="text-xs">Ülke / Format</Label>
@@ -646,8 +646,8 @@ const AdminPassportPhoto = () => {
           </Card>
 
           <Card className="border-slate-200">
-            <CardHeader><CardTitle className="text-base flex items-center gap-2"><Sparkles className="w-4 h-4" />İnce Ayar</CardTitle></CardHeader>
-            <CardContent className="space-y-3 text-sm">
+            <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Sparkles className="w-4 h-4" />İnce Ayar</CardTitle></CardHeader>
+            <CardContent className="space-y-3 text-base">
               {[
                 { k: "brightness", label: "Parlaklık", min: 50, max: 150 },
                 { k: "contrast",   label: "Kontrast",  min: 50, max: 150 },
@@ -656,25 +656,35 @@ const AdminPassportPhoto = () => {
                 { k: "sharpness",  label: "Keskinlik", min: 0,  max: 100 },
               ].map((s) => (
                 <div key={s.k}>
-                  <div className="flex justify-between text-xs"><span>{s.label}</span><span>{adj[s.k]}</span></div>
-                  <input type="range" min={s.min} max={s.max} value={adj[s.k]} onChange={(e) => setAdj({ ...adj, [s.k]: Number(e.target.value) })} className="w-full" data-testid={`adj-${s.k}`} />
+                  <div className="flex justify-between text-sm"><span className="font-medium">{s.label}</span><span className="tabular-nums text-slate-700">{adj[s.k]}</span></div>
+                  <input type="range" min={s.min} max={s.max} value={adj[s.k]} onChange={(e) => setAdj({ ...adj, [s.k]: Number(e.target.value) })} className="w-full h-2 mt-1 cursor-pointer" data-testid={`adj-${s.k}`} />
                 </div>
               ))}
               <label className="flex items-center gap-3 pt-2">
                 <Switch checked={adj.retouch} onCheckedChange={(v) => setAdj({ ...adj, retouch: v })} data-testid="switch-retouch" />
-                <span className="text-sm">Rötuş (cilt yumuşatma)</span>
+                <span className="text-base font-medium">Rötuş (cilt yumuşatma)</span>
               </label>
               {adj.retouch && (
                 <div className="pl-1" data-testid="retouch-intensity-wrap">
-                  <div className="flex justify-between text-xs"><span>Yumuşatma Şiddeti</span><span className="tabular-nums text-slate-500">{adj.retouchIntensity}%</span></div>
-                  <input type="range" min={10} max={100} step={5} value={adj.retouchIntensity} onChange={(e) => setAdj({ ...adj, retouchIntensity: Number(e.target.value) })} className="w-full" data-testid="retouch-intensity" />
+                  <div className="flex justify-between text-sm mb-1"><span className="font-medium">Yumuşatma Şiddeti</span><span className="tabular-nums text-slate-700">{adj.retouchIntensity}%</span></div>
+                  <input
+                    type="range"
+                    min={10}
+                    max={100}
+                    step={5}
+                    value={adj.retouchIntensity}
+                    onChange={(e) => setAdj({ ...adj, retouchIntensity: Number(e.target.value) })}
+                    className="w-full h-2 rounded-full appearance-none cursor-pointer bg-red-100"
+                    style={{ accentColor: "#dc2626" }}
+                    data-testid="retouch-intensity"
+                  />
                 </div>
               )}
             </CardContent>
           </Card>
 
           <Card className="border-slate-200">
-            <CardHeader><CardTitle className="text-base">Kesim Çizgisi & Filigran</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-lg">Kesim Çizgisi & Filigran</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center gap-3">
                 <Label className="text-xs">Renk</Label>
@@ -763,7 +773,7 @@ const AdminPassportPhoto = () => {
 
           {/* Archive */}
           <Card className="border-slate-200">
-            <CardHeader><CardTitle className="text-base">Son 10 Fotoğraf (Arşiv)</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-lg">Son 10 Fotoğraf (Arşiv)</CardTitle></CardHeader>
             <CardContent>
               {archive.length === 0 ? (
                 <div className="text-xs text-slate-500 py-4 text-center">Henüz kayıt yok. İndirdiğiniz her fotoğraf burada saklanır.</div>
