@@ -5,11 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn, ZoomOut, Sparkles, ScanFace, Loader2, Eraser } from "lucide-react";
+import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn, ZoomOut, Sparkles, ScanFace, Loader2, Eraser, Paintbrush } from "lucide-react";
 import { toast } from "sonner";
 import { PHOTO_SPECS, PAPER_SIZES, suggestPaper, COUNT_PRESETS } from "@/lib/passportSpecs";
 import { detectBiometricCrop, loadFaceModels } from "@/lib/faceDetect";
 import { removeBackground, compositeOnColor } from "@/lib/bgRemove";
+import RetouchBrush from "@/components/RetouchBrush";
 
 // IndexedDB helpers for last-10 archive
 const DB_NAME = "fotuber_vesikalik";
@@ -51,6 +52,7 @@ const AdminPassportPhoto = () => {
   const [bgProgress, setBgProgress] = useState(0);
   const [bgRemoved, setBgRemoved] = useState(false);
   const [originalImage, setOriginalImage] = useState(null); // {src, w, h, el} of the raw upload
+  const [retouchOpen, setRetouchOpen] = useState(false);
   const [adj, setAdj] = useState({ brightness: 100, contrast: 100, saturation: 100, warmth: 0, sharpness: 0, retouch: false });
   const [cutColor, setCutColor] = useState("#000000");
   const [cutWidth, setCutWidth] = useState(0.5); // mm
@@ -139,6 +141,13 @@ const AdminPassportPhoto = () => {
     const blob = await resp.blob();
     await runBackgroundRemoval(blob, spec?.bg || "#ffffff");
   }, [originalImage, spec, runBackgroundRemoval]);
+
+  const applyRetouch = useCallback(async (dataUrl) => {
+    const updated = await loadImageFromSrc(dataUrl);
+    // Preserve the current crop rectangle — the pixel dimensions are unchanged
+    setImage(updated);
+    toast.success("Rötuş uygulandı");
+  }, []);
 
   const runAutoDetect = useCallback(async () => {
     if (!image?.el || !spec) { toast.error("Önce fotoğraf yükleyin"); return; }
@@ -424,6 +433,9 @@ const AdminPassportPhoto = () => {
                   {bgProcessing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Eraser className="w-4 h-4 mr-2" />}
                   {bgProcessing ? "İşleniyor..." : (bgRemoved ? "Tekrar Temizle" : "Arka Planı Temizle")}
                 </Button>
+                <Button onClick={() => setRetouchOpen(true)} disabled={!image || bgProcessing} variant="outline" className="border-fuchsia-600 text-fuchsia-700 hover:bg-fuchsia-50" data-testid="retouch-open-btn">
+                  <Paintbrush className="w-4 h-4 mr-2" />Rötuş Fırçası
+                </Button>
                 <Button onClick={downloadSingle} disabled={bgProcessing} className="bg-slate-900 hover:bg-slate-800" data-testid="download-single-btn"><Download className="w-4 h-4 mr-2" />Tekli İndir</Button>
                 <Button onClick={downloadSheet} disabled={bgProcessing} className="bg-emerald-600 hover:bg-emerald-700" data-testid="download-sheet-btn"><Printer className="w-4 h-4 mr-2" />Baskıya Hazır İndir</Button>
               </div>
@@ -545,8 +557,19 @@ const AdminPassportPhoto = () => {
           </Card>
         </div>
       </div>
+
+      <RetouchBrush
+        open={retouchOpen}
+        onOpenChange={setRetouchOpen}
+        imageSrc={image?.src}
+        color={spec?.bg || "#ffffff"}
+        onApply={applyRetouch}
+      />
     </div>
   );
 };
 
 export default AdminPassportPhoto;
+
+// (RetouchBrush dialog is rendered at the bottom of the component tree via the
+// wrapper below to keep the JSX changes small.)
