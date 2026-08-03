@@ -127,11 +127,15 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
 ## Admin
 - admin@fotuber.com.tr / FTB.2024
 
-## Session F (Feb 2026) — Sidebar Scroll Fix + Auto Face Detection
+## Session F (Feb 2026) — Sidebar Scroll Fix + Auto Face Detection + Auto Ledger
 - **AdminLayout.jsx**: Sidebar refactored to flex-column with `overflow-y-auto` on the nav and a sticky footer. Fixes mobile scrolling bug — "Vesikalık Üretici" (last item) is now reachable on all viewports. Added dark overlay + click-to-close.
 - **Vesikalık — Otomatik Yüz Tespiti**: Added `@vladmandic/face-api` integration.
   - `src/lib/faceDetect.js`: lazy-loads TinyFaceDetector + FaceLandmark68 from jsdelivr CDN; returns a biometric-compliant crop rect `{cx, cy, w}` computed from eye-line + chin using ICAO ratios (head 72% of photo height, eyes 55% from bottom).
   - `AdminPassportPhoto.jsx`: crop model refactored from fractional to pixel-space (`{cx, cy, w}`). Auto-detect fires on upload and re-runs when the country/format changes. Manual "Otomatik Yüz Tespiti" button + loader + emerald status pill.
+- **Auto ledger for appointment payments**: `add_mid_payment` now mirrors every mid-payment into `transactions` (source="appointment", category="Randevu Ödemesi", linked appointment_id + mid_payment_id). `remove_mid_payment` deletes the mirror. Verified end-to-end with curl.
+- **Cash-register endpoint expanded**: `/api/cash-register` now returns `card_in/out`, `transfer_in/out`, `total_in/out` (all methods) in addition to the existing cash-only fields. Kasa Devir Defteri page now has a "Günlük Toplam Kazanç (Tüm Yöntemler)" panel showing Nakit + Kart + Havale + Toplam. Fiziksel kasa açılış/kapanış hesabı hâlâ sadece nakite dayalı.
+- **Kaynak column & disabled edit for auto-tx**: `AdminTransactions.jsx` table now shows a "Kaynak" column ("Randevu (Oto)" / "Manuel") and blocks edit/delete for appointment-sourced rows so admins go through the randevu detay ekranı.
+- **XLSX + PDF exports**: Both include the new "Kaynak" column so appointment income is auditable in offline reports.
 
 
 ## Notes

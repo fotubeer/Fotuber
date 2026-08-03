@@ -236,6 +236,7 @@ const AdminTransactions = () => {
                 <TableHead>Tür</TableHead>
                 <TableHead>Yöntem</TableHead>
                 <TableHead>Kategori</TableHead>
+                <TableHead>Kaynak</TableHead>
                 <TableHead>Açıklama</TableHead>
                 <TableHead className="text-right">Tutar</TableHead>
                 <TableHead className="text-right">Aksiyon</TableHead>

@@ -109,9 +109,36 @@ const AdminCashRegister = () => {
               </div>
             </div>
             <div>
-              <Label className="text-xs">Net Gün</Label>
+              <Label className="text-xs">Net Nakit</Label>
               <div className="h-10 px-3 flex items-center rounded-md border border-slate-200 bg-slate-50 text-slate-900 font-semibold">
                 {money((day?.cash_in || 0) - (day?.cash_out || 0))}
+              </div>
+            </div>
+          </div>
+
+          {/* Günlük Toplam Kazanç (Nakit + Kart + Havale) */}
+          <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm font-semibold text-emerald-900">Günlük Toplam Kazanç (Tüm Yöntemler)</div>
+              <div className="text-xs text-emerald-700 bg-emerald-100 rounded-full px-2 py-0.5">Randevu ödemeleri otomatik eklenir</div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="daily-total-earnings">
+              <div className="p-3 rounded-lg bg-white border border-slate-200">
+                <div className="text-[11px] text-slate-500">Nakit</div>
+                <div className="text-lg font-semibold text-slate-900" data-testid="daily-cash">{money(day?.cash_in)}</div>
+              </div>
+              <div className="p-3 rounded-lg bg-white border border-slate-200">
+                <div className="text-[11px] text-slate-500">Kart</div>
+                <div className="text-lg font-semibold text-slate-900" data-testid="daily-card">{money(day?.card_in)}</div>
+              </div>
+              <div className="p-3 rounded-lg bg-white border border-slate-200">
+                <div className="text-[11px] text-slate-500">Havale / EFT</div>
+                <div className="text-lg font-semibold text-slate-900" data-testid="daily-transfer">{money(day?.transfer_in)}</div>
+              </div>
+              <div className="p-3 rounded-lg bg-emerald-600 text-white">
+                <div className="text-[11px] text-emerald-100">Toplam Kazanç</div>
+                <div className="text-xl font-bold" data-testid="daily-total-in">{money(day?.total_in)}</div>
+                <div className="text-[10px] text-emerald-100 mt-0.5">Gider: −{money(day?.total_out)}</div>
               </div>
             </div>
           </div>

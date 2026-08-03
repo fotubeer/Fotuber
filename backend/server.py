@@ -902,17 +902,23 @@ async def get_appointment(aid: str, admin: dict = Depends(require_staff_or_admin
 
 @api_router.post("/appointments/{aid}/mid-payments")
 async def add_mid_payment(aid: str, payload: MidPaymentIn, admin: dict = Depends(require_admin)):
-    """Add an interim (mid) payment to an existing appointment (admin only)."""
+    """Add an interim (mid) payment to an existing appointment (admin only).
+
+    Also writes a linked row into the `transactions` ledger so that the
+    payment shows up automatically in Finans / Nakit Akışı and the
+    daily-earnings totals on the Kasa Devir Defteri page.
+    """
     appt = await db.appointments.find_one({"id": aid})
     if not appt:
         raise HTTPException(status_code=404, detail="Randevu bulunamadı")
+    now = now_iso()
     entry = {
         "id": new_id(),
         "amount": float(payload.amount),
         "date": payload.date,
         "method": payload.method,
         "note": payload.note or "",
-        "created_at": now_iso(),
+        "created_at": now,
         "created_by": admin.get("id"),
         "created_by_name": admin.get("name") or admin.get("email"),
     }
@@ -920,19 +926,45 @@ async def add_mid_payment(aid: str, payload: MidPaymentIn, admin: dict = Depends
         {"id": aid},
         {"$push": {"mid_payments": entry}, "$set": {"updated_at": now_iso()}},
     )
+    # Mirror into the transactions ledger so daily/monthly totals stay in sync
+    customer = appt.get("customer_name") or appt.get("user_name") or "Müşteri"
+    service = appt.get("service_name") or ""
+    desc_bits = [f"Randevu #{aid[:6]}", customer]
+    if service:
+        desc_bits.append(service)
+    if payload.note:
+        desc_bits.append(payload.note)
+    tx_doc = {
+        "id": new_id(),
+        "kind": "income",
+        "amount": float(payload.amount),
+        "payment_method": payload.method,
+        "category": "Randevu Ödemesi",
+        "description": " · ".join(desc_bits),
+        "date": payload.date,
+        "appointment_id": aid,
+        "mid_payment_id": entry["id"],
+        "source": "appointment",
+        "created_at": now,
+        "created_by": admin.get("id"),
+        "created_by_name": admin.get("name"),
+        "created_by_role": admin.get("role"),
+    }
+    await db.transactions.insert_one(tx_doc)
     doc = await db.appointments.find_one({"id": aid}, {"_id": 0})
     return await _enrich_appointment(doc)
 
 
 @api_router.delete("/appointments/{aid}/mid-payments/{pid}")
 async def remove_mid_payment(aid: str, pid: str, admin: dict = Depends(require_admin)):
-    """Remove a specific mid-payment (admin only)."""
+    """Remove a specific mid-payment (admin only) and its mirrored transaction."""
     res = await db.appointments.update_one(
         {"id": aid},
         {"$pull": {"mid_payments": {"id": pid}}, "$set": {"updated_at": now_iso()}},
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Randevu bulunamadı")
+    await db.transactions.delete_one({"mid_payment_id": pid, "source": "appointment"})
     doc = await db.appointments.find_one({"id": aid}, {"_id": 0})
     return await _enrich_appointment(doc)
 
@@ -1802,7 +1834,7 @@ async def export_transactions_xlsx(
     ws["A2"].font = Font(italic=True, color="666666")
     ws.merge_cells("A2:G2")
 
-    headers = ["Tarih", "Tür", "Ödeme Yöntemi", "Kategori", "Açıklama", "Tutar (₺)", "İşaretli Tutar"]
+    headers = ["Tarih", "Tür", "Ödeme Yöntemi", "Kategori", "Kaynak", "Açıklama", "Tutar (₺)", "İşaretli Tutar"]
     for i, h in enumerate(headers, 1):
         c = ws.cell(row=4, column=i, value=h)
         c.font = Font(bold=True, color="FFFFFF")
@@ -1811,6 +1843,7 @@ async def export_transactions_xlsx(
 
     method_map = {"cash": "Nakit", "card": "Kart", "transfer": "Havale"}
     kind_map = {"income": "Gelir", "expense": "Gider"}
+    source_map = {"appointment": "Randevu"}
     row = 5
     total_in, total_out = 0.0, 0.0
     for t in items:
@@ -1822,24 +1855,25 @@ async def export_transactions_xlsx(
         ws.cell(row=row, column=2, value=kind_map.get(t.get("kind"), t.get("kind")))
         ws.cell(row=row, column=3, value=method_map.get(t.get("payment_method"), t.get("payment_method")))
         ws.cell(row=row, column=4, value=t.get("category", ""))
-        ws.cell(row=row, column=5, value=t.get("description", ""))
-        ws.cell(row=row, column=6, value=amount)
-        ws.cell(row=row, column=7, value=signed)
+        ws.cell(row=row, column=5, value=source_map.get(t.get("source"), "Manuel"))
+        ws.cell(row=row, column=6, value=t.get("description", ""))
+        ws.cell(row=row, column=7, value=amount)
+        ws.cell(row=row, column=8, value=signed)
         row += 1
 
     # Totals
     row += 1
-    ws.cell(row=row, column=5, value="Toplam Gelir").font = Font(bold=True)
-    ws.cell(row=row, column=6, value=total_in).font = Font(bold=True, color="059669")
+    ws.cell(row=row, column=6, value="Toplam Gelir").font = Font(bold=True)
+    ws.cell(row=row, column=7, value=total_in).font = Font(bold=True, color="059669")
     row += 1
-    ws.cell(row=row, column=5, value="Toplam Gider").font = Font(bold=True)
-    ws.cell(row=row, column=6, value=total_out).font = Font(bold=True, color="DC2626")
+    ws.cell(row=row, column=6, value="Toplam Gider").font = Font(bold=True)
+    ws.cell(row=row, column=7, value=total_out).font = Font(bold=True, color="DC2626")
     row += 1
-    ws.cell(row=row, column=5, value="NET").font = Font(bold=True, size=12)
-    ws.cell(row=row, column=6, value=total_in - total_out).font = Font(bold=True, size=12)
+    ws.cell(row=row, column=6, value="NET").font = Font(bold=True, size=12)
+    ws.cell(row=row, column=7, value=total_in - total_out).font = Font(bold=True, size=12)
 
     # Column widths
-    widths = [12, 10, 14, 24, 40, 14, 14]
+    widths = [12, 10, 14, 22, 12, 40, 14, 14]
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[chr(64 + i)].width = w
 
@@ -1907,7 +1941,7 @@ async def export_transactions_pdf(
     method_map = {"cash": "Nakit", "card": "Kart", "transfer": "Havale"}
     kind_map = {"income": "Gelir", "expense": "Gider"}
 
-    data = [["Tarih", "Tür", "Yöntem", "Kategori", "Açıklama", "Tutar (₺)"]]
+    data = [["Tarih", "Tür", "Yöntem", "Kategori", "Kaynak", "Açıklama", "Tutar (₺)"]]
     total_in, total_out = 0.0, 0.0
     for t in items:
         amt = float(t.get("amount", 0) or 0)
@@ -1918,18 +1952,19 @@ async def export_transactions_pdf(
             kind_map.get(t.get("kind"), ""),
             method_map.get(t.get("payment_method"), ""),
             (t.get("category") or "")[:24],
+            "Randevu" if t.get("source") == "appointment" else "Manuel",
             (t.get("description") or "")[:40],
             f"{'+' if t['kind']=='income' else '−'}{amt:,.2f}".replace(",", "."),
         ])
 
-    tbl = Table(data, colWidths=[22*mm, 20*mm, 22*mm, 45*mm, 90*mm, 30*mm], repeatRows=1)
+    tbl = Table(data, colWidths=[20*mm, 18*mm, 20*mm, 38*mm, 18*mm, 78*mm, 28*mm], repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F172A")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), FONT_BOLD),
         ("FONTNAME", (0, 1), (-1, -1), FONT_REG),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("ALIGN", (5, 1), (5, -1), "RIGHT"),
+        ("ALIGN", (6, 1), (6, -1), "RIGHT"),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#F8FAFC"), colors.white]),
         ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#CBD5E1")),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -1980,10 +2015,14 @@ async def get_cash_register_day(
     prev_date = prev_list[0].get("date") if prev_list else None
 
     tx = await db.transactions.find(
-        {"date": date, "payment_method": "cash"}, {"_id": 0}
+        {"date": date}, {"_id": 0}
     ).sort("created_at", 1).to_list(500)
-    cash_in = sum(float(t.get("amount", 0) or 0) for t in tx if t.get("kind") == "income")
-    cash_out = sum(float(t.get("amount", 0) or 0) for t in tx if t.get("kind") == "expense")
+    cash_in = sum(float(t.get("amount", 0) or 0) for t in tx if t.get("kind") == "income" and t.get("payment_method") == "cash")
+    cash_out = sum(float(t.get("amount", 0) or 0) for t in tx if t.get("kind") == "expense" and t.get("payment_method") == "cash")
+    card_in = sum(float(t.get("amount", 0) or 0) for t in tx if t.get("kind") == "income" and t.get("payment_method") == "card")
+    card_out = sum(float(t.get("amount", 0) or 0) for t in tx if t.get("kind") == "expense" and t.get("payment_method") == "card")
+    transfer_in = sum(float(t.get("amount", 0) or 0) for t in tx if t.get("kind") == "income" and t.get("payment_method") == "transfer")
+    transfer_out = sum(float(t.get("amount", 0) or 0) for t in tx if t.get("kind") == "expense" and t.get("payment_method") == "transfer")
     opening = float(saved.get("opening_balance", 0)) if saved else suggested_opening
     expected_closing = opening + cash_in - cash_out
 
@@ -1994,6 +2033,12 @@ async def get_cash_register_day(
         "previous_date": prev_date,
         "cash_in": cash_in,
         "cash_out": cash_out,
+        "card_in": card_in,
+        "card_out": card_out,
+        "transfer_in": transfer_in,
+        "transfer_out": transfer_out,
+        "total_in": cash_in + card_in + transfer_in,
+        "total_out": cash_out + card_out + transfer_out,
         "expected_closing": expected_closing,
         "transactions": tx,
     }
