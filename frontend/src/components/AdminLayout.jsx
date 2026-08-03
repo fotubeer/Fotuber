@@ -32,6 +32,7 @@ const items = [
   { to: "/admin/animasyon-ayarlari", label: "Açılış Animasyonu", icon: Film, ownerOnly: true },
   { to: "/admin/instagram-slayt", label: "Instagram Slayt", icon: Instagram, ownerOnly: true },
   { to: "/admin/fotuber-asistan", label: "Fotuber Asistan (AI)", icon: Bot, ownerOnly: true },
+  { to: "/admin/vesikalik", label: "Vesikalık Üretici", icon: Camera },
 ];
 
 export const AdminLayout = ({ children }) => {
