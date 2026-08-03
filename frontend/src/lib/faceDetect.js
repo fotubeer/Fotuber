@@ -55,3 +55,34 @@ export const detectBiometricCrop = async (imgEl, spec) => {
 
 const avgX = (pts) => pts.reduce((s, p) => s + p.x, 0) / pts.length;
 const avgY = (pts) => pts.reduce((s, p) => s + p.y, 0) / pts.length;
+
+// Detect facial landmarks and return convenient regions for red-eye removal
+// and eye-sharpening tools. Returns eye bounding boxes in image-pixel coords.
+export const detectFaceRegions = async (imgEl) => {
+  await loadFaceModels();
+  const det = await faceapi
+    .detectSingleFace(imgEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.4 }))
+    .withFaceLandmarks();
+  if (!det) return { ok: false, message: "Yüz tespit edilemedi" };
+  const lm = det.landmarks;
+  const boxFromPts = (pts, padX = 0.35, padY = 0.5) => {
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+    const yMin = Math.min(...ys), yMax = Math.max(...ys);
+    const w = xMax - xMin, h = yMax - yMin;
+    return {
+      x: xMin - w * padX,
+      y: yMin - h * padY,
+      w: w * (1 + 2 * padX),
+      h: h * (1 + 2 * padY),
+      cx: (xMin + xMax) / 2,
+      cy: (yMin + yMax) / 2,
+    };
+  };
+  return {
+    ok: true,
+    leftEye: boxFromPts(lm.getLeftEye()),
+    rightEye: boxFromPts(lm.getRightEye()),
+    box: det.detection.box,
+  };
+};

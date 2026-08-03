@@ -11,6 +11,7 @@ import { PHOTO_SPECS, PAPER_SIZES, suggestPaper, COUNT_PRESETS } from "@/lib/pas
 import { detectBiometricCrop, loadFaceModels } from "@/lib/faceDetect";
 import { removeBackground, compositeOnColor } from "@/lib/bgRemove";
 import RetouchBrush from "@/components/RetouchBrush";
+import PhotoStudio from "@/components/PhotoStudio";
 
 // IndexedDB helpers for last-10 archive
 const DB_NAME = "fotuber_vesikalik";
@@ -772,6 +773,13 @@ const AdminPassportPhoto = () => {
           </Card>
 
           {/* Archive */}
+          <PhotoStudio
+            image={image}
+            applyImage={applyImage}
+            originalSrc={originalImage?.src}
+            loadImageFromSrc={loadImageFromSrc}
+          />
+
           <Card className="border-slate-200">
             <CardHeader><CardTitle className="text-lg">Son 10 Fotoğraf (Arşiv)</CardTitle></CardHeader>
             <CardContent>

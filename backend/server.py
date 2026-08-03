@@ -3622,6 +3622,85 @@ async def _cleanup_expired_uploads():
 # ---------------------------------------------------------------------------
 # Root/health
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Vesikalık AI Photo Editor — Nano Banana image editing
+# ---------------------------------------------------------------------------
+class VesikalikAiEditIn(BaseModel):
+    image_base64: str
+    gender: str          # "male" | "female"
+    garment: str         # "tshirt" | "polo" | "shirt" | "blazer" | "blouse" | "collared_blouse"
+    collar: str = "none" # "collar" | "no_collar" | "none"
+    color: str           # hex like "#0f172a" or name
+    color_name: str = "" # optional human-readable ("lacivert")
+
+@api_router.post("/vesikalik/ai-edit")
+async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(require_admin)):
+    """Send the studio photo to Gemini Nano Banana for garment editing.
+    Prompt is tightly constrained: only the clothing changes, face/hair/skin
+    and biometric-safe background must stay untouched.
+    """
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+    import uuid as _uuid
+    key = os.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(status_code=500, detail="AI anahtarı yapılandırılmamış")
+
+    # Strip a data URL prefix if the frontend sent one
+    b64 = payload.image_base64
+    if "," in b64 and b64.startswith("data:"):
+        b64 = b64.split(",", 1)[1]
+
+    gender_tr = "erkek" if payload.gender == "male" else "kadın"
+    garment_labels = {
+        "tshirt": "tişört",
+        "polo": "polo yaka tişört",
+        "shirt": "gömlek",
+        "blazer": "ceket",
+        "blouse": "bluz",
+        "collared_blouse": "yakalı bluz",
+    }
+    garment_tr = garment_labels.get(payload.garment, payload.garment)
+    collar_bit = ""
+    if payload.collar == "collar":
+        collar_bit = "Yakalı olsun. "
+    elif payload.collar == "no_collar":
+        collar_bit = "Yakasız / bisiklet yaka olsun. "
+
+    color_bit = payload.color_name or payload.color
+
+    prompt = (
+        f"Bu bir vesikalık/biyometrik portre fotoğrafıdır. Kişi {gender_tr}. "
+        f"Sadece giydiği kıyafeti değiştir. Yüz, cilt, saç, gözler, kaşlar, "
+        f"kulaklar ve tüm baş bölgesi kesinlikle aynı kalacak — hiçbir piksel "
+        f"değişmeyecek. Arka planı da tamamen koru (biyometrik beyaz/açık "
+        f"gri zemin). "
+        f"Yeni kıyafet: {garment_tr}, rengi {color_bit}. {collar_bit}"
+        f"Kumaş dokusu doğal, gölge ve ışık kişinin yüzündeki ışıkla uyumlu olsun. "
+        f"Fotoğraf biyometrik standartlara uygun kalsın — kıyafet ile arka plan "
+        f"birbirine karışmayacak yeterli kontrasta sahip olsun."
+    )
+
+    chat = LlmChat(
+        api_key=key,
+        session_id=f"vesikalik-{_uuid.uuid4()}",
+        system_message=(
+            "Sen profesyonel bir fotoğraf düzenleme aracısın. Verilen fotoğrafta "
+            "SADECE istenen kıyafeti değiştir ve tam çözünürlükte düzenlenmiş "
+            "fotoğrafı geri ver. Yüz, cilt, saç, arka plan hiçbir şekilde değişmemeli."
+        ),
+    ).with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
+
+    msg = UserMessage(text=prompt, file_contents=[ImageContent(b64)])
+    try:
+        _text, images = await chat.send_message_multimodal_response(msg)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"AI servisi hata verdi: {str(e)[:200]}")
+    if not images:
+        raise HTTPException(status_code=502, detail="AI görüntü üretmedi, farklı bir kıyafet/renk deneyin")
+    out = images[0]
+    return {"image_base64": out.get("data", ""), "mime_type": out.get("mime_type", "image/png")}
+
+
 @api_router.get("/")
 async def root():
     return {"service": "Fotuber API", "ok": True}
