@@ -271,35 +271,61 @@ const AdminPassportPhoto = () => {
       ctx.drawImage(image.el, sx, sy, cropW, cropH, 0, 0, targetW, targetH);
     }
     ctx.restore();
-    // Retouch — proper skin smoothing via an offscreen blur pass. Blur radius
-    // scales with photo size so the effect is visible on any spec. Alpha kept
-    // high so operators can actually see a difference the moment the switch
-    // flips on.
+    // Retouch — proper "portrait skin softening" using frequency separation:
+    //   1. Build a heavily blurred low-frequency copy → smooth skin tones
+    //   2. Overlay the ORIGINAL result with soft-light blend @ moderate alpha
+    //      → the eyes/lips/hair edges pop back but blemishes stay softened.
+    // This preserves detail unlike a plain blur, mimicking a light Portrait
+    // filter used in Photoshop/Instagram beauty tools.
     if (adj.retouch) {
-      const off = document.createElement("canvas");
-      off.width = targetW;
-      off.height = targetH;
-      const octx = off.getContext("2d");
-      const supportsFilter = "filter" in octx;
-      const blurPx = Math.max(4, Math.round(targetW * 0.02)); // ~2% of width
-      if (supportsFilter) {
-        octx.filter = `blur(${blurPx}px)`;
-        octx.drawImage(canvas, 0, 0);
-        octx.filter = "none";
+      // Snapshot the original (post-crop) result before we mutate the canvas
+      const orig = document.createElement("canvas");
+      orig.width = targetW; orig.height = targetH;
+      orig.getContext("2d").drawImage(canvas, 0, 0);
+
+      // Blurred (low-frequency) copy
+      const blurred = document.createElement("canvas");
+      blurred.width = targetW; blurred.height = targetH;
+      const bctx = blurred.getContext("2d");
+      const blurPx = Math.max(6, Math.round(targetW * 0.025));
+      if ("filter" in bctx) {
+        bctx.filter = `blur(${blurPx}px)`;
+        bctx.drawImage(orig, 0, 0);
+        bctx.filter = "none";
       } else {
-        // Cheap Gaussian: downscale then upscale (works on very old Safari)
-        const tw = Math.max(1, Math.round(targetW * 0.25));
-        const th = Math.max(1, Math.round(targetH * 0.25));
+        // Safari fallback: heavy downscale + upscale
+        const scale = 0.18;
+        const tw = Math.max(4, Math.round(targetW * scale));
+        const th = Math.max(4, Math.round(targetH * scale));
         const tmp = document.createElement("canvas");
         tmp.width = tw; tmp.height = th;
-        tmp.getContext("2d").drawImage(canvas, 0, 0, tw, th);
-        octx.imageSmoothingEnabled = true;
-        octx.imageSmoothingQuality = "high";
-        octx.drawImage(tmp, 0, 0, tw, th, 0, 0, targetW, targetH);
+        const tctx = tmp.getContext("2d");
+        tctx.imageSmoothingEnabled = true;
+        tctx.imageSmoothingQuality = "high";
+        tctx.drawImage(orig, 0, 0, tw, th);
+        bctx.imageSmoothingEnabled = true;
+        bctx.imageSmoothingQuality = "high";
+        bctx.drawImage(tmp, 0, 0, tw, th, 0, 0, targetW, targetH);
       }
+
+      // Replace canvas with smoothed version
+      ctx.clearRect(0, 0, targetW, targetH);
+      ctx.fillStyle = spec.bg;
+      ctx.fillRect(0, 0, targetW, targetH);
+      ctx.drawImage(blurred, 0, 0);
+
+      // Bring back structural detail via soft-light overlay of the original
       ctx.save();
-      ctx.globalAlpha = 0.7;
-      ctx.drawImage(off, 0, 0);
+      ctx.globalCompositeOperation = "soft-light";
+      ctx.globalAlpha = 0.85;
+      ctx.drawImage(orig, 0, 0);
+      ctx.restore();
+
+      // A tiny second pass: draw a small amount of the original for luminance
+      // fidelity so skin tones don't drift too pale
+      ctx.save();
+      ctx.globalAlpha = 0.15;
+      ctx.drawImage(orig, 0, 0);
       ctx.restore();
     }
     return canvas;
