@@ -5,9 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn, ZoomOut, Sparkles } from "lucide-react";
+import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn, ZoomOut, Sparkles, ScanFace, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { PHOTO_SPECS, PAPER_SIZES, suggestPaper, COUNT_PRESETS } from "@/lib/passportSpecs";
+import { detectBiometricCrop, loadFaceModels } from "@/lib/faceDetect";
 
 // IndexedDB helpers for last-10 archive
 const DB_NAME = "fotuber_vesikalik";
@@ -38,10 +39,12 @@ const AdminPassportPhoto = () => {
   const [specCode, setSpecCode] = useState("tr-bio");
   const [count, setCount] = useState(6);
   const [paperCode, setPaperCode] = useState(""); // auto if empty
-  const [image, setImage] = useState(null); // {src, w, h}
-  const [crop, setCrop] = useState({ x: 0.1, y: 0.05, scale: 1 }); // fractional inside image
+  const [image, setImage] = useState(null); // {src, w, h, el}
+  const [crop, setCrop] = useState({ cx: 0, cy: 0, w: 0 }); // pixel-space center + width
   const [zoom, setZoom] = useState(1);
   const [rotate, setRotate] = useState(0);
+  const [detecting, setDetecting] = useState(false);
+  const [autoDetected, setAutoDetected] = useState(false);
   const [adj, setAdj] = useState({ brightness: 100, contrast: 100, saturation: 100, warmth: 0, sharpness: 0, retouch: false });
   const [cutColor, setCutColor] = useState("#000000");
   const [cutWidth, setCutWidth] = useState(0.5); // mm
@@ -58,6 +61,8 @@ const AdminPassportPhoto = () => {
   const paper = useMemo(() => (paperCode ? PAPER_SIZES.find((p) => p.code === paperCode) : layout.paper), [paperCode, layout]);
 
   useEffect(() => { idbAll().then(setArchive); }, []);
+  // Warm up face-api models in the background so the first detection feels instant
+  useEffect(() => { loadFaceModels().catch(() => {}); }, []);
 
   const cssFilter = () => {
     // warmth: -50..50 (kelvin proxy)
@@ -71,17 +76,53 @@ const AdminPassportPhoto = () => {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
-      img.onload = () => setImage({ src: reader.result, w: img.width, h: img.height });
+      img.onload = () => {
+        setImage({ src: reader.result, w: img.width, h: img.height, el: img });
+        // Default crop: center of image, width = 70% of the shorter side (so it fits inside)
+        const shortSide = Math.min(img.width, img.height);
+        const defaultW = shortSide * 0.7;
+        setCrop({ cx: img.width / 2, cy: img.height / 2, w: defaultW });
+        setAutoDetected(false);
+      };
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
   }, []);
 
+  const runAutoDetect = useCallback(async () => {
+    if (!image?.el || !spec) { toast.error("Önce fotoğraf yükleyin"); return; }
+    setDetecting(true);
+    try {
+      const res = await detectBiometricCrop(image.el, spec);
+      if (!res.ok) { toast.error(res.message || "Otomatik tespit başarısız"); return; }
+      // Clamp inside image bounds
+      const halfW = res.w / 2;
+      const halfH = (res.w * spec.h / spec.w) / 2;
+      const cx = Math.min(Math.max(res.cx, halfW), image.w - halfW);
+      const cy = Math.min(Math.max(res.cy, halfH), image.h - halfH);
+      setCrop({ cx, cy, w: res.w });
+      setAutoDetected(true);
+      toast.success("Yüz tespit edildi, çerçeveleme uygulandı");
+    } catch (e) {
+      toast.error("Model yüklenemedi. İnternet bağlantınızı kontrol edin.");
+    } finally {
+      setDetecting(false);
+    }
+  }, [image, spec]);
+
+  // Auto-run detection once the image finishes loading (fire-and-forget)
+  useEffect(() => {
+    if (image?.el && !autoDetected) {
+      runAutoDetect();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [image]);
+
   const onDrop = (e) => { e.preventDefault(); setDragging(false); onFile(e.dataTransfer.files?.[0]); };
 
   // Draw the single cropped biometric photo to a canvas
   const drawSingle = useCallback(() => {
-    if (!image || !singleCanvasRef.current || !spec) return null;
+    if (!image || !singleCanvasRef.current || !spec || !crop.w) return null;
     const canvas = singleCanvasRef.current;
     const targetW = mmToPx(spec.w);
     const targetH = mmToPx(spec.h);
@@ -91,22 +132,19 @@ const AdminPassportPhoto = () => {
     // Background
     ctx.fillStyle = spec.bg;
     ctx.fillRect(0, 0, targetW, targetH);
-    // Compute source rectangle from crop
-    const cropAspect = spec.w / spec.h;
-    let cropW = image.w * (0.6 / crop.scale);
-    let cropH = cropW / cropAspect;
-    if (cropH > image.h * 0.95) { cropH = image.h * 0.95; cropW = cropH * cropAspect; }
-    const cx = image.w * crop.x - cropW / 2 + image.w * 0.4;
-    const cy = image.h * crop.y - cropH / 2 + image.h * 0.4;
+    // Pixel-space source rect from crop
+    const cropW = crop.w;
+    const cropH = crop.w * (spec.h / spec.w);
+    const sx = crop.cx - cropW / 2;
+    const sy = crop.cy - cropH / 2;
     ctx.save();
-    // Filter
     ctx.filter = cssFilter();
     ctx.translate(targetW / 2, targetH / 2);
     ctx.rotate((rotate * Math.PI) / 180);
     ctx.translate(-targetW / 2, -targetH / 2);
-    const img = new Image();
-    img.src = image.src;
-    ctx.drawImage(img, cx, cy, cropW, cropH, 0, 0, targetW, targetH);
+    if (image.el) {
+      ctx.drawImage(image.el, sx, sy, cropW, cropH, 0, 0, targetW, targetH);
+    }
     ctx.restore();
     // Retouch (mild blur then overlay original for subtle skin smoothing)
     if (adj.retouch) {
@@ -185,6 +223,14 @@ const AdminPassportPhoto = () => {
     ctx.fillText(code, margin, ph - mmToPx(2));
     return canvas;
   }, [image, spec, paper, layout, count, cutColor, cutWidth, watermark, code, drawSingle]);
+
+  // When spec changes, re-run auto detection so the aspect matches the new format
+  useEffect(() => {
+    if (image?.el && autoDetected) {
+      runAutoDetect();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [specCode]);
 
   // Redraw whenever inputs change
   useEffect(() => { if (image) { drawSingle(); drawSheet(); } }, [image, spec, crop, rotate, adj, cutColor, cutWidth, watermark, count, paperCode, drawSingle, drawSheet]);
@@ -288,9 +334,18 @@ const AdminPassportPhoto = () => {
                 </div>
               </div>
               <div className="flex flex-wrap gap-3 mt-6">
+                <Button onClick={runAutoDetect} disabled={!image || detecting} variant="outline" className="border-emerald-600 text-emerald-700 hover:bg-emerald-50" data-testid="auto-detect-btn">
+                  {detecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ScanFace className="w-4 h-4 mr-2" />}
+                  {detecting ? "Yüz taranıyor..." : "Otomatik Yüz Tespiti"}
+                </Button>
                 <Button onClick={downloadSingle} className="bg-slate-900 hover:bg-slate-800" data-testid="download-single-btn"><Download className="w-4 h-4 mr-2" />Tekli İndir</Button>
                 <Button onClick={downloadSheet} className="bg-emerald-600 hover:bg-emerald-700" data-testid="download-sheet-btn"><Printer className="w-4 h-4 mr-2" />Baskıya Hazır İndir</Button>
               </div>
+              {autoDetected && (
+                <div className="mt-3 text-xs text-emerald-700 bg-emerald-50 rounded px-3 py-2 inline-flex items-center gap-2" data-testid="detection-status">
+                  <ScanFace className="w-3.5 h-3.5" /> Yüz tespiti uygulandı — ICAO uyumlu çerçeveleme
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

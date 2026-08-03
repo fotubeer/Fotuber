@@ -46,9 +46,17 @@ export const AdminLayout = ({ children }) => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-admin flex">
+      {/* Mobile overlay */}
+      {open && (
+        <div
+          className="fixed inset-0 bg-black/40 z-30 lg:hidden"
+          onClick={() => setOpen(false)}
+          data-testid="admin-sidebar-overlay"
+        />
+      )}
       {/* Sidebar */}
-      <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-200 transform transition-transform ${open ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
-        <div className="h-16 border-b border-slate-200 flex items-center px-6">
+      <aside className={`fixed lg:sticky top-0 left-0 z-40 w-64 h-screen bg-white border-r border-slate-200 flex flex-col transform transition-transform ${open ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
+        <div className="h-16 shrink-0 border-b border-slate-200 flex items-center px-6">
           <Link to="/admin/dashboard" className="flex items-center gap-2" data-testid="admin-logo-home">
             {logoUrl ? (
               <img src={logoUrl} alt={settings?.business_name || "Logo"} className="w-9 h-9 rounded-full object-cover" />
@@ -63,14 +71,14 @@ export const AdminLayout = ({ children }) => {
             </div>
           </Link>
         </div>
-        <nav className="p-3 flex flex-col gap-1">
+        <nav className="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-1" data-testid="admin-sidebar-nav">
           {items.map((it) => (
             <NavLink
               key={it.to}
               to={it.to}
               data-testid={`admin-nav-${it.to.split("/").pop()}`}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${isActive ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"}`
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors shrink-0 ${isActive ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"}`
               }
               onClick={() => setOpen(false)}
             >
@@ -79,10 +87,10 @@ export const AdminLayout = ({ children }) => {
             </NavLink>
           ))}
         </nav>
-        <div className="absolute bottom-0 w-full p-4 border-t border-slate-200">
+        <div className="shrink-0 p-4 border-t border-slate-200 bg-white">
           <div className="mb-3">
-            <div className="text-sm font-semibold" data-testid="admin-user-name">{user?.name}</div>
-            <div className="text-xs text-slate-500">{user?.email}</div>
+            <div className="text-sm font-semibold truncate" data-testid="admin-user-name">{user?.name}</div>
+            <div className="text-xs text-slate-500 truncate">{user?.email}</div>
           </div>
           <Button
             data-testid="admin-logout-btn"

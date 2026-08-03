@@ -27,7 +27,6 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
 - `POST /api/appointments/walkin` accepts phone_2, event_type, event_addons, extra_services_note, admin_notes, and validates against FULL_SLOTS.
 
 ### Frontend — Phase 1 (Admin Randevu Yönetimi)
-- `pages/admin/Appointments.jsx` rewritten:
   - Row click opens **Randevu Detay modalı** (fetches from `/appointments/{id}`).
   - Table shows Toplam / Kapora (ödenmiş toplam) / Kalan columns (admin-only).
   - Row shows: 2 telefon numarası, etkinlik türü + addon özet, "Not" rozet.
@@ -127,6 +126,13 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
 
 ## Admin
 - admin@fotuber.com.tr / FTB.2024
+
+## Session F (Feb 2026) — Sidebar Scroll Fix + Auto Face Detection
+- **AdminLayout.jsx**: Sidebar refactored to flex-column with `overflow-y-auto` on the nav and a sticky footer. Fixes mobile scrolling bug — "Vesikalık Üretici" (last item) is now reachable on all viewports. Added dark overlay + click-to-close.
+- **Vesikalık — Otomatik Yüz Tespiti**: Added `@vladmandic/face-api` integration.
+  - `src/lib/faceDetect.js`: lazy-loads TinyFaceDetector + FaceLandmark68 from jsdelivr CDN; returns a biometric-compliant crop rect `{cx, cy, w}` computed from eye-line + chin using ICAO ratios (head 72% of photo height, eyes 55% from bottom).
+  - `AdminPassportPhoto.jsx`: crop model refactored from fractional to pixel-space (`{cx, cy, w}`). Auto-detect fires on upload and re-runs when the country/format changes. Manual "Otomatik Yüz Tespiti" button + loader + emerald status pill.
+
 
 ## Notes
 - Live site cache: user must "Re-publish changes" from Emergent to reflect preview → production.
