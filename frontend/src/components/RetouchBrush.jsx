@@ -1,110 +1,154 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Eraser, Undo2, RotateCcw, Check, X } from "lucide-react";
 
-// Manual eraser / paint-over tool for cleaning up leftover artifacts after
-// automatic background removal. Paints solid `color` circles onto a copy of
-// the image and returns the new data URL when the operator hits "Uygula".
+// Manual eraser / paint-over tool for cleaning up leftover artifacts.
+// The working canvas is downscaled to a max edge of MAX_EDGE so the tool
+// stays responsive even for huge phone photos, and so pointer-to-pixel
+// math stays predictable across viewports.
+const MAX_EDGE = 1600;
+
+const fitSize = (w, h) => {
+  const m = Math.max(w, h);
+  if (m <= MAX_EDGE) return { w, h, scale: 1 };
+  const s = MAX_EDGE / m;
+  return { w: Math.round(w * s), h: Math.round(h * s), scale: s };
+};
+
 const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply }) => {
   const canvasRef = useRef(null);
-  const containerRef = useRef(null);
-  const [brush, setBrush] = useState(28);
-  const [imgSize, setImgSize] = useState({ w: 0, h: 0 });
-  const [drawing, setDrawing] = useState(false);
-  const historyRef = useRef([]); // stack of ImageData snapshots
+  const [brush, setBrush] = useState(28);           // brush diameter in CSS px
+  const [displaySize, setDisplaySize] = useState({ w: 0, h: 0 }); // canvas CSS px
+  const [ready, setReady] = useState(false);
+  const historyRef = useRef([]);
+  const drawingRef = useRef(false);
   const HISTORY_MAX = 20;
 
-  // Load the source image onto the canvas whenever the dialog opens
+  // Reset when dialog closes
   useEffect(() => {
-    if (!open || !imageSrc || !canvasRef.current) return;
+    if (!open) {
+      setReady(false);
+      historyRef.current = [];
+    }
+  }, [open]);
+
+  // Load source image, downscale, paint onto canvas
+  useEffect(() => {
+    if (!open || !imageSrc) return;
+    let cancelled = false;
     const img = new Image();
-    img.crossOrigin = "anonymous";
     img.onload = () => {
+      if (cancelled) return;
       const cvs = canvasRef.current;
       if (!cvs) return;
-      cvs.width = img.width;
-      cvs.height = img.height;
+      const fit = fitSize(img.naturalWidth, img.naturalHeight);
+      cvs.width = fit.w;
+      cvs.height = fit.h;
       const ctx = cvs.getContext("2d");
-      ctx.clearRect(0, 0, cvs.width, cvs.height);
-      ctx.drawImage(img, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.clearRect(0, 0, fit.w, fit.h);
+      ctx.drawImage(img, 0, 0, fit.w, fit.h);
       historyRef.current = [];
-      setImgSize({ w: img.width, h: img.height });
+      // Pick a comfortable display size: fit inside 720×480 CSS px
+      const maxCssW = 720, maxCssH = 480;
+      const s = Math.min(maxCssW / fit.w, maxCssH / fit.h, 1);
+      setDisplaySize({ w: Math.round(fit.w * s), h: Math.round(fit.h * s) });
+      setReady(true);
     };
+    img.onerror = () => { if (!cancelled) setReady(false); };
     img.src = imageSrc;
+    return () => { cancelled = true; };
   }, [open, imageSrc]);
 
-  const pushHistory = useCallback(() => {
+  const pushHistory = () => {
     const cvs = canvasRef.current;
-    if (!cvs) return;
-    const ctx = cvs.getContext("2d");
-    const snap = ctx.getImageData(0, 0, cvs.width, cvs.height);
-    historyRef.current.push(snap);
-    if (historyRef.current.length > HISTORY_MAX) historyRef.current.shift();
-  }, []);
-
-  // Convert a pointer event into canvas-pixel coordinates
-  const toCanvasPoint = (ev) => {
-    const cvs = canvasRef.current;
-    const rect = cvs.getBoundingClientRect();
-    const cx = ev.clientX - rect.left;
-    const cy = ev.clientY - rect.top;
-    return { x: (cx / rect.width) * cvs.width, y: (cy / rect.height) * cvs.height };
+    if (!cvs || !ready) return;
+    try {
+      const ctx = cvs.getContext("2d");
+      const snap = ctx.getImageData(0, 0, cvs.width, cvs.height);
+      historyRef.current.push(snap);
+      if (historyRef.current.length > HISTORY_MAX) historyRef.current.shift();
+    } catch (_) {
+      // Cross-origin canvas would throw — data URLs are same-origin so this is safe.
+    }
   };
 
-  const paintDot = (x, y) => {
+  // Pointer helpers -----------------------------------------------------
+  const pointerToCanvas = (ev) => {
+    const cvs = canvasRef.current;
+    const rect = cvs.getBoundingClientRect();
+    return {
+      x: ((ev.clientX - rect.left) / rect.width) * cvs.width,
+      y: ((ev.clientY - rect.top) / rect.height) * cvs.height,
+      scale: cvs.width / rect.width,
+    };
+  };
+
+  const paintDot = (x, y, scale) => {
     const ctx = canvasRef.current.getContext("2d");
-    // Scale brush size to source pixels (brush is in CSS px)
-    const rect = canvasRef.current.getBoundingClientRect();
-    const scale = canvasRef.current.width / rect.width;
-    const r = (brush / 2) * scale;
+    const r = Math.max(1, (brush / 2) * scale);
+    ctx.save();
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = color || "#ffffff";
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = color;
     ctx.fill();
+    ctx.restore();
   };
 
   const onPointerDown = (ev) => {
+    if (!ready) return;
     ev.preventDefault();
     canvasRef.current.setPointerCapture(ev.pointerId);
+    drawingRef.current = true;
     pushHistory();
-    setDrawing(true);
-    const { x, y } = toCanvasPoint(ev);
-    paintDot(x, y);
+    const p = pointerToCanvas(ev);
+    paintDot(p.x, p.y, p.scale);
   };
   const onPointerMove = (ev) => {
-    if (!drawing) return;
-    const { x, y } = toCanvasPoint(ev);
-    paintDot(x, y);
+    if (!drawingRef.current) return;
+    const p = pointerToCanvas(ev);
+    paintDot(p.x, p.y, p.scale);
   };
   const onPointerUp = (ev) => {
-    if (canvasRef.current.hasPointerCapture(ev.pointerId)) {
+    if (canvasRef.current?.hasPointerCapture(ev.pointerId)) {
       canvasRef.current.releasePointerCapture(ev.pointerId);
     }
-    setDrawing(false);
+    drawingRef.current = false;
   };
 
+  // Actions -------------------------------------------------------------
   const undo = () => {
     const snap = historyRef.current.pop();
-    if (!snap) return;
+    if (!snap || !canvasRef.current) return;
     canvasRef.current.getContext("2d").putImageData(snap, 0, 0);
   };
 
   const resetAll = () => {
+    if (!imageSrc) return;
+    setReady(false);
     const img = new Image();
     img.onload = () => {
       const cvs = canvasRef.current;
-      cvs.getContext("2d").clearRect(0, 0, cvs.width, cvs.height);
-      cvs.getContext("2d").drawImage(img, 0, 0);
+      if (!cvs) return;
+      const fit = fitSize(img.naturalWidth, img.naturalHeight);
+      cvs.width = fit.w;
+      cvs.height = fit.h;
+      const ctx = cvs.getContext("2d");
+      ctx.clearRect(0, 0, fit.w, fit.h);
+      ctx.drawImage(img, 0, 0, fit.w, fit.h);
       historyRef.current = [];
+      setReady(true);
     };
     img.src = imageSrc;
   };
 
   const apply = () => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current || !ready) return;
     const url = canvasRef.current.toDataURL("image/jpeg", 0.95);
     onApply?.(url);
     onOpenChange(false);
@@ -112,7 +156,7 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl" data-testid="retouch-dialog">
+      <DialogContent className="max-w-5xl" data-testid="retouch-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Eraser className="w-4 h-4 text-indigo-600" /> Manuel Rötuş Fırçası
@@ -120,15 +164,25 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
         </DialogHeader>
 
         <div className="grid md:grid-cols-[1fr_220px] gap-4">
-          <div ref={containerRef} className="bg-slate-100 rounded p-2 flex items-center justify-center overflow-auto min-h-[300px]">
+          <div className="bg-slate-100 rounded p-3 flex items-center justify-center min-h-[320px] relative">
+            {!ready && (
+              <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500" data-testid="retouch-loading">
+                Fotoğraf yükleniyor…
+              </div>
+            )}
             <canvas
               ref={canvasRef}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
               onPointerLeave={onPointerUp}
-              className="max-w-full max-h-[60vh] touch-none cursor-crosshair shadow border border-white"
-              style={{ imageRendering: "pixelated" }}
+              className="touch-none cursor-crosshair shadow border border-white"
+              style={{
+                width: displaySize.w ? `${displaySize.w}px` : undefined,
+                height: displaySize.h ? `${displaySize.h}px` : undefined,
+                visibility: ready ? "visible" : "hidden",
+                background: "#e5e7eb",
+              }}
               data-testid="retouch-canvas"
             />
           </div>
@@ -148,19 +202,21 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
                 data-testid="retouch-brush-size"
               />
               <div className="flex items-center justify-center mt-3 h-16">
-                <div className="rounded-full border border-slate-300 bg-white" style={{ width: brush, height: brush }} />
+                <div
+                  className="rounded-full border border-slate-400"
+                  style={{ width: brush, height: brush, backgroundColor: color }}
+                />
               </div>
             </div>
 
             <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-[11px] text-slate-600 space-y-1">
-              <div><b>İpucu:</b> Arka planda kalan saç, gölge veya kenar parçalarını fırçayla üzerine sürerek temizleyebilirsin.</div>
-              <div>Renk: <span className="inline-block w-3 h-3 rounded-full border align-middle" style={{ backgroundColor: color }} /> {color.toUpperCase()}</div>
-              <div>Kaynak boyut: {imgSize.w}×{imgSize.h}px</div>
+              <div><b>İpucu:</b> Arka planda kalan saç, gölge veya kenar parçalarını fırçayla üzerine sürerek boyayarak temizleyebilirsin.</div>
+              <div>Boya rengi: <span className="inline-block w-3 h-3 rounded-full border align-middle" style={{ backgroundColor: color }} /> {String(color).toUpperCase()}</div>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" onClick={undo} data-testid="retouch-undo"><Undo2 className="w-3.5 h-3.5 mr-1" />Geri Al</Button>
-              <Button variant="outline" onClick={resetAll} data-testid="retouch-reset"><RotateCcw className="w-3.5 h-3.5 mr-1" />Sıfırla</Button>
+              <Button variant="outline" onClick={undo} disabled={!ready} data-testid="retouch-undo"><Undo2 className="w-3.5 h-3.5 mr-1" />Geri Al</Button>
+              <Button variant="outline" onClick={resetAll} disabled={!ready} data-testid="retouch-reset"><RotateCcw className="w-3.5 h-3.5 mr-1" />Sıfırla</Button>
             </div>
           </div>
         </div>
@@ -169,7 +225,7 @@ const RetouchBrush = ({ open, onOpenChange, imageSrc, color = "#ffffff", onApply
           <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="retouch-cancel">
             <X className="w-4 h-4 mr-1" /> Vazgeç
           </Button>
-          <Button onClick={apply} className="bg-emerald-600 hover:bg-emerald-700" data-testid="retouch-apply">
+          <Button onClick={apply} disabled={!ready} className="bg-emerald-600 hover:bg-emerald-700" data-testid="retouch-apply">
             <Check className="w-4 h-4 mr-1" /> Uygula
           </Button>
         </DialogFooter>

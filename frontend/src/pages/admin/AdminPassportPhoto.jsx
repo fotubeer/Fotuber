@@ -271,12 +271,30 @@ const AdminPassportPhoto = () => {
       ctx.drawImage(image.el, sx, sy, cropW, cropH, 0, 0, targetW, targetH);
     }
     ctx.restore();
-    // Retouch (mild blur then overlay original for subtle skin smoothing)
+    // Retouch — proper skin smoothing via an offscreen blur pass.
+    // `ctx.filter` on Chrome/Firefox blurs on draw; on Safari (no filter
+    // support) we fall back to a light downscale-upscale trick which
+    // approximates a low-radius Gaussian. Alpha is bumped high enough for
+    // the effect to be visible.
     if (adj.retouch) {
+      const off = document.createElement("canvas");
+      off.width = targetW;
+      off.height = targetH;
+      const octx = off.getContext("2d");
+      const supportsFilter = typeof octx.filter === "string";
+      if (supportsFilter) {
+        octx.filter = "blur(5px)";
+        octx.drawImage(canvas, 0, 0);
+      } else {
+        // Downscale to 40% and back up — cheap Gaussian approximation
+        const tw = Math.max(1, Math.round(targetW * 0.4));
+        const th = Math.max(1, Math.round(targetH * 0.4));
+        octx.drawImage(canvas, 0, 0, tw, th);
+        octx.drawImage(off, 0, 0, tw, th, 0, 0, targetW, targetH);
+      }
       ctx.save();
-      ctx.filter = "blur(2px)";
-      ctx.globalAlpha = 0.4;
-      ctx.drawImage(canvas, 0, 0);
+      ctx.globalAlpha = 0.55;
+      ctx.drawImage(off, 0, 0);
       ctx.restore();
     }
     return canvas;
