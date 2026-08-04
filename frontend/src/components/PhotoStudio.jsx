@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Sparkles, Undo2, Eye, Circle, Shirt, Loader2, SplitSquareHorizontal, Palette, Wand2, Droplet } from "lucide-react";
+import { Sparkles, Undo2, Eye, Circle, Shirt, Loader2, SplitSquareHorizontal, Palette, Wand2, Droplet, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { detectFaceRegions } from "@/lib/faceDetect";
 
@@ -262,19 +262,55 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
   const [sharpenBusy, setSharpenBusy] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
   const [credits, setCredits] = useState(null); // { remaining, total } for paid AI
+  const [gemini, setGemini] = useState(null); // { connected, masked }
+  const [geminiInput, setGeminiInput] = useState("");
+  const [geminiBusy, setGeminiBusy] = useState(false);
   const undoRef = useRef([]);
 
-  // Load remaining paid-AI credits for the current user.
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const res = await fetch(`${API}/api/vesikalik/ai-credits`, { headers: { ...authHeaders() } });
-        if (res.ok && alive) setCredits(await res.json());
-      } catch (e) { /* ignore — backend still enforces */ }
-    })();
-    return () => { alive = false; };
+  // Load remaining paid-AI credits + own-key status for the current user.
+  const refreshCredits = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/vesikalik/ai-credits`, { headers: { ...authHeaders() } });
+      if (res.ok) {
+        const d = await res.json();
+        setCredits({ remaining: d.remaining, total: d.total });
+        setGemini({ connected: !!d.own_key, masked: d.masked });
+      }
+    } catch (e) { /* ignore — backend still enforces */ }
   }, []);
+
+  useEffect(() => { refreshCredits(); }, [refreshCredits]);
+
+  const connectGemini = async () => {
+    const key = geminiInput.trim();
+    if (!key) { toast.error("Gemini anahtarınızı girin"); return; }
+    setGeminiBusy(true);
+    try {
+      const res = await fetch(`${API}/api/vesikalik/gemini-key`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ api_key: key }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.detail || "Anahtar doğrulanamadı");
+      setGemini({ connected: true, masked: d.masked });
+      setGeminiInput("");
+      toast.success("Gemini anahtarınız bağlandı");
+    } catch (e) {
+      toast.error(e.message || "Anahtar bağlanamadı");
+    } finally { setGeminiBusy(false); }
+  };
+
+  const disconnectGemini = async () => {
+    setGeminiBusy(true);
+    try {
+      await fetch(`${API}/api/vesikalik/gemini-key`, { method: "DELETE", headers: { ...authHeaders() } });
+      setGemini({ connected: false, masked: null });
+      toast.success("Gemini anahtarı kaldırıldı");
+    } catch (e) {
+      toast.error("İşlem başarısız");
+    } finally { setGeminiBusy(false); }
+  };
 
   useEffect(() => {
     setGarment((g) => (gender === "female" && (g === "polo" || g === "shirt")) ? "blouse"
@@ -335,10 +371,15 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
       const dataUrl = `data:${data.mime_type};base64,${data.image_base64}`;
       const im = await loadImageFromSrc(dataUrl);
       applyImage(im);
-      toast.success("Kıyafet değiştirildi");
+      if (typeof data.credits_remaining === "number") {
+        setCredits((c) => ({ total: c?.total ?? 25, remaining: data.credits_remaining }));
+      }
+      toast.success(data.own_key ? "Kıyafet değiştirildi (kendi anahtarınız)" : "Kıyafet değiştirildi");
     } catch (e) {
       toast.error(e.message || "AI hata verdi");
       undoRef.current.pop(); // rollback the pushed snapshot since no change happened
+      // Reflect an exhausted app-credit balance in the UI.
+      if ((e.message || "").includes("krediniz bitti")) setCredits((c) => ({ total: c?.total ?? 25, remaining: 0 }));
     } finally {
       setAiBusy(false);
     }
@@ -453,10 +494,55 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
               </div>
             </div>
 
-            <Button onClick={doAiEdit} disabled={aiBusy || !image} className="w-full bg-indigo-600 hover:bg-indigo-700" data-testid="studio-ai-apply">
+            {/* BYOK — connect your own Gemini key (uses your own quota) */}
+            <div className="rounded-lg border border-slate-200 p-2 space-y-2 bg-slate-50/60" data-testid="byok-box">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs flex items-center gap-1"><KeyRound className="w-3.5 h-3.5" /> Kendi Gemini Anahtarım</Label>
+                {gemini?.connected
+                  ? <span className="text-[11px] font-semibold text-emerald-700" data-testid="gemini-status">Bağlı ••••{gemini.masked}</span>
+                  : <span className="text-[11px] text-slate-400" data-testid="gemini-status">Bağlı değil</span>}
+              </div>
+              {gemini?.connected ? (
+                <Button size="sm" variant="outline" onClick={disconnectGemini} disabled={geminiBusy} className="w-full border-slate-300 text-slate-600" data-testid="gemini-disconnect-btn">
+                  {geminiBusy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null} Anahtarı Kaldır
+                </Button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Input type="password" value={geminiInput} onChange={(e) => setGeminiInput(e.target.value)} placeholder="AIza… (Google AI Studio)" className="h-8 text-xs" data-testid="gemini-key-input" />
+                  <Button size="sm" onClick={connectGemini} disabled={geminiBusy} className="bg-slate-800 hover:bg-slate-700 whitespace-nowrap" data-testid="gemini-connect-btn">
+                    {geminiBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Bağla"}
+                  </Button>
+                </div>
+              )}
+              <p className="text-[10px] text-slate-500 leading-tight">
+                Bağladığınızda AI kıyafet/renk tamamen kendi Gemini kotanızla çalışır; uygulama krediniz düşmez.
+                {" "}<a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-indigo-600 underline">Anahtar al</a>
+              </p>
+            </div>
+
+            {/* Credit / own-key indicator (next to the button) */}
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">AI Kredisi</span>
+              {gemini?.connected ? (
+                <span data-testid="ai-credits-badge" className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-indigo-100 text-indigo-800 border-indigo-300">Kendi anahtarınız aktif</span>
+              ) : credits ? (
+                <span data-testid="ai-credits-badge" className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${credits.remaining <= 0 ? "bg-red-100 text-red-700 border-red-300" : credits.remaining <= 3 ? "bg-amber-100 text-amber-800 border-amber-300" : "bg-emerald-100 text-emerald-800 border-emerald-300"}`}>
+                  {credits.remaining <= 0 ? "Krediniz bitti" : `Kalan: ${credits.remaining}/${credits.total} kredi`}
+                </span>
+              ) : (
+                <span data-testid="ai-credits-badge" className="text-[11px] text-slate-400">…</span>
+              )}
+            </div>
+
+            <Button onClick={doAiEdit} disabled={aiBusy || !image || (!gemini?.connected && credits && credits.remaining <= 0)} className="w-full bg-indigo-600 hover:bg-indigo-700" data-testid="studio-ai-apply">
               {aiBusy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Wand2 className="w-4 h-4 mr-2" />}
               {aiBusy ? "AI çalışıyor..." : "Kıyafeti Değiştir (AI) — Ücretli"}
             </Button>
+            {!gemini?.connected && credits && credits.remaining <= 0 && (
+              <div className="text-[11px] text-red-600 leading-tight" data-testid="ai-credits-warning">
+                Uygulama krediniz bitti. Devam etmek için yukarıdan kendi Gemini anahtarınızı bağlayın.
+              </div>
+            )}
             <div className="text-[10px] text-slate-500 leading-tight">
               AI: Gemini Nano Banana. Yüz/saç/arka plan korunur. Her uygulama ~5-15 sn sürer. Bu özellik ücretlidir.
             </div>

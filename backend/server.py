@@ -3639,10 +3639,97 @@ def _ai_credits_of(user: dict) -> int:
     v = user.get("ai_credits")
     return DEFAULT_AI_CREDITS if v is None else int(v)
 
+# ---- BYOK: per-user Google Gemini key (encrypted at rest with Fernet) -------
+def _fernet():
+    import base64 as _b64, hashlib as _hl
+    from cryptography.fernet import Fernet
+    return Fernet(_b64.urlsafe_b64encode(_hl.sha256(JWT_SECRET.encode()).digest()))
+
+def _encrypt_secret(raw: str) -> str:
+    return _fernet().encrypt(raw.encode()).decode()
+
+def _decrypt_secret(enc: str) -> str:
+    try:
+        return _fernet().decrypt(enc.encode()).decode()
+    except Exception:
+        return ""
+
+def _user_gemini_key(user: dict) -> str:
+    enc = user.get("gemini_api_key_enc")
+    return _decrypt_secret(enc) if enc else ""
+
+def _mask_key(raw: str) -> str:
+    return raw[-4:] if raw and len(raw) >= 4 else "••••"
+
+def _validate_gemini_key_sync(api_key: str) -> bool:
+    try:
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        for _ in client.models.list():
+            break
+        return True
+    except Exception:
+        logger.warning("Gemini key validation failed")
+        return False
+
+def _byok_image_edit_sync(api_key: str, image_bytes: bytes, mime: str, prompt: str):
+    import base64 as _b64
+    from google import genai
+    from google.genai import types
+    model = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+    client = genai.Client(api_key=api_key)
+    resp = client.models.generate_content(
+        model=model,
+        contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=mime)],
+    )
+    for cand in (getattr(resp, "candidates", None) or []):
+        content = getattr(cand, "content", None)
+        for part in (getattr(content, "parts", None) or []):
+            inline = getattr(part, "inline_data", None)
+            data = getattr(inline, "data", None) if inline else None
+            if data:
+                out_mime = getattr(inline, "mime_type", None) or "image/png"
+                out_b64 = _b64.b64encode(data).decode() if isinstance(data, (bytes, bytearray)) else str(data)
+                return out_b64, out_mime
+    return None, None
+
+class GeminiKeyIn(BaseModel):
+    api_key: str
+
+@api_router.get("/vesikalik/gemini-key")
+async def get_gemini_key(admin: dict = Depends(require_admin)):
+    """Whether the current user has connected their own Gemini key (masked)."""
+    raw = _user_gemini_key(admin)
+    return {"connected": bool(raw), "masked": _mask_key(raw) if raw else None}
+
+@api_router.post("/vesikalik/gemini-key")
+async def set_gemini_key(payload: GeminiKeyIn, admin: dict = Depends(require_admin)):
+    """Validate a user-supplied Google Gemini key against Google, then store it."""
+    import asyncio as _asyncio
+    raw = (payload.api_key or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Anahtar boş olamaz")
+    ok = await _asyncio.to_thread(_validate_gemini_key_sync, raw)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Geçersiz Gemini anahtarı — Google doğrulaması başarısız oldu")
+    await db.users.update_one({"id": admin.get("id")}, {"$set": {"gemini_api_key_enc": _encrypt_secret(raw)}})
+    return {"connected": True, "masked": _mask_key(raw)}
+
+@api_router.delete("/vesikalik/gemini-key")
+async def delete_gemini_key(admin: dict = Depends(require_admin)):
+    await db.users.update_one({"id": admin.get("id")}, {"$unset": {"gemini_api_key_enc": ""}})
+    return {"connected": False, "masked": None}
+
 @api_router.get("/vesikalik/ai-credits")
 async def vesikalik_ai_credits(admin: dict = Depends(require_admin)):
-    """Remaining paid AI-garment credits for the current user."""
-    return {"remaining": _ai_credits_of(admin), "total": DEFAULT_AI_CREDITS}
+    """Remaining paid AI-garment credits (app pool) + own-key status."""
+    raw = _user_gemini_key(admin)
+    return {
+        "remaining": _ai_credits_of(admin),
+        "total": DEFAULT_AI_CREDITS,
+        "own_key": bool(raw),
+        "masked": _mask_key(raw) if raw else None,
+    }
 
 @api_router.post("/vesikalik/ai-edit")
 async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(require_admin)):
@@ -3652,14 +3739,7 @@ async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(re
     """
     from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
     import uuid as _uuid
-    key = os.environ.get("EMERGENT_LLM_KEY")
-    if not key:
-        raise HTTPException(status_code=500, detail="AI anahtarı yapılandırılmamış")
-
-    # Paid feature — enforce remaining credits before spending on the model.
-    remaining = _ai_credits_of(admin)
-    if remaining <= 0:
-        raise HTTPException(status_code=402, detail="AI krediniz bitti. Lütfen kredi ekleyin.")
+    import asyncio as _asyncio
 
     # Strip a data URL prefix if the frontend sent one
     b64 = payload.image_base64
@@ -3684,6 +3764,11 @@ async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(re
 
     color_bit = payload.color_name or payload.color
 
+    system_msg = (
+        "Sen profesyonel bir fotoğraf düzenleme aracısın. Verilen fotoğrafta "
+        "SADECE istenen kıyafeti değiştir ve tam çözünürlükte düzenlenmiş "
+        "fotoğrafı geri ver. Yüz, cilt, saç, arka plan hiçbir şekilde değişmemeli."
+    )
     prompt = (
         f"Bu bir vesikalık/biyometrik portre fotoğrafıdır. Kişi {gender_tr}. "
         f"Sadece giydiği kıyafeti değiştir. Yüz, cilt, saç, gözler, kaşlar, "
@@ -3696,14 +3781,38 @@ async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(re
         f"birbirine karışmayacak yeterli kontrasta sahip olsun."
     )
 
+    # --- BYOK path: user's own Google Gemini key → their quota, NO app credit ---
+    own_key = _user_gemini_key(admin)
+    if own_key:
+        import base64 as _b64m
+        try:
+            img_bytes = _b64m.b64decode(b64)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Görsel çözümlenemedi")
+        full_prompt = f"{system_msg}\n\n{prompt}"
+        try:
+            out_b64, out_mime = await _asyncio.to_thread(
+                _byok_image_edit_sync, own_key, img_bytes, "image/jpeg", full_prompt
+            )
+        except Exception as e:
+            logger.exception("BYOK Gemini edit failed")
+            raise HTTPException(status_code=502, detail=f"Kendi Gemini anahtarınız hata verdi: {str(e)[:200]}")
+        if not out_b64:
+            raise HTTPException(status_code=502, detail="AI görüntü üretmedi, farklı bir kıyafet/renk deneyin")
+        return {"image_base64": out_b64, "mime_type": out_mime, "own_key": True}
+
+    # --- App-pool path: Emergent key + paid credits ---
+    key = os.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(status_code=500, detail="AI anahtarı yapılandırılmamış")
+    remaining = _ai_credits_of(admin)
+    if remaining <= 0:
+        raise HTTPException(status_code=402, detail="AI krediniz bitti. Kendi Gemini anahtarınızı bağlayın veya kredi ekleyin.")
+
     chat = LlmChat(
         api_key=key,
         session_id=f"vesikalik-{_uuid.uuid4()}",
-        system_message=(
-            "Sen profesyonel bir fotoğraf düzenleme aracısın. Verilen fotoğrafta "
-            "SADECE istenen kıyafeti değiştir ve tam çözünürlükte düzenlenmiş "
-            "fotoğrafı geri ver. Yüz, cilt, saç, arka plan hiçbir şekilde değişmemeli."
-        ),
+        system_message=system_msg,
     ).with_model("gemini", "gemini-2.5-flash-image").with_params(modalities=["image", "text"])
 
     msg = UserMessage(text=prompt, file_contents=[ImageContent(b64)])
@@ -3718,7 +3827,7 @@ async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(re
     out = images[0]
     new_remaining = max(0, remaining - 1)
     await db.users.update_one({"id": admin.get("id")}, {"$set": {"ai_credits": new_remaining}})
-    return {"image_base64": out.get("data", ""), "mime_type": out.get("mime_type", "image/png"), "credits_remaining": new_remaining}
+    return {"image_base64": out.get("data", ""), "mime_type": out.get("mime_type", "image/png"), "credits_remaining": new_remaining, "own_key": False}
 
 
 @api_router.get("/")
