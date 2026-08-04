@@ -200,3 +200,9 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - Retouch whiteout FIXED: applyRetouch now try/catch + drops fgMask; drawSingle foreground-mask overlay wrapped in try/catch so the unfiltered base always renders (canvas-single ~99.8% non-white after Apply).
 - Removed FREE recolor mode in PhotoStudio; AI garment+color only, with "Ucretli" badge (studio-paid-badge) and button "Kiyafeti Degistir (AI) — Ucretli".
 - Watermark reverted to PER-PHOTO (N copies) at bottom of each cell with Sol/Orta/Sag align (wmAlign; wm-align-switch). Old 3x3 wm-pos-grid removed. Band logic dropped; cut lines still edge-to-edge dashed/solid.
+
+## Session I (Jun 2026) — AI Kredi Gostergesi + BYOK Gemini (verified iteration_18)
+- Paid AI garment/color now shows a credit badge next to the button (ai-credits-badge, default 25/25). Backend GET /api/vesikalik/ai-credits {remaining,total,own_key,masked}; ai-edit decrements app credits only on the Emergent-key path (402 when exhausted).
+- BYOK: users can connect their OWN Google Gemini key. Endpoints GET/POST/DELETE /api/vesikalik/gemini-key. Key validated against Google on save (invalid -> 400), stored Fernet-encrypted (key derived from JWT_SECRET), returned masked only. When connected, ai-edit uses google-genai (model gemini-2.5-flash-image, env GEMINI_IMAGE_MODEL) with the user key and does NOT spend app credits (own_key:true).
+- Frontend BYOK box in PhotoStudio (byok-box, gemini-key-input, gemini-connect-btn, gemini-disconnect-btn, gemini-status); badge switches to "Kendi anahtariniz aktif" when connected. Admin-only for now (later moves to public paid membership).
+- Backend .env additions: JWT_SECRET, EMERGENT_LLM_KEY, ADMIN_EMAIL/PASSWORD, GEMINI_IMAGE_MODEL.
