@@ -50,10 +50,24 @@ const buildColorKeyMask = (el, sx, sy, cw, ch, tw, th, tol = 60) => {
   try { img = cx.getImageData(0, 0, tw, th); }
   catch (e) { cx.fillStyle = "#fff"; cx.fillRect(0, 0, tw, th); return c; }
   const p = img.data;
-  const corners = [[2, 2], [tw - 3, 2], [2, th - 3], [tw - 3, th - 3]];
-  let br = 0, bg = 0, bb = 0;
-  corners.forEach(([x, y]) => { const i = (y * tw + x) * 4; br += p[i]; bg += p[i + 1]; bb += p[i + 2]; });
-  br /= 4; bg /= 4; bb /= 4;
+  // Sample the background from the TOP-LEFT and TOP-RIGHT corners only (a
+  // passport crop always has headroom there). Using bottom corners would
+  // sample the subject's shoulders/hair and poison the estimate. 5x5 patch
+  // means make the sample robust to noise.
+  const patchMean = (px, py) => {
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let yy = Math.max(0, py - 2); yy <= Math.min(th - 1, py + 2); yy++) {
+      for (let xx = Math.max(0, px - 2); xx <= Math.min(tw - 1, px + 2); xx++) {
+        const i = (yy * tw + xx) * 4; r += p[i]; g += p[i + 1]; b += p[i + 2]; n++;
+      }
+    }
+    return [r / n, g / n, b / n];
+  };
+  const cL = patchMean(3, 3);
+  const cR = patchMean(tw - 4, 3);
+  const br = (cL[0] + cR[0]) / 2;
+  const bg = (cL[1] + cR[1]) / 2;
+  const bb = (cL[2] + cR[2]) / 2;
   for (let i = 0; i < p.length; i += 4) {
     const dr = p[i] - br, dg = p[i + 1] - bg, db = p[i + 2] - bb;
     const fg = Math.sqrt(dr * dr + dg * dg + db * db) > tol ? 255 : 0;

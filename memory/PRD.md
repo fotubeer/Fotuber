@@ -186,3 +186,12 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
 - Live site cache: user must "Re-publish changes" from Emergent to reflect preview → production.
 - Response language: TURKISH always.
 - CSS override for Radix Dialog/AlertDialog forces dark text — DO NOT add `role="dialog"` on non-modal fixed overlays (learned from IntroSplash gold-text bug).
+
+## Session G (Jun 2026) — Vesikalık 4 Bug Fixes (verified by testing_agent, iteration_16)
+Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_SECRET, EMERGENT_LLM_KEY, ADMIN_EMAIL/PASSWORD). Admin: admin@fotuber.com.tr / FTB.2024.
+- **Bug 3 (PhotoStudio.jsx)**: `doRecolor` was missing `const dataUrl = await recolorGarment(image.el, color);` → ReferenceError. Added it. `doRedEye`/`doSharpen` now call `applyImage(im,{keepCrop:true})` so framing isn't reset / re-detected. PASS.
+- **Bug 4 (AdminPassportPhoto.drawSheet)**: cut lines now loop `0..cols` / `0..rows` (outer edges included) and each line spans the full paper (`moveTo(x,0)->lineTo(x,ph)` / `moveTo(0,y)->lineTo(pw,y)`). Thin GRAY dashed (default cutColor `#9ca3af`). PASS.
+- **Bug 1 (drawSheet watermark)**: watermark PNG moved from per-photo (3×3 grid) to a SINGLE strip in a centered middle band between top/bottom rows. Band thickness `bandPx = cellH * (wmScale/100)` tied to the existing "Filigran Boyutu" slider; watermark clamped inside the band (never spills onto photos). `wmPos[1]` still controls left/center/right. PASS.
+- **Bug 2 (drawSingle)**: color adjustments now affect ONLY the foreground — unfiltered base drawn first, filtered copy on an offscreen canvas clipped via `destination-in` to `fgMask` (transparent-PNG alpha from @imgly bg removal) or a `buildColorKeyMask` fallback (samples TOP corners = headroom background). Removed the CSS `filter` on `canvas-single` so preview reflects true pixels. `fgMask` state captured in `runBackgroundRemoval`, cleared on upload/revert. PASS (bg-removed path perfect; color-key fallback improved to top-corner sampling).
+- Test fixtures: /app/tests/assets/portrait1.jpg, portrait2.jpg.
+
