@@ -3633,6 +3633,17 @@ class VesikalikAiEditIn(BaseModel):
     color: str           # hex like "#0f172a" or name
     color_name: str = "" # optional human-readable ("lacivert")
 
+DEFAULT_AI_CREDITS = 25
+
+def _ai_credits_of(user: dict) -> int:
+    v = user.get("ai_credits")
+    return DEFAULT_AI_CREDITS if v is None else int(v)
+
+@api_router.get("/vesikalik/ai-credits")
+async def vesikalik_ai_credits(admin: dict = Depends(require_admin)):
+    """Remaining paid AI-garment credits for the current user."""
+    return {"remaining": _ai_credits_of(admin), "total": DEFAULT_AI_CREDITS}
+
 @api_router.post("/vesikalik/ai-edit")
 async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(require_admin)):
     """Send the studio photo to Gemini Nano Banana for garment editing.
@@ -3644,6 +3655,11 @@ async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(re
     key = os.environ.get("EMERGENT_LLM_KEY")
     if not key:
         raise HTTPException(status_code=500, detail="AI anahtarı yapılandırılmamış")
+
+    # Paid feature — enforce remaining credits before spending on the model.
+    remaining = _ai_credits_of(admin)
+    if remaining <= 0:
+        raise HTTPException(status_code=402, detail="AI krediniz bitti. Lütfen kredi ekleyin.")
 
     # Strip a data URL prefix if the frontend sent one
     b64 = payload.image_base64
@@ -3700,7 +3716,9 @@ async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(re
     if not images:
         raise HTTPException(status_code=502, detail="AI görüntü üretmedi, farklı bir kıyafet/renk deneyin")
     out = images[0]
-    return {"image_base64": out.get("data", ""), "mime_type": out.get("mime_type", "image/png")}
+    new_remaining = max(0, remaining - 1)
+    await db.users.update_one({"id": admin.get("id")}, {"$set": {"ai_credits": new_remaining}})
+    return {"image_base64": out.get("data", ""), "mime_type": out.get("mime_type", "image/png"), "credits_remaining": new_remaining}
 
 
 @api_router.get("/")

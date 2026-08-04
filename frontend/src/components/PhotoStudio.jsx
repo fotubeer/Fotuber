@@ -261,7 +261,20 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
   const [redEyeBusy, setRedEyeBusy] = useState(false);
   const [sharpenBusy, setSharpenBusy] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [credits, setCredits] = useState(null); // { remaining, total } for paid AI
   const undoRef = useRef([]);
+
+  // Load remaining paid-AI credits for the current user.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch(`${API}/api/vesikalik/ai-credits`, { headers: { ...authHeaders() } });
+        if (res.ok && alive) setCredits(await res.json());
+      } catch (e) { /* ignore — backend still enforces */ }
+    })();
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     setGarment((g) => (gender === "female" && (g === "polo" || g === "shirt")) ? "blouse"
