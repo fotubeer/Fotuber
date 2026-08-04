@@ -103,6 +103,7 @@ const AdminPassportPhoto = () => {
   const [adj, setAdj] = useState({ brightness: 100, contrast: 100, saturation: 100, warmth: 0, sharpness: 0, retouch: false, retouchIntensity: 60 });
   const [cutColor, setCutColor] = useState("#9ca3af"); // thin gray dashed cut lines
   const [cutWidth, setCutWidth] = useState(0.5); // mm
+  const [cutStyle, setCutStyle] = useState("dashed"); // "dashed" | "solid"
   const [watermark, setWatermark] = useState(null); // dataUrl
   const [code, setCode] = useState(() => localStorage.getItem("fotuber_last_code") || "FTB00001");
   const [archive, setArchive] = useState([]);
@@ -529,7 +530,7 @@ const AdminPassportPhoto = () => {
     if (cutWidth > 0) {
       ctx.strokeStyle = cutColor;
       ctx.lineWidth = Math.max(1, mmToPx(cutWidth));
-      ctx.setLineDash([mmToPx(2), mmToPx(1)]);
+      ctx.setLineDash(cutStyle === "solid" ? [] : [mmToPx(2), mmToPx(1)]);
       const off = gap > 0 ? gap / 2 : 0;
       // Vertical lines (top -> bottom of the whole paper).
       for (let c = 0; c <= cols; c++) {
@@ -556,7 +557,7 @@ const AdminPassportPhoto = () => {
     ctx.font = `${mmToPx(2.5)}px sans-serif`;
     ctx.fillText(code, mmToPx(2), ph - mmToPx(2));
     return canvas;
-  }, [image, spec, paper, layout, count, cutColor, cutWidth, watermark, code, drawSingle, photoGap, sheetOffset, wmPos, wmScale, wmOpacity]);
+  }, [image, spec, paper, layout, count, cutColor, cutWidth, cutStyle, watermark, code, drawSingle, photoGap, sheetOffset, wmPos, wmScale, wmOpacity]);
 
   // When spec changes, re-run auto detection so the aspect matches the new format
   useEffect(() => {
@@ -567,7 +568,7 @@ const AdminPassportPhoto = () => {
   }, [specCode]);
 
   // Redraw whenever inputs change
-  useEffect(() => { if (image) { drawSingle(); drawSheet(); } }, [image, spec, crop, rotate, adj, cutColor, cutWidth, watermark, count, paperCode, fgMask, drawSingle, drawSheet]);
+  useEffect(() => { if (image) { drawSingle(); drawSheet(); } }, [image, spec, crop, rotate, adj, cutColor, cutWidth, cutStyle, watermark, count, paperCode, fgMask, drawSingle, drawSheet]);
 
   const downloadCanvas = (canvas, filename) => {
     canvas.toBlob((blob) => {
@@ -814,6 +815,51 @@ const AdminPassportPhoto = () => {
                 <input type="color" value={cutColor} onChange={(e) => setCutColor(e.target.value)} className="w-10 h-8 rounded" data-testid="cut-color" />
                 <Label className="text-xs">Kalınlık (mm)</Label>
                 <Input type="number" step="0.1" min="0" max="3" value={cutWidth} onChange={(e) => setCutWidth(Number(e.target.value))} className="w-20" data-testid="cut-width" />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <Label>Çizgi Stili</Label>
+                  <span className="inline-flex items-center gap-2 text-slate-500">
+                    <svg width="52" height="10" data-testid="cut-style-preview">
+                      <line x1="1" y1="5" x2="51" y2="5" stroke={cutColor}
+                        strokeWidth={Math.max(1, Math.round(cutWidth * 2))}
+                        strokeDasharray={cutStyle === "solid" ? "none" : "6 3"} />
+                    </svg>
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg text-xs" data-testid="cut-style-switch">
+                  <button
+                    type="button"
+                    onClick={() => setCutStyle("dashed")}
+                    className={`py-2 rounded-md transition-colors ${cutStyle === "dashed" ? "bg-emerald-600 text-white shadow font-semibold" : "text-slate-600"}`}
+                    data-testid="cut-style-dashed"
+                  >
+                    Kesikli
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCutStyle("solid")}
+                    className={`py-2 rounded-md transition-colors ${cutStyle === "solid" ? "bg-emerald-600 text-white shadow font-semibold" : "text-slate-600"}`}
+                    data-testid="cut-style-solid"
+                  >
+                    Düz
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <span className="text-[11px] text-slate-500">Hızlı renk:</span>
+                  {["#9ca3af", "#000000", "#ffffff", "#dc2626", "#0369a1"].map((hc) => (
+                    <button
+                      key={hc}
+                      type="button"
+                      onClick={() => setCutColor(hc)}
+                      className={`h-5 w-5 rounded border ${cutColor === hc ? "ring-2 ring-emerald-500 border-slate-900" : "border-slate-300"}`}
+                      style={{ backgroundColor: hc }}
+                      title={hc}
+                      data-testid={`cut-color-${hc.substring(1)}`}
+                    />
+                  ))}
+                </div>
               </div>
 
               <div>
