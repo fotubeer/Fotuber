@@ -195,3 +195,8 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - **Bug 2 (drawSingle)**: color adjustments now affect ONLY the foreground — unfiltered base drawn first, filtered copy on an offscreen canvas clipped via `destination-in` to `fgMask` (transparent-PNG alpha from @imgly bg removal) or a `buildColorKeyMask` fallback (samples TOP corners = headroom background). Removed the CSS `filter` on `canvas-single` so preview reflects true pixels. `fgMask` state captured in `runBackgroundRemoval`, cleared on upload/revert. PASS (bg-removed path perfect; color-key fallback improved to top-corner sampling).
 - Test fixtures: /app/tests/assets/portrait1.jpg, portrait2.jpg.
 
+
+## Session H (Jun 2026) — Rötuş whiteout + Studio + Filigran (verified iteration_17)
+- Retouch whiteout FIXED: applyRetouch now try/catch + drops fgMask; drawSingle foreground-mask overlay wrapped in try/catch so the unfiltered base always renders (canvas-single ~99.8% non-white after Apply).
+- Removed FREE recolor mode in PhotoStudio; AI garment+color only, with "Ucretli" badge (studio-paid-badge) and button "Kiyafeti Degistir (AI) — Ucretli".
+- Watermark reverted to PER-PHOTO (N copies) at bottom of each cell with Sol/Orta/Sag align (wmAlign; wm-align-switch). Old 3x3 wm-pos-grid removed. Band logic dropped; cut lines still edge-to-edge dashed/solid.
