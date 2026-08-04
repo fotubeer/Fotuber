@@ -289,9 +289,8 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
     setRecolorBusy(true);
     try {
       pushUndo();
-      const dataUrl = await recolorGarment(image.el, color);
       const im = await loadImageFromSrc(dataUrl);
-      applyImage(im);
+      applyImage(im, { keepCrop: true });
       toast.success(`Rengi ${colorName || color} yapıldı`);
     } catch (e) {
       toast.error(e.message || "Renk değiştirme başarısız");

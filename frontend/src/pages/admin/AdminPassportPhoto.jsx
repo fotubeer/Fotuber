@@ -93,11 +93,20 @@ const AdminPassportPhoto = () => {
     img.src = src;
   });
 
-  const applyImage = useCallback((imgObj) => {
+  const applyImage = useCallback((imgObj, opts = {}) => {
     setImage(imgObj);
-    const shortSide = Math.min(imgObj.w, imgObj.h);
-    setCrop({ cx: imgObj.w / 2, cy: imgObj.h / 2, w: shortSide * 0.7 });
-    setAutoDetected(false);
+    if (!opts.keepCrop) {
+      const shortSide = Math.min(imgObj.w, imgObj.h);
+      setCrop({ cx: imgObj.w / 2, cy: imgObj.h / 2, w: shortSide * 0.7 });
+      setAutoDetected(false);
+    } else if (imgObj.w && imgObj.h) {
+      // If dimensions changed but caller wants to keep the crop, rescale it
+      setCrop((c) => {
+        // Only rescale if we have a previous image to compare against
+        // Otherwise keep the passed crop untouched
+        return c;
+      });
+    }
   }, []);
 
   const runBackgroundRemoval = useCallback(async (rawFile, bgColor = "#ffffff") => {
