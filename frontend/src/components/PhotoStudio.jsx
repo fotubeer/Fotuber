@@ -265,6 +265,9 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
   const [gemini, setGemini] = useState(null); // { connected, masked }
   const [geminiInput, setGeminiInput] = useState("");
   const [geminiBusy, setGeminiBusy] = useState(false);
+  const [topupOpen, setTopupOpen] = useState(false);
+  const [packages, setPackages] = useState(null);
+  const [topupBusy, setTopupBusy] = useState(null);
   const undoRef = useRef([]);
 
   // Load remaining paid-AI credits + own-key status for the current user.
@@ -273,7 +276,7 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
       const res = await fetch(`${API}/api/vesikalik/ai-credits`, { headers: { ...authHeaders() } });
       if (res.ok) {
         const d = await res.json();
-        setCredits({ remaining: d.remaining, total: d.total });
+        setCredits({ remaining: d.remaining, total: d.total, mode: d.mode, unit_price: d.unit_price, markup: d.markup });
         setGemini({ connected: !!d.own_key, masked: d.masked });
       }
     } catch (e) { /* ignore — backend still enforces */ }
@@ -310,6 +313,34 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
     } catch (e) {
       toast.error("İşlem başarısız");
     } finally { setGeminiBusy(false); }
+  };
+
+  const openTopup = async () => {
+    setTopupOpen(true);
+    if (!packages) {
+      try {
+        const res = await fetch(`${API}/api/vesikalik/credit-packages`, { headers: { ...authHeaders() } });
+        if (res.ok) setPackages(await res.json());
+      } catch (e) { /* ignore */ }
+    }
+  };
+
+  const buyPackage = async (id) => {
+    setTopupBusy(id);
+    try {
+      const res = await fetch(`${API}/api/vesikalik/credits/topup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ package_id: id }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.detail || "Yükleme başarısız");
+      setCredits((c) => ({ ...(c || {}), total: c?.total ?? 25, remaining: d.remaining }));
+      toast.success(`${d.added} kredi yüklendi (demo)`);
+      setTopupOpen(false);
+    } catch (e) {
+      toast.error(e.message || "Yükleme başarısız");
+    } finally { setTopupBusy(null); }
   };
 
   useEffect(() => {
@@ -520,18 +551,25 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
               </p>
             </div>
 
-            {/* Credit / own-key indicator (next to the button) */}
+            {/* Credit / own-key / role indicator (next to the button) */}
             <div className="flex items-center justify-between">
               <span className="text-[11px] text-slate-500">AI Kredisi</span>
-              {gemini?.connected ? (
-                <span data-testid="ai-credits-badge" className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-indigo-100 text-indigo-800 border-indigo-300">Kendi anahtarınız aktif</span>
-              ) : credits ? (
-                <span data-testid="ai-credits-badge" className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${credits.remaining <= 0 ? "bg-red-100 text-red-700 border-red-300" : credits.remaining <= 3 ? "bg-amber-100 text-amber-800 border-amber-300" : "bg-emerald-100 text-emerald-800 border-emerald-300"}`}>
-                  {credits.remaining <= 0 ? "Krediniz bitti" : `Kalan: ${credits.remaining}/${credits.total} kredi`}
-                </span>
-              ) : (
-                <span data-testid="ai-credits-badge" className="text-[11px] text-slate-400">…</span>
-              )}
+              <div className="flex items-center gap-2">
+                {gemini?.connected ? (
+                  <span data-testid="ai-credits-badge" className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-indigo-100 text-indigo-800 border-indigo-300">Kendi anahtarınız aktif</span>
+                ) : credits?.mode === "emergent" ? (
+                  <span data-testid="ai-credits-badge" className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-slate-200 text-slate-700 border-slate-300">Yönetici · Emergent</span>
+                ) : credits ? (
+                  <span data-testid="ai-credits-badge" className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${credits.remaining <= 0 ? "bg-red-100 text-red-700 border-red-300" : credits.remaining <= 3 ? "bg-amber-100 text-amber-800 border-amber-300" : "bg-emerald-100 text-emerald-800 border-emerald-300"}`}>
+                    {credits.remaining <= 0 ? "Krediniz bitti" : `Kalan: ${credits.remaining} kredi`}
+                  </span>
+                ) : (
+                  <span data-testid="ai-credits-badge" className="text-[11px] text-slate-400">…</span>
+                )}
+                {!gemini?.connected && (
+                  <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-indigo-300 text-indigo-700 hover:bg-indigo-50" onClick={openTopup} data-testid="open-topup-btn">Kredi Yükle</Button>
+                )}
+              </div>
             </div>
 
             <Button onClick={doAiEdit} disabled={aiBusy || !image || (!gemini?.connected && credits && credits.remaining <= 0)} className="w-full bg-indigo-600 hover:bg-indigo-700" data-testid="studio-ai-apply">
@@ -572,6 +610,45 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
         beforeSrc={originalSrc}
         afterSrc={image?.src}
       />
+
+      <Dialog open={topupOpen} onOpenChange={setTopupOpen}>
+        <DialogContent className="max-w-md" data-testid="topup-dialog">
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Wand2 className="w-4 h-4" />Kredi Yükle</DialogTitle></DialogHeader>
+          <p className="text-xs text-slate-500 -mt-1">
+            Demo yükleme — şu an gerçek ödeme alınmaz, krediler anında hesabınıza eklenir. (İleride Emergent ödemesine bağlanacak.)
+          </p>
+          {packages && (
+            <p className="text-[11px] text-slate-400">
+              Kredi başı {packages.unit_price}₺ — Emergent işlem maliyetinin {packages.markup}× katı.
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-3 mt-1">
+            {(packages?.packages || []).map((p) => (
+              <div
+                key={p.id}
+                data-testid={`topup-pkg-${p.id}`}
+                className={`rounded-xl border p-3 flex flex-col items-center gap-1 ${p.popular ? "border-indigo-500 ring-1 ring-indigo-300 bg-indigo-50/40" : "border-slate-200"}`}
+              >
+                {p.popular && <span className="text-[10px] font-bold text-indigo-600 tracking-wide">POPÜLER</span>}
+                <span className="text-2xl font-extrabold text-slate-800">{p.credits}</span>
+                <span className="text-[11px] text-slate-500 -mt-1">kredi</span>
+                <span className="text-base font-semibold text-slate-900">{p.price}₺</span>
+                <span className="text-[10px] text-slate-400">{p.label}</span>
+                <Button
+                  size="sm"
+                  className="w-full mt-1 bg-indigo-600 hover:bg-indigo-700"
+                  onClick={() => buyPackage(p.id)}
+                  disabled={topupBusy === p.id}
+                  data-testid={`topup-buy-${p.id}`}
+                >
+                  {topupBusy === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : "Yükle"}
+                </Button>
+              </div>
+            ))}
+            {!packages && <div className="col-span-2 text-center text-xs text-slate-400 py-6">Paketler yükleniyor…</div>}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

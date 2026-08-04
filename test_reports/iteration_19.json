@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 19 — Verified new AI credit top-up (demo) flow end-to-end. Backend: 5/5 pytest pass in /app/backend/tests/test_credit_topup.py. GET /api/vesikalik/ai-credits returns role='admin', mode='emergent', unit_price=4.0, markup=2.0, currency='TRY'. GET /api/vesikalik/credit-packages returns currency='TRY', demo=true, unit_price=4.0, markup=2.0 and 4 packages p10/p25/p50/p100 with prices 40/100/200/400 TRY (credits*4); only p25 has popular=true. POST /api/vesikalik/credits/topup {package_id:'p10'} returns {remaining:<old+10>, added:10, package:{...}} and a follow-up GET /api/vesikalik/ai-credits confirms persistence (+10). Invalid package_id 'pXX' -> HTTP 400 detail='Geçersiz paket'. All 3 endpoints require auth (401/403 without token). Frontend (public URL): logged in as admin via /api/auth/login (token injected into localStorage after /giris redirect issue), navigated to /admin/vesikalik. Credit badge [data-testid=ai-credits-badge] reads exactly 'Yönetici · Emergent'. [data-testid=open-topup-btn] visible; clicking opens [data-testid=topup-dialog] listing 4 cards [data-testid=topup-pkg-p10/p25/p50/p100] with credit counts, prices 40₺/100₺/200₺/400₺ and labels Başlangıç/Popüler/Avantajlı/Pro; p25 shows 'POPÜLER' marker. Dialog contains the note 'Kredi başı 4₺ — Emergent işlem maliyetinin 2× katı.' and 'Demo yükleme — şu an gerçek ödeme alınmaz...'. Clicking [data-testid=topup-buy-p10] closes the dialog, shows the success toast '10 kredi yüklendi (demo)' in DOM, and a follow-up GET /api/vesikalik/ai-credits shows remaining increased by exactly 10 (60→70) while mode stayed 'emergent'. Regression: [data-testid=byok-box], gemini-key-input, gemini-connect-btn, studio-paid-badge='Ücretli', studio-ai-apply present; legacy free-recolor testids studio-mode-recolor/studio-recolor-apply/studio-mode-switch all count=0. Invalid Gemini key 'AIzaINVALIDtestkey123' → HTTP 400 and status remains 'Bağlı değil'. Upload of /app/tests/assets/portrait1.jpg via #vf renders canvas-single (591×709) and canvas-sheet; download-single-btn and download-sheet-btn visible. Retouch flow: retouch-open-btn → paint on canvas → retouch-apply completes; sampled center/quarter pixels are non-white ([101,101,93], [222,171,141], [110,98,82]) confirming NO white-out.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_credit_topup.py",
+    "/app/test_reports/pytest/iter19_topup.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Minor: GET /api/vesikalik/ai-credits returns unit_price as int 4 and markup as int 2 (whereas /credit-packages returns them as floats). Python tests pass because 4==4.0, but consider always emitting float for JSON consistency (float(_credit_unit_price()) and float(AI_CREDIT_MARKUP)).",
+    "Minor: /giris route on the public site currently renders the member 'Giriş Yap' form after first client-side interaction, while an initial paint showed the staff 'Personel Girişi' card — E2E login through /giris was flaky (page.get_by_role('Panele Gir') timed out because DOM had already swapped to member form). Workaround used: POST /api/auth/login then inject localStorage.token. Consider a stable /admin-login or explicit data-testid on the staff login form + submit button to make E2E login deterministic.",
+    "Pre-existing: '<circle> attribute cx/cy: Expected length, \"undefined\"' SVG warnings on /admin/vesikalik (unchanged from prior iterations) — cosmetic.",
+    "Pre-existing: transient 'Model yüklenemedi. İnternet bağlantınızı kontrol edin.' toast on first face-api load (noted iter_16/18) — non-blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_credit_topup.py"
+  ],
+  "success_rate": { "backend": "100% (5/5 pytest)", "frontend": "100% (all requested testids, prices, POPÜLER marker, toast, persistence, regressions verified)" },
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. Test top-up added 10 credits to admin's ai_credits balance (idempotent-safe; started 60, ended 70).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New endpoints: GET /api/vesikalik/credit-packages, POST /api/vesikalik/credits/topup, and extended GET /api/vesikalik/ai-credits (adds role/mode/unit_price/markup/currency). Credit tiers 10/25/50/100 with unit_price=4 TRY (base 2 * markup 2). Admin/staff mode='emergent' — AI edits use owner Emergent balance, do NOT consume purchased credits, but topup still increments the stored user.ai_credits value. Test file /app/backend/tests/test_credit_topup.py runs in ~3s and is safe to re-run (each run bumps admin's ai_credits by 10). Frontend E2E login through /giris is flaky — use /api/auth/login + localStorage.token injection.",
+  "rca of the issue": "N/A — no bugs found. Backend and frontend top-up flow behave exactly per spec."
+}

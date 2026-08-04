@@ -3635,6 +3635,31 @@ class VesikalikAiEditIn(BaseModel):
 
 DEFAULT_AI_CREDITS = 25
 
+# Pricing model: each credit = one AI edit. The customer is charged a MARKUP
+# (default 2x) over what Emergent costs the owner per edit, so the owner's
+# Emergent balance grows with every sale. Base cost + markup are configurable.
+AI_CREDIT_BASE_COST = float(os.environ.get("AI_CREDIT_BASE_COST", "2.0"))  # Emergent cost per 1 edit (TRY)
+AI_CREDIT_MARKUP = float(os.environ.get("AI_CREDIT_MARKUP", "2"))          # customer pays this multiple
+CREDIT_TIERS = [10, 25, 50, 100]
+CREDIT_LABELS = {10: "Başlangıç", 25: "Popüler", 50: "Avantajlı", 100: "Pro"}
+
+def _credit_unit_price() -> float:
+    return round(AI_CREDIT_BASE_COST * AI_CREDIT_MARKUP, 2)
+
+def _credit_packages() -> dict:
+    unit = _credit_unit_price()
+    out = {}
+    for c in CREDIT_TIERS:
+        out[f"p{c}"] = {
+            "id": f"p{c}",
+            "credits": c,
+            "price": round(unit * c, 2),
+            "unit_price": unit,
+            "label": CREDIT_LABELS.get(c, ""),
+            "popular": c == 25,
+        }
+    return out
+
 def _ai_credits_of(user: dict) -> int:
     v = user.get("ai_credits")
     return DEFAULT_AI_CREDITS if v is None else int(v)
@@ -3722,14 +3747,56 @@ async def delete_gemini_key(admin: dict = Depends(require_admin)):
 
 @api_router.get("/vesikalik/ai-credits")
 async def vesikalik_ai_credits(admin: dict = Depends(require_admin)):
-    """Remaining paid AI-garment credits (app pool) + own-key status."""
+    """Remaining paid AI-garment credits + own-key/role status + pricing."""
     raw = _user_gemini_key(admin)
+    role = admin.get("role")
+    mode = "own_key" if raw else ("emergent" if role in ("admin", "staff") else "credits")
     return {
         "remaining": _ai_credits_of(admin),
         "total": DEFAULT_AI_CREDITS,
         "own_key": bool(raw),
         "masked": _mask_key(raw) if raw else None,
+        "role": role,
+        "mode": mode,
+        "unit_price": _credit_unit_price(),
+        "markup": AI_CREDIT_MARKUP,
+        "currency": "TRY",
     }
+
+@api_router.get("/vesikalik/credit-packages")
+async def vesikalik_credit_packages(admin: dict = Depends(require_admin)):
+    """Available credit top-up packages (per-user). Price = 2x Emergent cost."""
+    return {
+        "currency": "TRY",
+        "demo": True,
+        "unit_price": _credit_unit_price(),
+        "markup": AI_CREDIT_MARKUP,
+        "packages": list(_credit_packages().values()),
+    }
+
+class CreditTopupIn(BaseModel):
+    package_id: str
+
+@api_router.post("/vesikalik/credits/topup")
+async def vesikalik_credit_topup(payload: CreditTopupIn, admin: dict = Depends(require_admin)):
+    """DEMO top-up: add the selected package's credits to the user's balance.
+    No real payment yet — can be replaced by a Stripe checkout later."""
+    pkg = _credit_packages().get(payload.package_id)
+    if not pkg:
+        raise HTTPException(status_code=400, detail="Geçersiz paket")
+    current = _ai_credits_of(admin)
+    new_remaining = current + int(pkg["credits"])
+    await db.users.update_one({"id": admin.get("id")}, {"$set": {"ai_credits": new_remaining}})
+    await db.ai_credit_topups.insert_one({
+        "user_id": admin.get("id"),
+        "package_id": pkg["id"],
+        "credits": pkg["credits"],
+        "price": pkg["price"],
+        "currency": "TRY",
+        "demo": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"remaining": new_remaining, "added": pkg["credits"], "package": pkg}
 
 @api_router.post("/vesikalik/ai-edit")
 async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(require_admin)):
@@ -3801,13 +3868,16 @@ async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(re
             raise HTTPException(status_code=502, detail="AI görüntü üretmedi, farklı bir kıyafet/renk deneyin")
         return {"image_base64": out_b64, "mime_type": out_mime, "own_key": True}
 
-    # --- App-pool path: Emergent key + paid credits ---
+    # --- App-pool path: Emergent key. Owner side (admin/staff) uses the owner's
+    # Emergent balance WITHOUT consuming purchasable credits; site members
+    # consume 1 purchased credit per edit (bought at 2x the Emergent cost). ---
     key = os.environ.get("EMERGENT_LLM_KEY")
     if not key:
         raise HTTPException(status_code=500, detail="AI anahtarı yapılandırılmamış")
+    owner_side = admin.get("role") in ("admin", "staff")
     remaining = _ai_credits_of(admin)
-    if remaining <= 0:
-        raise HTTPException(status_code=402, detail="AI krediniz bitti. Kendi Gemini anahtarınızı bağlayın veya kredi ekleyin.")
+    if not owner_side and remaining <= 0:
+        raise HTTPException(status_code=402, detail="AI krediniz bitti. Kendi Gemini anahtarınızı bağlayın veya kredi yükleyin.")
 
     chat = LlmChat(
         api_key=key,
@@ -3825,9 +3895,12 @@ async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(re
     if not images:
         raise HTTPException(status_code=502, detail="AI görüntü üretmedi, farklı bir kıyafet/renk deneyin")
     out = images[0]
+    if owner_side:
+        # Owner's own Emergent balance — no purchasable-credit deduction.
+        return {"image_base64": out.get("data", ""), "mime_type": out.get("mime_type", "image/png"), "own_key": False, "emergent": True, "credits_remaining": remaining}
     new_remaining = max(0, remaining - 1)
     await db.users.update_one({"id": admin.get("id")}, {"$set": {"ai_credits": new_remaining}})
-    return {"image_base64": out.get("data", ""), "mime_type": out.get("mime_type", "image/png"), "credits_remaining": new_remaining, "own_key": False}
+    return {"image_base64": out.get("data", ""), "mime_type": out.get("mime_type", "image/png"), "own_key": False, "credits_remaining": new_remaining}
 
 
 @api_router.get("/")
