@@ -1,0 +1,122 @@
+{
+  "theme": "dark",
+  "design_concept": "Professional Creative Studio (Terminal/Luxury Hybrid). Optimized for long-session photo editing, minimizing eye strain while making photo colors pop.",
+  "typography": {
+    "primary_font": "Manrope",
+    "secondary_font": "JetBrains Mono",
+    "rules": {
+      "headings": "Manrope, tight tracking (tracking-tight), font-medium to font-bold. Never use Inter.",
+      "body": "Manrope, text-sm for standard UI labels.",
+      "numbers_and_data": "JetBrains Mono. Use for slider values, dimensions (e.g., 50x60mm), and coordinate data. Gives a technical, precise feel.",
+      "hierarchy": {
+        "h1": "text-2xl sm:text-3xl font-semibold tracking-tight",
+        "h2": "text-xl font-medium tracking-tight",
+        "panel_headers": "text-xs font-bold uppercase tracking-[0.2em] text-zinc-400"
+      }
+    }
+  },
+  "colors": {
+    "backgrounds": {
+      "app": "#09090B",
+      "sidebar_left": "#18181B",
+      "panel_right": "#18181B",
+      "canvas_stage": "#000000",
+      "checkerboard_light": "#1F1F22",
+      "checkerboard_dark": "#18181B"
+    },
+    "text": {
+      "primary": "#FAFAFA",
+      "secondary": "#A1A1AA",
+      "muted": "#52525B",
+      "accent": "#06B6D4"
+    },
+    "brand_accent": {
+      "default": "#06B6D4",
+      "hover": "#0891B2",
+      "active": "#22D3EE",
+      "glow": "rgba(6, 182, 212, 0.5)"
+    },
+    "borders": {
+      "default": "#27272A",
+      "focus": "#06B6D4"
+    },
+    "status": {
+      "warning": "#F59E0B",
+      "success": "#10B981",
+      "error": "#EF4444"
+    }
+  },
+  "grids_and_layouts": {
+    "app_layout": "h-screen w-full flex overflow-hidden bg-zinc-950",
+    "left_toolbar": "w-16 flex-shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col items-center py-4 gap-4 z-10",
+    "center_stage": "flex-1 relative flex flex-col items-center justify-center overflow-hidden bg-black",
+    "right_panel": "w-80 flex-shrink-0 border-l border-zinc-800 bg-zinc-900 flex flex-col overflow-y-auto z-10",
+    "canvas_area": "Workspace must have generous padding (p-12) around the actual photo to allow zooming and panning.",
+    "print_sheet_grid": "2x2 grid setup for the print layout with exactly thin gray dashed lines (stroke-dasharray: '4 4')."
+  },
+  "visual_enhancers": {
+    "surfaces": "Use 'Grid Borders' (The Technical Look) for the right panel sections. Divide properties with border-b border-zinc-800.",
+    "shadows": "Minimal. Rely on 1px borders (#27272A) for separation instead of shadows, keeping the UI flat and professional like Lightroom.",
+    "canvas_background": "Use an SVG checkerboard pattern on the center stage to indicate transparency when background is removed.",
+    "glassmorphism": "Avoid in the main workspace to prevent color distortion. Use Solid Backgrounds for all sidebars."
+  },
+  "component_usage": {
+    "sliders": "Shadcn Slider. Customize: track should be thin (h-1 bg-zinc-800), thumb should be small and use the accent color (#06B6D4). Value must be displayed next to slider in JetBrains Mono.",
+    "buttons": "Square or rounded-sm. No pill shapes for this technical tool. Primary buttons use bg-cyan-500 text-black hover:bg-cyan-400.",
+    "toggles": "ToggleGroup for tool selection (e.g., Retouch, Garment, Red Eye). Active state must have a crisp cyan border or icon tint.",
+    "tabs": "Use minimal tabs for switching between 'Düzenle' (Edit) and 'Baskı' (Print) modes. Active tab gets a bottom border (border-b-2 border-cyan-500)."
+  },
+  "motion": {
+    "interactions": "Instantaneous or extremely fast (100ms) transitions. Tool selection should feel snappy, not floaty.",
+    "transitions": "transition-colors duration-150 ease-in-out for buttons/icons. NEVER use 'transition-all'.",
+    "loaders": "Minimalist spinner or progress bar using the accent cyan color."
+  },
+  "accessibility": {
+    "contrast": "Text must meet APCA standards. Gray text (#A1A1AA) on dark gray (#18181B) is high enough contrast.",
+    "focus": "All sliders and inputs must have focus:ring-1 focus:ring-cyan-500 focus:outline-none.",
+    "aria": "Use aria-labels for all left-toolbar icons since they lack text."
+  },
+  "media_and_icons": {
+    "icon_library": "lucide-react",
+    "icon_rules": "Stroke width 1.5. Size 20px for sidebar, 16px for panel sub-tools.",
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1770058443069-e384cd001e9b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTZ8MHwxfHNlYXJjaHwyfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMG5ldXRyYWwlMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc4NTg0OTQ0OHww&ixlib=rb-4.1.0&q=85",
+        "description": "Örnek Kadın Vesikalık (Sample image for testing auto-framing and background removal)",
+        "category": "sample_loader"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1767175620484-1ed37931a0d1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTZ8MHwxfHNlYXJjaHwzfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMG5ldXRyYWwlMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc4NTg0OTQ0OHww&ixlib=rb-4.1.0&q=85",
+        "description": "Örnek Erkek Vesikalık (Alternative sample)",
+        "category": "sample_loader"
+      }
+    ]
+  },
+  "domain_specific_rules": {
+    "watermark": "Watermark band (orta banda filigran) must have adjustable opacity and thickness tied to a slider. Overlay in center of print sheet.",
+    "cut_lines": "Kesim çizgileri (cut lines) must be visible but non-intrusive. Thin dashed #A1A1AA lines bordering the 2x2 grid elements.",
+    "turkish_ui_labels": {
+      "upload": "Fotoğraf Yükle",
+      "edit_mode": "Düzenle",
+      "print_mode": "Baskı",
+      "brightness": "Parlaklık",
+      "contrast": "Kontrast",
+      "temperature": "Sıcaklık",
+      "red_eye": "Kırmızı Göz",
+      "sharpen_eyes": "Göz Netleştirme",
+      "retouch": "Rötuş",
+      "garment": "Kıyafet Rengi",
+      "bg_remove": "Arka Plan Sil",
+      "download_single": "Vesikalık İndir",
+      "download_print": "Baskı Şablonu İndir"
+    }
+  },
+  "universal_guidelines": [
+    "Prioritize using pre-existing components from src/components/ui.",
+    "DO NOT use generic centered layouts. The workspace MUST follow the precise 3-column structural layout.",
+    "Never use AI emoji characters.",
+    "All interactive and key informational elements MUST include a data-testid attribute in kebab-case based on their role (e.g., data-testid='brightness-slider').",
+    "Never apply transition: all in CSS.",
+    "Do not use complete transparent background on headers or panels with content underneath."
+  ]
+}
