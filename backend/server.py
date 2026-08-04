@@ -3758,8 +3758,8 @@ async def vesikalik_ai_credits(admin: dict = Depends(require_admin)):
         "masked": _mask_key(raw) if raw else None,
         "role": role,
         "mode": mode,
-        "unit_price": _credit_unit_price(),
-        "markup": AI_CREDIT_MARKUP,
+        "unit_price": float(_credit_unit_price()),
+        "markup": float(AI_CREDIT_MARKUP),
         "currency": "TRY",
     }
 

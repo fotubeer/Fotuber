@@ -206,3 +206,9 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - BYOK: users can connect their OWN Google Gemini key. Endpoints GET/POST/DELETE /api/vesikalik/gemini-key. Key validated against Google on save (invalid -> 400), stored Fernet-encrypted (key derived from JWT_SECRET), returned masked only. When connected, ai-edit uses google-genai (model gemini-2.5-flash-image, env GEMINI_IMAGE_MODEL) with the user key and does NOT spend app credits (own_key:true).
 - Frontend BYOK box in PhotoStudio (byok-box, gemini-key-input, gemini-connect-btn, gemini-disconnect-btn, gemini-status); badge switches to "Kendi anahtariniz aktif" when connected. Admin-only for now (later moves to public paid membership).
 - Backend .env additions: JWT_SECRET, EMERGENT_LLM_KEY, ADMIN_EMAIL/PASSWORD, GEMINI_IMAGE_MODEL.
+
+## Session J (Jun 2026) — Kredi Yukleme (demo) + 2x fiyatlama & rol mantigi (verified iteration_19, 100%)
+- Credit top-up flow: GET /api/vesikalik/credit-packages (tiers 10/25/50/100, price=credits*unit), POST /api/vesikalik/credits/topup (DEMO, adds credits instantly, logs db.ai_credit_topups). Later can be wired to Stripe.
+- Pricing model: unit_price = AI_CREDIT_BASE_COST(env,2.0) * AI_CREDIT_MARKUP(env,2) = 4 TRY/credit (customer pays 2x Emergent cost). Prices 40/100/200/400.
+- Role logic in ai-edit + ai-credits mode: BYOK own key -> own quota; admin/staff -> Emergent balance, NO purchased-credit deduction (mode "emergent"); site members -> consume 1 purchased credit/edit. ai-credits returns role/mode/unit_price/markup/currency.
+- Frontend PhotoStudio: "Kredi Yükle" button (open-topup-btn) + topup-dialog with 4 package cards (topup-pkg-*/topup-buy-*); mode-aware badge ("Yönetici · Emergent" / "Kalan: N kredi" / "Kendi anahtarınız aktif").
