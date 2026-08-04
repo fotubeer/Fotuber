@@ -1,772 +1,928 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import {
-  Upload,
-  ImageDown,
-  Printer,
-  Wand2,
-  Eraser,
-  SunMedium,
-  Contrast,
-  Thermometer,
-  Loader2,
-  Brush,
-  ScanFace,
-  RotateCcw,
-} from "lucide-react";
-import { Button } from "../../components/ui/button";
-import { Slider } from "../../components/ui/slider";
-import { Input } from "../../components/ui/input";
-import { PhotoStudio } from "../../components/PhotoStudio";
-import { detectFace, cropFromFace } from "../../lib/faceDetect";
-import { compositeOnColor } from "../../lib/bgRemove";
-import { drawSingle, drawSheet } from "../../lib/render";
-import { getSpec, sheetLayout, PHOTO_SIZES, mmToPx } from "../../lib/passport";
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn, ZoomOut, Sparkles, ScanFace, Loader2, Eraser, Paintbrush, Move } from "lucide-react";
+import { toast } from "sonner";
+import { PHOTO_SPECS, PAPER_SIZES, suggestPaper, COUNT_PRESETS } from "@/lib/passportSpecs";
+import { detectBiometricCrop, loadFaceModels } from "@/lib/faceDetect";
+import { removeBackground, compositeOnColor } from "@/lib/bgRemove";
+import RetouchBrush from "@/components/RetouchBrush";
+import PhotoStudio from "@/components/PhotoStudio";
 
-const SAMPLES = ["/sample1.jpg", "/sample2.jpg"];
+// IndexedDB helpers for last-10 archive
+const DB_NAME = "fotuber_vesikalik";
+const STORE = "archive";
+const openDb = () => new Promise((res, rej) => {
+  const r = indexedDB.open(DB_NAME, 1);
+  r.onupgradeneeded = () => { r.result.createObjectStore(STORE, { keyPath: "id" }); };
+  r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+});
+const idbPut = async (rec) => { const db = await openDb(); return new Promise((res, rej) => { const tx = db.transaction(STORE, "readwrite"); tx.objectStore(STORE).put(rec); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); };
+const idbAll = async () => { const db = await openDb(); return new Promise((res, rej) => { const tx = db.transaction(STORE, "readonly"); const req = tx.objectStore(STORE).getAll(); req.onsuccess = () => res(req.result || []); req.onerror = () => rej(req.error); }); };
+const idbDel = async (id) => { const db = await openDb(); return new Promise((res, rej) => { const tx = db.transaction(STORE, "readwrite"); tx.objectStore(STORE).delete(id); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); };
 
-const BG_COLORS = ["#ffffff", "#f1f5f9", "#dbeafe", "#e0f2fe", "#ede9fe"];
+// Auto-increment code helper
+const nextCode = (prev) => {
+  if (!prev) return "FTB00001";
+  const m = prev.match(/^([A-Za-z]+)(\d+)$/);
+  if (!m) return prev + "1";
+  const n = String(parseInt(m[2], 10) + 1).padStart(m[2].length, "0");
+  return m[1] + n;
+};
 
-const DEFAULT_ADJ = { brightness: 1, contrast: 1, temp: 0 };
+const MM_PER_INCH = 25.4;
+const DPI = 300; // print DPI
+const mmToPx = (mm) => Math.round((mm / MM_PER_INCH) * DPI);
 
-function download(filename, canvas) {
-  const a = document.createElement("a");
-  a.download = filename;
-  a.href = canvas.toDataURL("image/jpeg", 0.95);
-  a.click();
-}
-
-function retouchAt(ctx, cx, cy, r) {
-  const x0 = Math.max(0, Math.floor(cx - r));
-  const y0 = Math.max(0, Math.floor(cy - r));
-  const x1 = Math.min(ctx.canvas.width, Math.ceil(cx + r));
-  const y1 = Math.min(ctx.canvas.height, Math.ceil(cy + r));
-  const w = x1 - x0;
-  const h = y1 - y0;
-  if (w <= 0 || h <= 0) return;
-  const img = ctx.getImageData(x0, y0, w, h);
+// BUG 2 fallback: build a foreground alpha mask by color-keying the plain
+// background (sampled from the crop corners). Used when background removal is
+// OFF so color adjustments still skip the (white) background.
+const buildColorKeyMask = (el, sx, sy, cw, ch, tw, th, tol = 60) => {
+  const c = document.createElement("canvas");
+  c.width = tw; c.height = th;
+  const cx = c.getContext("2d", { willReadFrequently: true });
+  cx.drawImage(el, sx, sy, cw, ch, 0, 0, tw, th);
+  let img;
+  try { img = cx.getImageData(0, 0, tw, th); }
+  catch (e) { cx.fillStyle = "#fff"; cx.fillRect(0, 0, tw, th); return c; }
   const p = img.data;
-  const src = new Uint8ClampedArray(p);
-  const rad = 2;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const dx = x0 + x - cx;
-      const dy = y0 + y - cy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > r) continue;
-      let ar = 0,
-        ag = 0,
-        ab = 0,
-        n = 0;
-      for (let ky = -rad; ky <= rad; ky++) {
-        for (let kx = -rad; kx <= rad; kx++) {
-          const nx = x + kx;
-          const ny = y + ky;
-          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-          const j = (ny * w + nx) * 4;
-          ar += src[j];
-          ag += src[j + 1];
-          ab += src[j + 2];
-          n++;
-        }
-      }
-      const i = (y * w + x) * 4;
-      const blend = (1 - dist / r) * 0.8;
-      p[i] += (ar / n - p[i]) * blend;
-      p[i + 1] += (ag / n - p[i + 1]) * blend;
-      p[i + 2] += (ab / n - p[i + 2]) * blend;
-    }
+  const corners = [[2, 2], [tw - 3, 2], [2, th - 3], [tw - 3, th - 3]];
+  let br = 0, bg = 0, bb = 0;
+  corners.forEach(([x, y]) => { const i = (y * tw + x) * 4; br += p[i]; bg += p[i + 1]; bb += p[i + 2]; });
+  br /= 4; bg /= 4; bb /= 4;
+  for (let i = 0; i < p.length; i += 4) {
+    const dr = p[i] - br, dg = p[i + 1] - bg, db = p[i + 2] - bb;
+    const fg = Math.sqrt(dr * dr + dg * dg + db * db) > tol ? 255 : 0;
+    p[i] = 255; p[i + 1] = 255; p[i + 2] = 255; p[i + 3] = fg;
   }
-  ctx.putImageData(img, x0, y0);
-}
+  cx.putImageData(img, 0, 0);
+  return c;
+};
 
-export default function AdminPassportPhoto() {
-  const [mode, setMode] = useState("edit"); // 'edit' | 'print'
-  const [originalImage, setOriginalImage] = useState(null); // { el, src }
-  const [image, setImage] = useState(null); // { el }
-  const [crop, setCrop] = useState(null);
+const AdminPassportPhoto = () => {
+  const [specCode, setSpecCode] = useState("tr-bio");
+  const [count, setCount] = useState(6);
+  const [paperCode, setPaperCode] = useState(""); // auto if empty
+  const [image, setImage] = useState(null); // {src, w, h, el}
+  const [crop, setCrop] = useState({ cx: 0, cy: 0, w: 0 }); // pixel-space center + width
+  const [zoom, setZoom] = useState(1);
+  const [rotate, setRotate] = useState(0);
+  const [detecting, setDetecting] = useState(false);
   const [autoDetected, setAutoDetected] = useState(false);
-  const [detectMsg, setDetectMsg] = useState("");
-  const [fgMask, setFgMask] = useState(null);
-  const [bgColor, setBgColor] = useState("#ffffff");
+  const [autoBg, setAutoBg] = useState(true);
+  const [bgProcessing, setBgProcessing] = useState(false);
+  const [bgProgress, setBgProgress] = useState(0);
   const [bgRemoved, setBgRemoved] = useState(false);
-  const [adj, setAdj] = useState(DEFAULT_ADJ);
-  const [sizeKey, setSizeKey] = useState("50x60");
-  const [busy, setBusy] = useState("");
-  const [retouchOn, setRetouchOn] = useState(false);
-  const [brush, setBrush] = useState(28);
-  const [wm, setWm] = useState({
-    text: "FOTUBER",
-    opacity: 0.5,
-    size: 45,
-    align: "center",
-    color: "#64748b",
-    gapPx: 0,
+  const [originalImage, setOriginalImage] = useState(null); // {src, w, h, el} of the raw upload
+  const [fgMask, setFgMask] = useState(null); // foreground alpha mask (HTMLImageElement) from bg removal
+  const [retouchOpen, setRetouchOpen] = useState(false);
+  // Baskı dizilimi ve filigran
+  const [photoGap, setPhotoGap] = useState(0); // mm gap between photos on sheet
+  const [wmPos, setWmPos] = useState("bc"); // 3x3 grid: tl tc tr ml mc mr bl bc br
+  const [wmScale, setWmScale] = useState(14); // % of photo height
+  const [wmOpacity, setWmOpacity] = useState(85); // 0-100
+  const [sheetOffset, setSheetOffset] = useState({ x: 0, y: 0 }); // mm manual offset
+  const [adj, setAdj] = useState({ brightness: 100, contrast: 100, saturation: 100, warmth: 0, sharpness: 0, retouch: false, retouchIntensity: 60 });
+  const [cutColor, setCutColor] = useState("#9ca3af"); // thin gray dashed cut lines
+  const [cutWidth, setCutWidth] = useState(0.5); // mm
+  const [watermark, setWatermark] = useState(null); // dataUrl
+  const [code, setCode] = useState(() => localStorage.getItem("fotuber_last_code") || "FTB00001");
+  const [archive, setArchive] = useState([]);
+  const [dragging, setDragging] = useState(false);
+  const singleCanvasRef = useRef(null);
+  const sheetCanvasRef = useRef(null);
+  const wrapRef = useRef(null);
+
+  const spec = useMemo(() => PHOTO_SPECS.find((s) => s.code === specCode), [specCode]);
+  const layout = useMemo(() => suggestPaper(spec, count), [spec, count]);
+  const paper = useMemo(() => (paperCode ? PAPER_SIZES.find((p) => p.code === paperCode) : layout.paper), [paperCode, layout]);
+
+  useEffect(() => { idbAll().then(setArchive); }, []);
+  // Warm up face-api models in the background so the first detection feels instant
+  useEffect(() => { loadFaceModels().catch(() => {}); }, []);
+
+  const cssFilter = () => {
+    // warmth: -50..50 (kelvin proxy)
+    const w = adj.warmth;
+    const hueRotate = 0;
+    return `brightness(${adj.brightness}%) contrast(${adj.contrast}%) saturate(${adj.saturation}%) sepia(${Math.max(0, w) * 0.6}%) hue-rotate(${hueRotate}deg)`;
+  };
+
+  const loadImageFromSrc = (src) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ src, w: img.width, h: img.height, el: img });
+    img.onerror = reject;
+    img.src = src;
   });
 
-  const canvasRef = useRef(null);
-  const srcCanvasRef = useRef(document.createElement("canvas"));
-  const lastImgRef = useRef(null);
-  const fileInputRef = useRef(null);
-  const drawing = useRef(false);
-
-  const spec = getSpec(sizeKey, bgColor);
-  const layout = sheetLayout(spec);
-  const bandPx = mmToPx(4 + (wm.size / 100) * 10);
-
-  const loadImageFromSrc = useCallback(
-    (src) =>
-      new Promise((resolve, reject) => {
-        const im = new Image();
-        im.crossOrigin = "anonymous";
-        im.onload = () => resolve(im);
-        im.onerror = reject;
-        im.src = src;
-      }),
-    [],
-  );
-
-  const applyImage = useCallback((el, opts = {}) => {
-    setImage({ el });
-    if (!opts.keepCrop) setAutoDetected(false);
-  }, []);
-
-  // Automatic face detection whenever a fresh base image is loaded.
-  useEffect(() => {
-    if (!image?.el || autoDetected) return;
-    let cancelled = false;
-    (async () => {
-      setBusy("detect");
-      setDetectMsg("Yüz tespit ediliyor…");
-      const box = await detectFace(image.el);
-      if (cancelled) return;
-      const c = cropFromFace(box, image.el, spec.aspect);
-      setCrop(c);
-      setAutoDetected(true);
-      setDetectMsg(
-        box.source === "fallback"
-          ? "Yüz bulunamadı — otomatik ortalandı."
-          : "Yüz tespit edildi.",
-      );
-      setBusy("");
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [image, autoDetected]);
-
-  // Keep the working source canvas in sync with the current image element.
-  const syncSrc = useCallback(() => {
-    if (!image?.el || lastImgRef.current === image.el) return;
-    const el = image.el;
-    const c = srcCanvasRef.current;
-    c.width = el.naturalWidth || el.width;
-    c.height = el.naturalHeight || el.height;
-    c.getContext("2d").drawImage(el, 0, 0);
-    lastImgRef.current = el;
-  }, [image]);
-
-  const render = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !image?.el || !crop) return;
-    syncSrc();
-    const src = srcCanvasRef.current;
-    const ctx = canvas.getContext("2d");
-    if (mode === "edit") {
-      canvas.width = spec.pxW;
-      canvas.height = spec.pxH;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawSingle(ctx, 0, 0, spec.pxW, spec.pxH, src, crop, adj, spec, fgMask);
-    } else {
-      canvas.width = layout.pw;
-      canvas.height = layout.ph;
-      drawSheet(ctx, layout, src, crop, adj, spec, fgMask, {
-        ...wm,
-        bandPx,
+  const applyImage = useCallback((imgObj, opts = {}) => {
+    setImage(imgObj);
+    if (!opts.keepCrop) {
+      const shortSide = Math.min(imgObj.w, imgObj.h);
+      setCrop({ cx: imgObj.w / 2, cy: imgObj.h / 2, w: shortSide * 0.7 });
+      setAutoDetected(false);
+    } else if (imgObj.w && imgObj.h) {
+      // If dimensions changed but caller wants to keep the crop, rescale it
+      setCrop((c) => {
+        // Only rescale if we have a previous image to compare against
+        // Otherwise keep the passed crop untouched
+        return c;
       });
     }
-  }, [image, crop, adj, spec, fgMask, mode, layout, wm, bandPx, syncSrc]);
+  }, []);
 
-  useEffect(() => {
-    render();
-  }, [render]);
+  const runBackgroundRemoval = useCallback(async (rawFile, bgColor = "#ffffff") => {
+    setBgProcessing(true);
+    setBgProgress(0);
+    try {
+      const blob = await removeBackground(rawFile, (p) => setBgProgress(p));
+      // BUG 2: keep the transparent PNG (foreground alpha) as a mask so color
+      // adjustments can be limited to the person only.
+      const maskUrl = URL.createObjectURL(blob);
+      const maskImg = await new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = maskUrl; });
+      setFgMask(maskImg);
+      const { dataUrl } = await compositeOnColor(blob, bgColor);
+      const processed = await loadImageFromSrc(dataUrl);
+      applyImage(processed);
+      setBgRemoved(true);
+      URL.revokeObjectURL(maskUrl);
+      toast.success("Arka plan temizlendi, beyaz arka plan uygulandı");
+    } catch (e) {
+      console.error(e);
+      toast.error("Arka plan temizlenemedi. Orijinal fotoğraf kullanılıyor.");
+    } finally {
+      setBgProcessing(false);
+    }
+  }, [applyImage]);
 
-  const resetState = () => {
-    setFgMask(null);
+  const onFile = useCallback(async (file) => {
+    if (!file || !file.type.startsWith("image/")) { toast.error("Lütfen bir görsel dosya seçin"); return; }
     setBgRemoved(false);
-    setAdj(DEFAULT_ADJ);
-    setRetouchOn(false);
-    lastImgRef.current = null;
-  };
-
-  const handleFile = async (file) => {
-    if (!file) return;
-    setBusy("load");
+    setFgMask(null);
     const reader = new FileReader();
     reader.onload = async () => {
-      const el = await loadImageFromSrc(reader.result);
-      resetState();
-      setOriginalImage({ el, src: reader.result });
-      applyImage(el);
-      setBusy("");
+      const raw = await loadImageFromSrc(reader.result);
+      setOriginalImage(raw);
+      applyImage(raw);
+      if (autoBg) {
+        // fire and forget — spec.bg is used as the paint color
+        runBackgroundRemoval(file, spec?.bg || "#ffffff");
+      }
     };
     reader.readAsDataURL(file);
-  };
+  }, [autoBg, spec, applyImage, runBackgroundRemoval]);
 
-  const loadSample = async (idx) => {
-    setBusy("load");
-    try {
-      const el = await loadImageFromSrc(SAMPLES[idx]);
-      resetState();
-      setOriginalImage({ el, src: SAMPLES[idx] });
-      applyImage(el);
-    } catch (e) {
-      setDetectMsg("Örnek yüklenemedi.");
-    }
-    setBusy("");
-  };
+  const revertBackground = useCallback(() => {
+    if (!originalImage) return;
+    applyImage(originalImage);
+    setBgRemoved(false);
+    setFgMask(null);
+    toast.info("Orijinal fotoğrafa dönüldü");
+  }, [originalImage, applyImage]);
 
-  const doRemoveBg = async () => {
-    if (!image?.el) return;
-    setBusy("bg");
-    try {
-      const { dataUrl, mask } = compositeOnColor(image.el, bgColor);
-      const el = await loadImageFromSrc(dataUrl);
-      setFgMask(mask);
-      setBgRemoved(true);
-      applyImage(el, { keepCrop: true });
-    } catch (e) {
-      setDetectMsg("Arka plan temizlenemedi.");
-    }
-    setBusy("");
-  };
+  const removeBgNow = useCallback(async () => {
+    if (!originalImage) { toast.error("Önce fotoğraf yükleyin"); return; }
+    // Convert data URL → blob so imgly can process it
+    const resp = await fetch(originalImage.src);
+    const blob = await resp.blob();
+    await runBackgroundRemoval(blob, spec?.bg || "#ffffff");
+  }, [originalImage, spec, runBackgroundRemoval]);
 
-  const reDetect = async () => {
-    if (!image?.el) return;
-    setAutoDetected(false);
-  };
-
-  // When bg is already removed and color changes, re-composite.
-  const changeBg = async (color) => {
-    setBgColor(color);
-    if (bgRemoved && originalImage?.el) {
-      setBusy("bg");
-      try {
-        const { dataUrl, mask } = compositeOnColor(originalImage.el, color);
-        const el = await loadImageFromSrc(dataUrl);
-        setFgMask(mask);
-        applyImage(el, { keepCrop: true });
-      } catch (e) {
-        /* ignore */
+  const applyRetouch = useCallback(async (dataUrl) => {
+    const updated = await loadImageFromSrc(dataUrl);
+    // Retouch dialog downscales huge photos to MAX_EDGE=1600. If the returned
+    // image is smaller than the current one, our crop rect is in old-pixel
+    // space and would fall outside the new image, producing a blank canvas.
+    // Rescale the crop to the new dimensions.
+    setImage((prev) => {
+      if (prev && (prev.w !== updated.w || prev.h !== updated.h)) {
+        const sx = updated.w / prev.w;
+        const sy = updated.h / prev.h;
+        setCrop((c) => ({ cx: c.cx * sx, cy: c.cy * sy, w: c.w * sx }));
       }
-      setBusy("");
+      return updated;
+    });
+    toast.success("Rötuş uygulandı");
+  }, []);
+
+  // ---------- Pointer drag: pan the crop on the Tekli preview -------------
+  const singleDragRef = useRef(null);
+  const onSinglePointerDown = (ev) => {
+    if (!image) return;
+    ev.preventDefault();
+    singleCanvasRef.current.setPointerCapture(ev.pointerId);
+    singleDragRef.current = { startX: ev.clientX, startY: ev.clientY, startCx: crop.cx, startCy: crop.cy };
+  };
+  const onSinglePointerMove = (ev) => {
+    const d = singleDragRef.current;
+    if (!d || !image || !spec) return;
+    const rect = singleCanvasRef.current.getBoundingClientRect();
+    // Convert pointer delta from CSS px → source-image px
+    const targetW = mmToPx(spec.w);
+    const dispScale = rect.width / targetW; // display px per source px
+    const sourceScale = crop.w / targetW;   // source px per target output px
+    // If user drags right in display, the visible content moves right, so
+    // crop.cx should DECREASE by the equivalent source-image distance.
+    const dxSrc = ((ev.clientX - d.startX) / dispScale) * sourceScale;
+    const dySrc = ((ev.clientY - d.startY) / dispScale) * sourceScale;
+    const halfW = crop.w / 2;
+    const halfH = (crop.w * spec.h / spec.w) / 2;
+    const cx = Math.min(Math.max(d.startCx - dxSrc, halfW), image.w - halfW);
+    const cy = Math.min(Math.max(d.startCy - dySrc, halfH), image.h - halfH);
+    setCrop((c) => ({ ...c, cx, cy }));
+  };
+  const onSinglePointerUp = (ev) => {
+    if (singleCanvasRef.current?.hasPointerCapture(ev.pointerId)) {
+      singleCanvasRef.current.releasePointerCapture(ev.pointerId);
     }
+    singleDragRef.current = null;
   };
 
-  const doDownloadSingle = () => {
-    const c = document.createElement("canvas");
-    c.width = spec.pxW;
-    c.height = spec.pxH;
-    syncSrc();
-    drawSingle(
-      c.getContext("2d"),
-      0,
-      0,
-      spec.pxW,
-      spec.pxH,
-      srcCanvasRef.current,
-      crop,
-      adj,
-      spec,
-      fgMask,
-    );
-    download("vesikalik.jpg", c);
+  // ---------- Pointer drag: nudge the entire block on the Baskı preview ----
+  const sheetDragRef = useRef(null);
+  const onSheetPointerDown = (ev) => {
+    if (!image || !paper) return;
+    ev.preventDefault();
+    sheetCanvasRef.current.setPointerCapture(ev.pointerId);
+    sheetDragRef.current = { startX: ev.clientX, startY: ev.clientY, startOx: sheetOffset.x, startOy: sheetOffset.y };
+  };
+  const onSheetPointerMove = (ev) => {
+    const d = sheetDragRef.current;
+    if (!d || !paper) return;
+    const rect = sheetCanvasRef.current.getBoundingClientRect();
+    // Convert CSS pixel delta into mm on the paper
+    const mmPerCssX = paper.w / rect.width;
+    const mmPerCssY = paper.h / rect.height;
+    const dx = (ev.clientX - d.startX) * mmPerCssX;
+    const dy = (ev.clientY - d.startY) * mmPerCssY;
+    setSheetOffset({ x: Math.round((d.startOx + dx) * 10) / 10, y: Math.round((d.startOy + dy) * 10) / 10 });
+  };
+  const onSheetPointerUp = (ev) => {
+    if (sheetCanvasRef.current?.hasPointerCapture(ev.pointerId)) {
+      sheetCanvasRef.current.releasePointerCapture(ev.pointerId);
+    }
+    sheetDragRef.current = null;
   };
 
-  const doDownloadSheet = () => {
-    const c = document.createElement("canvas");
-    c.width = layout.pw;
-    c.height = layout.ph;
-    syncSrc();
-    drawSheet(
-      c.getContext("2d"),
-      layout,
-      srcCanvasRef.current,
-      crop,
-      adj,
-      spec,
-      fgMask,
-      { ...wm, bandPx },
-    );
-    download("baski-sablonu.jpg", c);
+  const runAutoDetect = useCallback(async () => {
+    if (!image?.el || !spec) { toast.error("Önce fotoğraf yükleyin"); return; }
+    setDetecting(true);
+    try {
+      const res = await detectBiometricCrop(image.el, spec);
+      if (!res.ok) { toast.error(res.message || "Otomatik tespit başarısız"); return; }
+      // Clamp inside image bounds
+      const halfW = res.w / 2;
+      const halfH = (res.w * spec.h / spec.w) / 2;
+      const cx = Math.min(Math.max(res.cx, halfW), image.w - halfW);
+      const cy = Math.min(Math.max(res.cy, halfH), image.h - halfH);
+      setCrop({ cx, cy, w: res.w });
+      setAutoDetected(true);
+      toast.success("Yüz tespit edildi, çerçeveleme uygulandı");
+    } catch (e) {
+      toast.error("Model yüklenemedi. İnternet bağlantınızı kontrol edin.");
+    } finally {
+      setDetecting(false);
+    }
+  }, [image, spec]);
+
+  // Auto-run detection once the image finishes loading (fire-and-forget)
+  useEffect(() => {
+    if (image?.el && !autoDetected) {
+      runAutoDetect();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [image]);
+
+  const onDrop = (e) => { e.preventDefault(); setDragging(false); onFile(e.dataTransfer.files?.[0]); };
+
+  // Draw the single cropped biometric photo to a canvas
+  const drawSingle = useCallback(() => {
+    if (!image || !singleCanvasRef.current || !spec || !crop.w) return null;
+    const canvas = singleCanvasRef.current;
+    const targetW = mmToPx(spec.w);
+    const targetH = mmToPx(spec.h);
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext("2d");
+    // Background
+    ctx.fillStyle = spec.bg;
+    ctx.fillRect(0, 0, targetW, targetH);
+    // Pixel-space source rect from crop
+    const cropW = crop.w;
+    const cropH = crop.w * (spec.h / spec.w);
+    const sx = crop.cx - cropW / 2;
+    const sy = crop.cy - cropH / 2;
+    if (image.el) {
+      // BUG 2: color adjustments (brightness/contrast/saturation/warmth) must
+      // affect ONLY the foreground person, never the background. Draw an
+      // unfiltered base first, then overlay a filtered copy clipped to the
+      // foreground mask (bg-removal alpha, or a color-key fallback).
+      const applyRot = (c2) => {
+        c2.translate(targetW / 2, targetH / 2);
+        c2.rotate((rotate * Math.PI) / 180);
+        c2.translate(-targetW / 2, -targetH / 2);
+      };
+      // 1) Unfiltered base — background stays exactly as-is.
+      ctx.save();
+      applyRot(ctx);
+      ctx.drawImage(image.el, sx, sy, cropW, cropH, 0, 0, targetW, targetH);
+      ctx.restore();
+
+      // 2) Filtered foreground layer on an offscreen canvas.
+      const off = document.createElement("canvas");
+      off.width = targetW; off.height = targetH;
+      const octx = off.getContext("2d");
+      octx.save();
+      octx.filter = cssFilter();
+      applyRot(octx);
+      octx.drawImage(image.el, sx, sy, cropW, cropH, 0, 0, targetW, targetH);
+      octx.restore();
+      octx.filter = "none";
+
+      // 3) Clip the filtered layer to the foreground only.
+      octx.globalCompositeOperation = "destination-in";
+      if (fgMask) {
+        const rx = fgMask.width / image.w;
+        const ry = fgMask.height / image.h;
+        octx.save();
+        applyRot(octx);
+        octx.drawImage(fgMask, sx * rx, sy * ry, cropW * rx, cropH * ry, 0, 0, targetW, targetH);
+        octx.restore();
+      } else {
+        const ck = buildColorKeyMask(image.el, sx, sy, cropW, cropH, targetW, targetH);
+        octx.drawImage(ck, 0, 0, targetW, targetH);
+      }
+      octx.globalCompositeOperation = "source-over";
+
+      // 4) Composite the masked, filtered foreground over the base.
+      ctx.drawImage(off, 0, 0);
+    }
+    // Skin retouch — luminance-diff edge-preserving smoother (surface-blur
+    // family). Small luminance deviations (blemishes, fine lines, under-eye
+    // circles, minor unevenness) are pulled towards the local LF colour;
+    // large deviations (eyes, lips, hair, eyebrows) pass through untouched.
+    // Because attenuation is driven by LUMINANCE only and applied UNIFORMLY
+    // across R/G/B, hue and saturation are mathematically preserved. The
+    // per-pixel LF (heavy blur) also preserves the local average colour so
+    // overall brightness/tone doesn't shift — no makeup/filter look.
+    if (adj.retouch) {
+      const intensity = Math.min(1, Math.max(0.1, (adj.retouchIntensity ?? 60) / 100));
+      const W = targetW, H = targetH;
+
+      // Snapshot the pre-smoothing pixels
+      const orig = ctx.getImageData(0, 0, W, H);
+
+      // Build LF (heavy blur) into an offscreen canvas
+      const lf = document.createElement("canvas");
+      lf.width = W; lf.height = H;
+      const lctx = lf.getContext("2d");
+      const blurPx = Math.max(4, Math.round(W * (0.012 + 0.02 * intensity)));
+      if ("filter" in lctx) {
+        lctx.filter = `blur(${blurPx}px)`;
+        lctx.drawImage(canvas, 0, 0);
+        lctx.filter = "none";
+      } else {
+        const scale = 0.22;
+        const tw = Math.max(4, Math.round(W * scale));
+        const th = Math.max(4, Math.round(H * scale));
+        const tmp = document.createElement("canvas");
+        tmp.width = tw; tmp.height = th;
+        const tctx = tmp.getContext("2d");
+        tctx.imageSmoothingEnabled = true;
+        tctx.imageSmoothingQuality = "high";
+        tctx.drawImage(canvas, 0, 0, tw, th);
+        lctx.imageSmoothingEnabled = true;
+        lctx.imageSmoothingQuality = "high";
+        lctx.drawImage(tmp, 0, 0, tw, th, 0, 0, W, H);
+      }
+      const lfData = lctx.getImageData(0, 0, W, H);
+
+      // Thresholds (in luminance units, 0-255). Deviations under `lo` are
+      // considered "skin texture / blemishes" — attenuate. Deviations above
+      // `hi` are "features" — leave alone. Between the two we smoothstep so
+      // there's no hard cutoff (which would create posterization).
+      const lo = 4 + 2  * (1 - intensity);   // ~4-6
+      const hi = 22 + 8 * (1 - intensity);   // ~22-30
+      const clamp255 = (v) => v < 0 ? 0 : v > 255 ? 255 : v | 0;
+
+      const od = orig.data, ld = lfData.data;
+      for (let i = 0; i < od.length; i += 4) {
+        const oR = od[i], oG = od[i + 1], oB = od[i + 2];
+        const lR = ld[i], lG = ld[i + 1], lB = ld[i + 2];
+        // Rec.601 luminance is fine here — we only need a relative edge signal
+        const oL = 0.299 * oR + 0.587 * oG + 0.114 * oB;
+        const lL = 0.299 * lR + 0.587 * lG + 0.114 * lB;
+        const absDiff = oL > lL ? oL - lL : lL - oL;
+        // strength=0 → replace with LF (blemish erased). strength=1 → keep original (feature preserved).
+        let strength;
+        if (absDiff <= lo) strength = 0;
+        else if (absDiff >= hi) strength = 1;
+        else {
+          const t = (absDiff - lo) / (hi - lo);
+          strength = t * t * (3 - 2 * t);
+        }
+        // Uniform strength across R/G/B → hue/saturation of the smoothed
+        // value equals hue/saturation of the LF (which comes from surrounding
+        // skin), so no colour cast.
+        const nR = lR + (oR - lR) * strength;
+        const nG = lG + (oG - lG) * strength;
+        const nB = lB + (oB - lB) * strength;
+        // Global intensity slider blends the smoothed pixel back with the
+        // original, so operators can dial the strength from subtle to strong.
+        od[i]     = clamp255(oR * (1 - intensity) + nR * intensity);
+        od[i + 1] = clamp255(oG * (1 - intensity) + nG * intensity);
+        od[i + 2] = clamp255(oB * (1 - intensity) + nB * intensity);
+      }
+      ctx.putImageData(orig, 0, 0);
+    }
+    return canvas;
+  }, [image, spec, crop, rotate, adj, fgMask]);
+
+  // Draw the print sheet
+  const drawSheet = useCallback(async () => {
+    if (!image || !sheetCanvasRef.current || !spec || !paper) return null;
+    const canvas = sheetCanvasRef.current;
+    const pw = mmToPx(paper.w);
+    const ph = mmToPx(paper.h);
+    canvas.width = pw;
+    canvas.height = ph;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, pw, ph);
+    drawSingle();
+    const single = singleCanvasRef.current;
+    const gap = mmToPx(photoGap);
+    let cols = layout.cols, rows = layout.rows;
+    while (rows * cols < count) rows++;
+    const cellW = mmToPx(spec.w);
+    const cellH = mmToPx(spec.h);
+
+    // Optional PNG watermark loaded once — drawn as a SINGLE strip in the
+    // middle band between the top and bottom photo rows (BUG 1).
+    let wmImg = null;
+    if (watermark) {
+      wmImg = await new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = watermark; });
+    }
+    const hasWm = !!wmImg;
+    // Band thickness tied to the "Filigran Boyutu" (wmScale) slider.
+    const bandPx = hasWm ? Math.max(mmToPx(3), Math.round(cellH * (wmScale / 100))) : 0;
+
+    const blockW = cols * cellW + (cols - 1) * gap;
+    const blockH = rows * cellH + (rows - 1) * gap + bandPx;
+    // True centering — allow overflow into the paper's bleed area on both sides.
+    // `sheetOffset` lets the operator nudge the block with the mouse.
+    const startX = (pw - blockW) / 2 + mmToPx(sheetOffset.x);
+    const startY = (ph - blockH) / 2 + mmToPx(sheetOffset.y);
+    const midRow = Math.floor(rows / 2);
+    const rowY = (r) => startY + r * (cellH + gap) + (r >= midRow ? bandPx : 0);
+    const colX = (c) => startX + c * (cellW + gap);
+    const bandTop = startY + midRow * (cellH + gap);
+
+    let idx = 0;
+    for (let r = 0; r < rows && idx < count; r++) {
+      for (let c = 0; c < cols && idx < count; c++) {
+        ctx.drawImage(single, colX(c), rowY(r), cellW, cellH);
+        idx++;
+      }
+    }
+
+    // BUG 1: single watermark centered in the middle white band, clamped to
+    // the band height so it NEVER spills onto any photo.
+    if (hasWm) {
+      const ratio = wmImg.width / wmImg.height;
+      let wmH = bandPx * 0.9;
+      let wmW = wmH * ratio;
+      const maxW = blockW * 0.9;
+      if (wmW > maxW) { wmW = maxW; wmH = wmW / ratio; }
+      const posH = wmPos[1]; // l | c | r
+      const marg = mmToPx(3);
+      const wx = posH === "l" ? startX + marg
+               : posH === "r" ? startX + blockW - wmW - marg
+               : startX + (blockW - wmW) / 2;
+      const wy = bandTop + (bandPx - wmH) / 2;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, Math.min(1, wmOpacity / 100));
+      ctx.drawImage(wmImg, wx, wy, wmW, wmH);
+      ctx.restore();
+    }
+
+    // BUG 4: cutting lines — thin gray dashed, every photo boundary INCLUDING
+    // the outer edges, each line spanning the full paper edge-to-edge.
+    if (cutWidth > 0) {
+      ctx.strokeStyle = cutColor;
+      ctx.lineWidth = Math.max(1, mmToPx(cutWidth));
+      ctx.setLineDash([mmToPx(2), mmToPx(1)]);
+      const off = gap > 0 ? gap / 2 : 0;
+      // Vertical lines (top -> bottom of the whole paper).
+      for (let c = 0; c <= cols; c++) {
+        let x = startX + c * (cellW + gap);
+        if (c > 0 && c < cols) x -= off;
+        if (c === cols) x -= gap;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ph); ctx.stroke();
+      }
+      // Horizontal lines (left -> right of the whole paper) + band edges.
+      const ys = new Set();
+      for (let r = 0; r <= rows; r++) {
+        let y = startY + r * (cellH + gap) + (r >= midRow ? bandPx : 0);
+        if (r > 0 && r < rows) y -= off;
+        if (r === rows) y -= gap;
+        ys.add(Math.round(y));
+      }
+      if (bandPx > 0) { ys.add(Math.round(bandTop)); ys.add(Math.round(bandTop + bandPx)); }
+      ys.forEach((y) => { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(pw, y); ctx.stroke(); });
+      ctx.setLineDash([]);
+    }
+
+    // Code label — small marker in the bottom bleed strip
+    ctx.fillStyle = "#666";
+    ctx.font = `${mmToPx(2.5)}px sans-serif`;
+    ctx.fillText(code, mmToPx(2), ph - mmToPx(2));
+    return canvas;
+  }, [image, spec, paper, layout, count, cutColor, cutWidth, watermark, code, drawSingle, photoGap, sheetOffset, wmPos, wmScale, wmOpacity]);
+
+  // When spec changes, re-run auto detection so the aspect matches the new format
+  useEffect(() => {
+    if (image?.el && autoDetected) {
+      runAutoDetect();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [specCode]);
+
+  // Redraw whenever inputs change
+  useEffect(() => { if (image) { drawSingle(); drawSheet(); } }, [image, spec, crop, rotate, adj, cutColor, cutWidth, watermark, count, paperCode, fgMask, drawSingle, drawSheet]);
+
+  const downloadCanvas = (canvas, filename) => {
+    canvas.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    }, "image/jpeg", 0.95);
   };
 
-  // Retouch brush handlers (edit mode only).
-  const canvasPoint = (e) => {
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    const sx = canvas.width / rect.width;
-    const sy = canvas.height / rect.height;
-    return {
-      x: (e.clientX - rect.left) * sx,
-      y: (e.clientY - rect.top) * sy,
-    };
+  const saveToArchive = async () => {
+    if (!singleCanvasRef.current) return;
+    const dataUrl = singleCanvasRef.current.toDataURL("image/jpeg", 0.7);
+    const rec = { id: `${code}-${Date.now()}`, code, spec: spec.label, createdAt: Date.now(), thumb: dataUrl };
+    const all = await idbAll();
+    // Keep only latest 10
+    if (all.length >= 10) {
+      const sorted = all.sort((a, b) => a.createdAt - b.createdAt);
+      for (let i = 0; i < all.length - 9; i++) await idbDel(sorted[i].id);
+    }
+    await idbPut(rec);
+    setArchive(await idbAll());
   };
 
-  const applyBrush = (e) => {
-    if (!retouchOn || mode !== "edit" || !crop) return;
-    const pt = canvasPoint(e);
-    const src = srcCanvasRef.current;
-    const iw = src.width;
-    const ih = src.height;
-    // canvas(target) coords -> source crop coords
-    const sx = crop.fx * iw + (pt.x / spec.pxW) * crop.fw * iw;
-    const sy = crop.fy * ih + (pt.y / spec.pxH) * crop.fh * ih;
-    const rSrc = (brush / spec.pxW) * crop.fw * iw;
-    retouchAt(src.getContext("2d", { willReadFrequently: true }), sx, sy, rSrc);
-    render();
+  const downloadSingle = async () => {
+    if (!image) { toast.error("Önce fotoğraf yükleyin"); return; }
+    downloadCanvas(singleCanvasRef.current, `${code}_tekli.jpg`);
+    await saveToArchive();
+    const next = nextCode(code);
+    localStorage.setItem("fotuber_last_code", next);
+    setCode(next);
   };
 
-  const onPointerDown = (e) => {
-    if (!retouchOn || mode !== "edit") return;
-    drawing.current = true;
-    applyBrush(e);
+  const downloadSheet = async () => {
+    if (!image) { toast.error("Önce fotoğraf yükleyin"); return; }
+    await drawSheet();
+    downloadCanvas(sheetCanvasRef.current, `${code}_baski_${count}li_${paper.code}.jpg`);
+    await saveToArchive();
+    const next = nextCode(code);
+    localStorage.setItem("fotuber_last_code", next);
+    setCode(next);
   };
-  const onPointerMove = (e) => {
-    if (drawing.current) applyBrush(e);
-  };
-  const onPointerUp = async () => {
-    if (!drawing.current) return;
-    drawing.current = false;
-    // Commit brushed pixels back to the image (keep framing & mask).
-    const el = await loadImageFromSrc(srcCanvasRef.current.toDataURL("image/png"));
-    lastImgRef.current = el; // avoid immediate re-sync overwrite
-    applyImage(el, { keepCrop: true });
-  };
-
-  const hasImage = !!image?.el;
 
   return (
-    <div
-      className="h-screen w-full flex overflow-hidden bg-zinc-950 text-zinc-100 font-manrope"
-      data-testid="passport-editor"
-    >
-      {/* Left toolbar */}
-      <div className="w-16 flex-shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col items-center py-4 gap-2 z-10">
-        <div className="mb-2 h-8 w-8 rounded-sm bg-cyan-500 text-black grid place-items-center font-bold">
-          F
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight flex items-center gap-2" data-testid="admin-vesikalik-title">
+            <Camera className="w-7 h-7 text-emerald-600" /> Fotuber Vesikalık
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">Biyometrik + vesikalık fotoğraf üretici. Sürükle-bırak, otomatik ölçü, baskıya hazır çıktı.</p>
         </div>
-        <ToolIcon
-          testid="mode-edit-btn"
-          active={mode === "edit"}
-          onClick={() => setMode("edit")}
-          label="Düzenle"
-          icon={<Wand2 size={20} strokeWidth={1.5} />}
-        />
-        <ToolIcon
-          testid="mode-print-btn"
-          active={mode === "print"}
-          onClick={() => setMode("print")}
-          label="Baskı"
-          icon={<Printer size={20} strokeWidth={1.5} />}
-        />
-        <ToolIcon
-          testid="retouch-toggle-btn"
-          active={retouchOn}
-          onClick={() => setRetouchOn((v) => !v)}
-          label="Rötuş"
-          icon={<Brush size={20} strokeWidth={1.5} />}
-          disabled={!hasImage || mode !== "edit"}
-        />
+        <div className="flex items-center gap-2">
+          <Label className="text-xs whitespace-nowrap">Fotoğraf Kodu</Label>
+          <Input value={code} onChange={(e) => setCode(e.target.value)} className="w-40" data-testid="input-code" />
+        </div>
       </div>
 
-      {/* Center stage */}
-      <div className="flex-1 relative flex flex-col items-center justify-center overflow-hidden bg-black p-8">
-        {!hasImage ? (
-          <div className="text-center max-w-sm" data-testid="empty-state">
-            <ScanFace
-              size={48}
-              strokeWidth={1.2}
-              className="mx-auto text-zinc-600 mb-4"
-            />
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Vesikalık Editörü
-            </h1>
-            <p className="text-sm text-zinc-400 mt-2">
-              Bir fotoğraf yükleyin; yüz otomatik tespit edilip
-              çerçevelensin.
-            </p>
-            <div className="mt-6 flex flex-col gap-2">
-              <Button
-                data-testid="upload-btn-empty"
-                onClick={() => fileInputRef.current?.click()}
-                className="bg-cyan-500 text-black hover:bg-cyan-400"
-              >
-                <Upload size={16} strokeWidth={1.5} />
-                Fotoğraf Yükle
-              </Button>
-              <Button
-                data-testid="load-sample-btn-empty"
-                onClick={() => loadSample(0)}
-                variant="outline"
-                className="border-zinc-700 text-zinc-200 hover:bg-zinc-800"
-              >
-                Örnek Fotoğraf Kullan
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <>
-            {busy && (
+      <div className="grid lg:grid-cols-12 gap-6">
+        {/* Left: Upload + Preview */}
+        <div className="lg:col-span-8 space-y-6">
+          {/* Drop zone */}
+          <Card className="border-slate-200">
+            <CardContent className="p-0">
               <div
-                className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-sm bg-zinc-900/90 border border-zinc-800 px-3 py-1.5 text-xs text-zinc-300"
-                data-testid="busy-indicator"
+                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={onDrop}
+                className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${dragging ? "border-emerald-500 bg-emerald-50" : "border-slate-300"}`}
+                data-testid="dropzone"
               >
-                <Loader2 size={14} className="animate-spin text-cyan-400" />
-                İşleniyor…
+                <Upload className="w-10 h-10 mx-auto text-slate-400 mb-3" />
+                <div className="text-sm text-slate-600 mb-2">Fotoğrafı buraya sürükleyin ya da</div>
+                <input type="file" accept="image/*" onChange={(e) => onFile(e.target.files?.[0])} className="hidden" id="vf" />
+                <label htmlFor="vf">
+                  <Button variant="outline" className="cursor-pointer" asChild><span>Dosya Seç</span></Button>
+                </label>
+                <label className="mt-4 inline-flex items-center gap-2 text-xs text-slate-600 select-none cursor-pointer" data-testid="auto-bg-toggle-label">
+                  <Switch checked={autoBg} onCheckedChange={setAutoBg} data-testid="auto-bg-toggle" />
+                  <span>Yüklerken arka planı otomatik temizle (beyaz)</span>
+                </label>
               </div>
-            )}
-            <div
-              className="relative shadow-2xl"
-              style={{ maxHeight: "100%", maxWidth: "100%" }}
-            >
-              <canvas
-                ref={canvasRef}
-                data-testid="preview-canvas"
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerLeave={onPointerUp}
-                className="block"
-                style={{
-                  maxHeight: "78vh",
-                  maxWidth: "100%",
-                  cursor:
-                    retouchOn && mode === "edit" ? "crosshair" : "default",
-                  imageRendering: "auto",
-                }}
-              />
-            </div>
-            {mode === "edit" && detectMsg && (
-              <p
-                data-testid="detect-message"
-                className="mt-3 text-xs text-zinc-400 font-mono-j"
-              >
-                {detectMsg}
-              </p>
-            )}
-          </>
-        )}
-      </div>
+            </CardContent>
+          </Card>
 
-      {/* Right panel */}
-      <div className="w-80 flex-shrink-0 border-l border-zinc-800 bg-zinc-900 flex flex-col overflow-y-auto z-10">
-        <Section title="Kaynak">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            data-testid="file-input"
-            onChange={(e) => handleFile(e.target.files?.[0])}
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              data-testid="upload-btn"
-              onClick={() => fileInputRef.current?.click()}
-              className="bg-cyan-500 text-black hover:bg-cyan-400"
-            >
-              <Upload size={16} strokeWidth={1.5} />
-              Yükle
-            </Button>
-            <Button
-              data-testid="load-sample-btn"
-              onClick={() => loadSample(0)}
-              variant="outline"
-              className="border-zinc-700 text-zinc-200 hover:bg-zinc-800"
-            >
-              Örnek
-            </Button>
-          </div>
-          {hasImage && (
-            <Button
-              data-testid="redetect-btn"
-              onClick={reDetect}
-              variant="ghost"
-              className="mt-2 w-full text-zinc-400 hover:text-zinc-100"
-            >
-              <ScanFace size={16} strokeWidth={1.5} />
-              Yüzü Yeniden Tespit Et
-            </Button>
-          )}
-        </Section>
-
-        {hasImage && (
-          <>
-            <Section title="Boyut">
-              <div className="grid grid-cols-2 gap-2">
-                {Object.values(PHOTO_SIZES).map((s) => (
-                  <button
-                    key={s.key}
-                    data-testid={`size-${s.key}`}
-                    onClick={() => {
-                      setSizeKey(s.key);
-                      setAutoDetected(false);
-                    }}
-                    className={`rounded-sm border px-2 py-2 text-xs transition-colors duration-150 ${
-                      sizeKey === s.key
-                        ? "border-cyan-400 text-cyan-300"
-                        : "border-zinc-700 text-zinc-300 hover:bg-zinc-800"
-                    }`}
-                  >
-                    {s.label}
-                  </button>
-                ))}
+          {/* Preview */}
+          <Card className="border-slate-200">
+            <CardHeader><CardTitle className="text-lg">Önizleme</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <div className="text-xs text-slate-500 mb-2">Tekli — {spec?.label} ({spec?.w}×{spec?.h}mm) <span className="text-[10px] text-slate-400">· fare ile sürükleyebilirsin</span></div>
+                  <div className="relative bg-slate-100 p-2 rounded flex items-center justify-center min-h-[200px]">
+                    <canvas
+                      ref={singleCanvasRef}
+                      onPointerDown={onSinglePointerDown}
+                      onPointerMove={onSinglePointerMove}
+                      onPointerUp={onSinglePointerUp}
+                      onPointerLeave={onSinglePointerUp}
+                      className="max-w-full max-h-[350px] shadow touch-none cursor-move"
+                      data-testid="canvas-single"
+                    />
+                    {bgProcessing && (
+                      <div className="absolute inset-0 rounded bg-white/85 backdrop-blur-sm flex flex-col items-center justify-center gap-3 z-10" data-testid="bg-processing-overlay">
+                        <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
+                        <div className="text-sm font-medium text-slate-900">Arka plan temizleniyor…</div>
+                        <div className="w-48 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                          <div className="h-full bg-emerald-500 transition-all duration-200" style={{ width: `${Math.round(bgProgress * 100)}%` }} data-testid="bg-processing-progress" />
+                        </div>
+                        <div className="text-[11px] text-slate-500">İlk kullanımda model indiriliyor (~40 MB, tarayıcıda önbelleklenir)</div>
+                      </div>
+                    )}
+                  </div>
+                  {bgRemoved && !bgProcessing && (
+                    <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                      <span className="text-emerald-700 bg-emerald-50 rounded px-2 py-1 inline-flex items-center gap-1" data-testid="bg-removed-badge">
+                        <Eraser className="w-3.5 h-3.5" /> Arka plan temizlendi
+                      </span>
+                      <Button size="sm" variant="ghost" onClick={revertBackground} className="h-7 text-xs text-slate-600" data-testid="bg-revert-btn">Orijinale dön</Button>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500 mb-2">Baskı — {paper?.label} · {count} adet <span className="text-[10px] text-slate-400">· fare ile kaydırabilirsin</span></div>
+                  <div className="bg-slate-100 p-2 rounded flex items-center justify-center min-h-[200px]">
+                    <canvas
+                      ref={sheetCanvasRef}
+                      onPointerDown={onSheetPointerDown}
+                      onPointerMove={onSheetPointerMove}
+                      onPointerUp={onSheetPointerUp}
+                      onPointerLeave={onSheetPointerUp}
+                      className="max-w-full max-h-[350px] shadow touch-none cursor-move"
+                      data-testid="canvas-sheet"
+                    />
+                  </div>
+                </div>
               </div>
-            </Section>
-
-            <Section title="Arka Plan">
-              <div className="flex flex-wrap gap-2 mb-3">
-                {BG_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    data-testid={`bg-color-${c.replace("#", "")}`}
-                    onClick={() => changeBg(c)}
-                    className={`h-7 w-7 rounded-sm border transition-colors duration-150 ${
-                      bgColor === c
-                        ? "border-cyan-400 ring-1 ring-cyan-400"
-                        : "border-zinc-700"
-                    }`}
-                    style={{ backgroundColor: c }}
-                    aria-label={`Arka plan ${c}`}
-                  />
-                ))}
+              <div className="flex flex-wrap gap-3 mt-6">
+                <Button onClick={runAutoDetect} disabled={!image || detecting || bgProcessing} variant="outline" className="border-emerald-600 text-emerald-700 hover:bg-emerald-50" data-testid="auto-detect-btn">
+                  {detecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ScanFace className="w-4 h-4 mr-2" />}
+                  {detecting ? "Yüz taranıyor..." : "Otomatik Yüz Tespiti"}
+                </Button>
+                <Button onClick={removeBgNow} disabled={!originalImage || bgProcessing} variant="outline" className="border-indigo-600 text-indigo-700 hover:bg-indigo-50" data-testid="bg-remove-btn">
+                  {bgProcessing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Eraser className="w-4 h-4 mr-2" />}
+                  {bgProcessing ? "İşleniyor..." : (bgRemoved ? "Tekrar Temizle" : "Arka Planı Temizle")}
+                </Button>
+                <Button onClick={() => setRetouchOpen(true)} disabled={!image || bgProcessing} variant="outline" className="border-fuchsia-600 text-fuchsia-700 hover:bg-fuchsia-50" data-testid="retouch-open-btn">
+                  <Paintbrush className="w-4 h-4 mr-2" />Rötuş Fırçası
+                </Button>
+                <Button onClick={downloadSingle} disabled={bgProcessing} className="bg-slate-900 hover:bg-slate-800" data-testid="download-single-btn"><Download className="w-4 h-4 mr-2" />Tekli İndir</Button>
+                <Button onClick={downloadSheet} disabled={bgProcessing} className="bg-emerald-600 hover:bg-emerald-700" data-testid="download-sheet-btn"><Printer className="w-4 h-4 mr-2" />Baskıya Hazır İndir</Button>
               </div>
-              <Button
-                data-testid="remove-bg-btn"
-                onClick={doRemoveBg}
-                disabled={!!busy}
-                className={`w-full ${
-                  bgRemoved
-                    ? "bg-emerald-600 hover:bg-emerald-500 text-white"
-                    : "bg-cyan-500 text-black hover:bg-cyan-400"
-                }`}
-              >
-                <Eraser size={16} strokeWidth={1.5} />
-                {bgRemoved ? "Arka Plan Temizlendi" : "Arka Planı Sil"}
-              </Button>
-              {!bgRemoved && (
-                <p className="mt-2 text-xs text-zinc-500">
-                  Not: En doğru renk ayarı için önce arka planı temizleyin.
-                </p>
+              {autoDetected && (
+                <div className="mt-3 text-xs text-emerald-700 bg-emerald-50 rounded px-3 py-2 inline-flex items-center gap-2" data-testid="detection-status">
+                  <ScanFace className="w-3.5 h-3.5" /> Yüz tespiti uygulandı — ICAO uyumlu çerçeveleme
+                </div>
               )}
-            </Section>
+            </CardContent>
+          </Card>
+        </div>
 
-            <Section title="Renk Ayarları">
-              <SliderRow
-                testid="brightness-slider"
-                icon={<SunMedium size={16} strokeWidth={1.5} />}
-                label="Parlaklık"
-                value={adj.brightness}
-                min={0.5}
-                max={1.5}
-                step={0.01}
-                display={`${Math.round(adj.brightness * 100)}%`}
-                onChange={(v) => setAdj((a) => ({ ...a, brightness: v }))}
-              />
-              <SliderRow
-                testid="contrast-slider"
-                icon={<Contrast size={16} strokeWidth={1.5} />}
-                label="Kontrast"
-                value={adj.contrast}
-                min={0.5}
-                max={1.5}
-                step={0.01}
-                display={`${Math.round(adj.contrast * 100)}%`}
-                onChange={(v) => setAdj((a) => ({ ...a, contrast: v }))}
-              />
-              <SliderRow
-                testid="temperature-slider"
-                icon={<Thermometer size={16} strokeWidth={1.5} />}
-                label="Sıcaklık"
-                value={adj.temp}
-                min={-100}
-                max={100}
-                step={1}
-                display={`${adj.temp > 0 ? "+" : ""}${adj.temp}`}
-                onChange={(v) => setAdj((a) => ({ ...a, temp: v }))}
-              />
-              <Button
-                data-testid="reset-adj-btn"
-                onClick={() => setAdj(DEFAULT_ADJ)}
-                variant="ghost"
-                className="mt-1 w-full text-zinc-400 hover:text-zinc-100"
-              >
-                <RotateCcw size={16} strokeWidth={1.5} />
-                Ayarları Sıfırla
-              </Button>
-            </Section>
+        {/* Right: Controls */}
+        <div className="lg:col-span-4 space-y-6">
+          <Card className="border-slate-200">
+            <CardHeader><CardTitle className="text-lg">Ölçü & Kağıt</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <Label className="text-xs">Ülke / Format</Label>
+                <Select value={specCode} onValueChange={setSpecCode}>
+                  <SelectTrigger data-testid="select-spec"><SelectValue /></SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {PHOTO_SPECS.map((s) => <SelectItem key={s.code} value={s.code}>{s.label} ({s.w}×{s.h}mm)</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">Adet</Label>
+                  <Select value={String(count)} onValueChange={(v) => setCount(Number(v))}>
+                    <SelectTrigger data-testid="select-count"><SelectValue /></SelectTrigger>
+                    <SelectContent>{COUNT_PRESETS.map((c) => <SelectItem key={c} value={String(c)}>{c}'lı</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Kağıt</Label>
+                  <Select value={paperCode || "auto"} onValueChange={(v) => setPaperCode(v === "auto" ? "" : v)}>
+                    <SelectTrigger data-testid="select-paper"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">Otomatik ({layout.paper.label})</SelectItem>
+                      {PAPER_SIZES.map((p) => <SelectItem key={p.code} value={p.code}>{p.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="text-xs text-emerald-700 bg-emerald-50 rounded p-2">
+                {count} adet {spec?.w}×{spec?.h}mm için önerilen: <b>{layout.paper.label}</b> ({layout.cols}×{layout.rows})
+              </div>
+            </CardContent>
+          </Card>
 
-            {mode === "edit" && retouchOn && (
-              <Section title="Rötuş Fırçası">
-                <SliderRow
-                  testid="brush-size-slider"
-                  icon={<Brush size={16} strokeWidth={1.5} />}
-                  label="Fırça Boyutu"
-                  value={brush}
-                  min={8}
-                  max={80}
-                  step={1}
-                  display={`${brush}px`}
-                  onChange={(v) => setBrush(v)}
-                />
-                <p className="text-xs text-zinc-500">
-                  Önizleme üzerinde sürükleyerek pürüzsüzleştirin.
-                </p>
-              </Section>
-            )}
+          <Card className="border-slate-200">
+            <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Sparkles className="w-4 h-4" />İnce Ayar</CardTitle></CardHeader>
+            <CardContent className="space-y-3 text-base">
+              {[
+                { k: "brightness", label: "Parlaklık", min: 50, max: 150 },
+                { k: "contrast",   label: "Kontrast",  min: 50, max: 150 },
+                { k: "saturation", label: "Doygunluk", min: 0,  max: 200 },
+                { k: "warmth",     label: "Sıcaklık (Kelvin)", min: -50, max: 50 },
+                { k: "sharpness",  label: "Keskinlik", min: 0,  max: 100 },
+              ].map((s) => (
+                <div key={s.k}>
+                  <div className="flex justify-between text-sm"><span className="font-medium">{s.label}</span><span className="tabular-nums text-slate-700">{adj[s.k]}</span></div>
+                  <input type="range" min={s.min} max={s.max} value={adj[s.k]} onChange={(e) => setAdj({ ...adj, [s.k]: Number(e.target.value) })} className="w-full h-2 mt-1 cursor-pointer" data-testid={`adj-${s.k}`} />
+                </div>
+              ))}
+              <label className="flex items-center gap-3 pt-2">
+                <Switch checked={adj.retouch} onCheckedChange={(v) => setAdj({ ...adj, retouch: v })} data-testid="switch-retouch" />
+                <span className="text-base font-medium">Rötuş (cilt yumuşatma)</span>
+              </label>
+              {adj.retouch && (
+                <div className="pl-1" data-testid="retouch-intensity-wrap">
+                  <div className="flex justify-between text-sm mb-1"><span className="font-medium">Yumuşatma Şiddeti</span><span className="tabular-nums text-slate-700">{adj.retouchIntensity}%</span></div>
+                  <input
+                    type="range"
+                    min={10}
+                    max={100}
+                    step={5}
+                    value={adj.retouchIntensity}
+                    onChange={(e) => setAdj({ ...adj, retouchIntensity: Number(e.target.value) })}
+                    className="w-full h-2 rounded-full appearance-none cursor-pointer bg-red-100"
+                    style={{ accentColor: "#dc2626" }}
+                    data-testid="retouch-intensity"
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-            <div className="border-b border-zinc-800">
-              <PhotoStudio
-                image={image}
-                applyImage={applyImage}
-                originalSrc={originalImage?.src}
-                loadImageFromSrc={loadImageFromSrc}
-              />
-            </div>
+          <Card className="border-slate-200">
+            <CardHeader><CardTitle className="text-lg">Kesim Çizgisi & Filigran</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Label className="text-xs">Renk</Label>
+                <input type="color" value={cutColor} onChange={(e) => setCutColor(e.target.value)} className="w-10 h-8 rounded" data-testid="cut-color" />
+                <Label className="text-xs">Kalınlık (mm)</Label>
+                <Input type="number" step="0.1" min="0" max="3" value={cutWidth} onChange={(e) => setCutWidth(Number(e.target.value))} className="w-20" data-testid="cut-width" />
+              </div>
 
-            {mode === "print" && (
-              <Section title="Filigran & Baskı">
-                <label className="text-xs text-zinc-400">Filigran Metni</label>
-                <Input
-                  data-testid="watermark-text-input"
-                  value={wm.text}
-                  onChange={(e) =>
-                    setWm((w) => ({ ...w, text: e.target.value }))
-                  }
-                  className="mt-1 bg-zinc-950 border-zinc-700 text-zinc-100"
-                />
-                <SliderRow
-                  testid="watermark-size-slider"
-                  icon={<span className="text-xs font-mono-j">Aa</span>}
-                  label="Filigran Boyutu"
-                  value={wm.size}
-                  min={0}
-                  max={100}
-                  step={1}
-                  display={`${wm.size}%`}
-                  onChange={(v) => setWm((w) => ({ ...w, size: v }))}
-                />
-                <SliderRow
-                  testid="watermark-opacity-slider"
-                  icon={<span className="text-xs font-mono-j">α</span>}
-                  label="Filigran Opaklık"
-                  value={wm.opacity}
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  display={`${Math.round(wm.opacity * 100)}%`}
-                  onChange={(v) => setWm((w) => ({ ...w, opacity: v }))}
-                />
-                <div className="flex gap-2 mt-2">
-                  {["left", "center", "right"].map((al) => (
-                    <button
-                      key={al}
-                      data-testid={`wm-align-${al}`}
-                      onClick={() => setWm((w) => ({ ...w, align: al }))}
-                      className={`flex-1 rounded-sm border py-1.5 text-xs transition-colors duration-150 ${
-                        wm.align === al
-                          ? "border-cyan-400 text-cyan-300"
-                          : "border-zinc-700 text-zinc-300 hover:bg-zinc-800"
-                      }`}
-                    >
-                      {al === "left" ? "Sol" : al === "right" ? "Sağ" : "Orta"}
-                    </button>
+              <div>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <Label>Fotoğraflar arası boşluk</Label>
+                  <span className="text-slate-500">{photoGap} mm</span>
+                </div>
+                <input type="range" min={0} max={5} step={0.5} value={photoGap} onChange={(e) => setPhotoGap(Number(e.target.value))} className="w-full" data-testid="photo-gap" />
+              </div>
+
+              <div>
+                <Label className="text-xs">Filigran PNG (her fotoğrafın içine)</Label>
+                <Input type="file" accept="image/png,image/jpeg" onChange={(e) => {
+                  const f = e.target.files?.[0]; if (!f) return;
+                  const r = new FileReader(); r.onload = () => setWatermark(r.result); r.readAsDataURL(f);
+                }} data-testid="watermark-upload" />
+                {watermark && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <img src={watermark} alt="wm" className="h-10 border" />
+                    <Button size="sm" variant="outline" onClick={() => setWatermark(null)} data-testid="watermark-remove">Kaldır</Button>
+                  </div>
+                )}
+              </div>
+
+              {watermark && (
+                <>
+                  <div>
+                    <Label className="text-xs">Filigran Konumu</Label>
+                    <div className="grid grid-cols-3 gap-1 mt-1 p-2 bg-slate-50 rounded border border-slate-200 w-max" data-testid="wm-pos-grid">
+                      {["tl","tc","tr","ml","mc","mr","bl","bc","br"].map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setWmPos(p)}
+                          className={`w-7 h-7 rounded transition-colors ${wmPos === p ? "bg-emerald-600 text-white" : "bg-white border border-slate-300 hover:bg-emerald-50"}`}
+                          title={p.toUpperCase()}
+                          data-testid={`wm-pos-${p}`}
+                        >
+                          <span className="text-[10px]">•</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <Label>Filigran Boyutu</Label>
+                      <span className="text-slate-500">{wmScale}%</span>
+                    </div>
+                    <input type="range" min={4} max={40} step={1} value={wmScale} onChange={(e) => setWmScale(Number(e.target.value))} className="w-full" data-testid="wm-scale" />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <Label>Filigran Şeffaflığı</Label>
+                      <span className="text-slate-500">{wmOpacity}%</span>
+                    </div>
+                    <input type="range" min={20} max={100} step={5} value={wmOpacity} onChange={(e) => setWmOpacity(Number(e.target.value))} className="w-full" data-testid="wm-opacity" />
+                  </div>
+                </>
+              )}
+
+              <div className="pt-2 border-t border-slate-200">
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <Label className="flex items-center gap-1"><Move className="w-3 h-3" />Manuel Konum (mm)</Label>
+                  <Button size="sm" variant="ghost" onClick={() => setSheetOffset({ x: 0, y: 0 })} className="h-6 text-[10px]" data-testid="sheet-offset-reset">Sıfırla</Button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[10px] text-slate-500">Yatay</Label>
+                    <Input type="number" step="0.5" value={sheetOffset.x} onChange={(e) => setSheetOffset({ ...sheetOffset, x: Number(e.target.value) })} className="h-8 text-xs" data-testid="sheet-offset-x" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] text-slate-500">Dikey</Label>
+                    <Input type="number" step="0.5" value={sheetOffset.y} onChange={(e) => setSheetOffset({ ...sheetOffset, y: Number(e.target.value) })} className="h-8 text-xs" data-testid="sheet-offset-y" />
+                  </div>
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">Baskı önizlemesini fare ile sürükleyerek de kaydırabilirsin.</div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Archive */}
+          <PhotoStudio
+            image={image}
+            applyImage={applyImage}
+            originalSrc={originalImage?.src}
+            loadImageFromSrc={loadImageFromSrc}
+          />
+
+          <Card className="border-slate-200">
+            <CardHeader><CardTitle className="text-lg">Son 10 Fotoğraf (Arşiv)</CardTitle></CardHeader>
+            <CardContent>
+              {archive.length === 0 ? (
+                <div className="text-xs text-slate-500 py-4 text-center">Henüz kayıt yok. İndirdiğiniz her fotoğraf burada saklanır.</div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {archive.sort((a, b) => b.createdAt - a.createdAt).map((r) => (
+                    <div key={r.id} className="relative group">
+                      <a href={r.thumb} download={`${r.code}.jpg`} title={`${r.code} · ${r.spec}`}>
+                        <img src={r.thumb} alt={r.code} className="w-full h-16 object-cover rounded border" />
+                        <div className="text-[10px] text-center mt-1 truncate">{r.code}</div>
+                      </a>
+                      <button onClick={async () => { await idbDel(r.id); setArchive(await idbAll()); }} className="absolute top-1 right-1 bg-white/80 rounded p-0.5 opacity-0 group-hover:opacity-100"><Trash2 className="w-3 h-3 text-red-600" /></button>
+                    </div>
                   ))}
                 </div>
-              </Section>
-            )}
-
-            <Section title="İndir">
-              {mode === "edit" ? (
-                <Button
-                  data-testid="download-single-btn"
-                  onClick={doDownloadSingle}
-                  className="w-full bg-cyan-500 text-black hover:bg-cyan-400"
-                >
-                  <ImageDown size={16} strokeWidth={1.5} />
-                  Vesikalık İndir
-                </Button>
-              ) : (
-                <Button
-                  data-testid="download-sheet-btn"
-                  onClick={doDownloadSheet}
-                  className="w-full bg-cyan-500 text-black hover:bg-cyan-400"
-                >
-                  <Printer size={16} strokeWidth={1.5} />
-                  Baskı Şablonu İndir
-                </Button>
               )}
-            </Section>
-          </>
-        )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
+
+      <RetouchBrush
+        open={retouchOpen}
+        onOpenChange={setRetouchOpen}
+        imageSrc={image?.src}
+        color={spec?.bg || "#ffffff"}
+        onApply={applyRetouch}
+      />
     </div>
   );
-}
+};
 
-const ToolIcon = ({ testid, active, onClick, label, icon, disabled }) => (
-  <button
-    data-testid={testid}
-    onClick={onClick}
-    disabled={disabled}
-    aria-label={label}
-    title={label}
-    className={`h-11 w-11 rounded-sm grid place-items-center transition-colors duration-150 ${
-      active
-        ? "bg-cyan-500/15 text-cyan-300 ring-1 ring-cyan-500/40"
-        : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
-    } ${disabled ? "opacity-30 cursor-not-allowed" : ""}`}
-  >
-    {icon}
-  </button>
-);
+export default AdminPassportPhoto;
 
-const Section = ({ title, children }) => (
-  <div className="border-b border-zinc-800 p-4">
-    <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-400 mb-3">
-      {title}
-    </p>
-    {children}
-  </div>
-);
-
-const SliderRow = ({
-  testid,
-  icon,
-  label,
-  value,
-  min,
-  max,
-  step,
-  display,
-  onChange,
-}) => (
-  <div className="mb-3">
-    <div className="flex items-center justify-between mb-1.5">
-      <span className="flex items-center gap-2 text-sm text-zinc-300">
-        <span className="text-zinc-500">{icon}</span>
-        {label}
-      </span>
-      <span className="text-xs text-cyan-300 font-mono-j">{display}</span>
-    </div>
-    <Slider
-      data-testid={testid}
-      value={[value]}
-      min={min}
-      max={max}
-      step={step}
-      onValueChange={(v) => onChange(v[0])}
-    />
-  </div>
-);
+// (RetouchBrush dialog is rendered at the bottom of the component tree via the
+// wrapper below to keep the JSX changes small.)

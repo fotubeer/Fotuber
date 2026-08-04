@@ -1,0 +1,33 @@
+{
+  "summary": "Backend-only testing for new cash-flow export feature (GET /api/transactions/export.xlsx and /export.pdf). Covered all 5 periods (today, week, month, year, all), Content-Type + magic-byte validation (PK.. for XLSX, %PDF- for PDF), Content-Disposition (attachment; filename*=... with .xlsx/.pdf), openpyxl round-trip verifying Turkish header row at row 4 and seeded data rows (income +1234.56 / expense -78.90), plus auth guards (unauthenticated 401, customer 403). All 15 tests passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_transactions_export.py",
+    "/app/test_reports/pytest/iteration_6_export.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 1916 lines — consider splitting export endpoints (and other domains: transactions, appointments, gallery, discount-codes) into separate routers/modules under /app/backend/routers/ to keep files <700 lines.",
+    "Local imports inside export_transactions_xlsx / export_transactions_pdf (openpyxl, reportlab, BytesIO, quote) are done on every request — move to module-level imports to shave first-call latency and make dependency errors surface at startup.",
+    "_period_bounds uses UTC-only dates; if the studio operates in TR local time (UTC+3), 'today' / 'week' boundaries can drift by up to 3h around midnight. Consider using zoneinfo('Europe/Istanbul') or making the timezone configurable via SiteSettings.",
+    "Unknown period values silently fall back to 'today' (line 1147) instead of returning 400 — hides typos from the client. Suggest validating period against Literal['today','week','month','year','all'] via a Query type or explicit 400.",
+    "Both export endpoints load up to 5000 transactions (to_list(5000)) with no server-side pagination or streaming — for 'all' period on a mature store this can OOM the worker; consider streaming with a cursor or capping with an explicit HTTPException when count exceeds the limit."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_transactions_export.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (loaded from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Inside seeded_transaction fixture: 2 TEST_ transactions for today (income 1234.56 cash / expense 78.90 card). Both are deleted in fixture teardown; pre-cleanup also removes any leftover today transactions to keep exports deterministic.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Export feature verified end-to-end. Test file /app/backend/tests/test_transactions_export.py is idempotent (self-cleaning) and safe to re-run as regression. If main agent adds new period keywords or filename patterns, extend PERIODS or _assert_attachment_header. Frontend AdminTransactions.jsx 8 download buttons were NOT tested (backend-only scope)."
+}

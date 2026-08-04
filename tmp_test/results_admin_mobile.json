@@ -1,0 +1,54 @@
+{
+  "admin_albums": {
+    "bg": "rgb(255, 255, 255)",
+    "couple": {
+      "value": "TEST_Deneme_Cift",
+      "color": "rgb(15, 23, 42)",
+      "fill": "rgb(15, 23, 42)"
+    },
+    "notes": {
+      "value": "Test notlar i\u00e7in yaz\u0131",
+      "color": "rgb(15, 23, 42)",
+      "fill": "rgb(15, 23, 42)"
+    }
+  },
+  "admin_venue_new": {
+    "bg": "rgb(255, 255, 255)",
+    "name": {
+      "value": "TEST_Mekan_Ad\u0131",
+      "color": "rgb(15, 23, 42)",
+      "fill": "rgb(15, 23, 42)"
+    },
+    "description": {
+      "value": "Mekan a\u00e7\u0131klama yaz\u0131s\u0131",
+      "color": "rgb(15, 23, 42)",
+      "fill": "rgb(15, 23, 42)"
+    }
+  },
+  "admin_venue_activate": {
+    "bg": "rgb(255, 255, 255)",
+    "couple": {
+      "value": "TEST_Aktif_Cift",
+      "color": "rgb(15, 23, 42)",
+      "fill": "rgb(15, 23, 42)"
+    },
+    "welcome_message": {
+      "value": "Kar\u015f\u0131lama mesaj\u0131 deneme",
+      "color": "rgb(15, 23, 42)",
+      "fill": "rgb(15, 23, 42)"
+    }
+  },
+  "admin_events": {
+    "bg": "rgb(255, 255, 255)",
+    "name": {
+      "value": "TEST_Etkinlik_Adi",
+      "color": "rgb(15, 23, 42)",
+      "fill": "rgb(15, 23, 42)"
+    },
+    "welcome_message": {
+      "value": "Etkinlik kar\u015f\u0131lama",
+      "color": "rgb(15, 23, 42)",
+      "fill": "rgb(15, 23, 42)"
+    }
+  }
+}

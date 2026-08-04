@@ -1,122 +1,153 @@
 {
-  "theme": "dark",
-  "design_concept": "Professional Creative Studio (Terminal/Luxury Hybrid). Optimized for long-session photo editing, minimizing eye strain while making photo colors pop.",
+  "project_overview": {
+    "name": "Fotuber",
+    "domain": "fotuber.com.tr",
+    "type": "hybrid_fullstack",
+    "description": "Smart appointment and staff management system for a photography/video studio. Features a public marketing interface and a protected admin panel.",
+    "language": "Turkish"
+  },
+  "design_philosophy": {
+    "public_site": "Premium, deep, and creative. Archetype 5: Luxury. Emphasizes visual storytelling with a dark, moody aesthetic. Contrast and large typography are key.",
+    "admin_dashboard": "Archetype 4: Swiss & High-Contrast. Bright, functional, and data-dense. Distinct from the public site to signal a professional work environment."
+  },
   "typography": {
-    "primary_font": "Manrope",
-    "secondary_font": "JetBrains Mono",
-    "rules": {
-      "headings": "Manrope, tight tracking (tracking-tight), font-medium to font-bold. Never use Inter.",
-      "body": "Manrope, text-sm for standard UI labels.",
-      "numbers_and_data": "JetBrains Mono. Use for slider values, dimensions (e.g., 50x60mm), and coordinate data. Gives a technical, precise feel.",
-      "hierarchy": {
-        "h1": "text-2xl sm:text-3xl font-semibold tracking-tight",
-        "h2": "text-xl font-medium tracking-tight",
-        "panel_headers": "text-xs font-bold uppercase tracking-[0.2em] text-zinc-400"
+    "strategy": "The 'Old Money Tech' variant adapted for luxury photography.",
+    "fonts": {
+      "headings": {
+        "family": "Cormorant Garamond, serif",
+        "weight": "Light or SemiBold",
+        "usage": "Hero titles, section headers, elegant large text.",
+        "import": "@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600&display=swap');"
+      },
+      "body": {
+        "family": "Manrope, sans-serif",
+        "weight": "400, 500",
+        "usage": "Body text, small labels, and all Admin Dashboard text.",
+        "import": "@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&display=swap');"
+      },
+      "admin_headings": {
+        "family": "Outfit, sans-serif",
+        "weight": "600",
+        "usage": "Dashboard widgets and page titles.",
+        "import": "@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600&display=swap');"
       }
+    },
+    "hierarchy": {
+      "h1": "text-5xl sm:text-6xl tracking-tight",
+      "h2": "text-3xl sm:text-4xl tracking-tight",
+      "h3": "text-xl sm:text-2xl",
+      "body": "text-base leading-relaxed",
+      "labels": "text-xs tracking-[0.2em] uppercase"
     }
   },
   "colors": {
-    "backgrounds": {
-      "app": "#09090B",
-      "sidebar_left": "#18181B",
-      "panel_right": "#18181B",
-      "canvas_stage": "#000000",
-      "checkerboard_light": "#1F1F22",
-      "checkerboard_dark": "#18181B"
+    "public_site": {
+      "background": "#0a0a0a",
+      "surface": "#171717",
+      "primary": "#d4af37",
+      "primary_hover": "#b5952f",
+      "text_primary": "#ffffff",
+      "text_secondary": "#a3a3a3",
+      "border": "#262626"
     },
-    "text": {
-      "primary": "#FAFAFA",
-      "secondary": "#A1A1AA",
-      "muted": "#52525B",
-      "accent": "#06B6D4"
-    },
-    "brand_accent": {
-      "default": "#06B6D4",
-      "hover": "#0891B2",
-      "active": "#22D3EE",
-      "glow": "rgba(6, 182, 212, 0.5)"
-    },
-    "borders": {
-      "default": "#27272A",
-      "focus": "#06B6D4"
-    },
-    "status": {
-      "warning": "#F59E0B",
-      "success": "#10B981",
-      "error": "#EF4444"
+    "admin_dashboard": {
+      "background": "#f8fafc",
+      "surface": "#ffffff",
+      "primary": "#0f172a",
+      "primary_hover": "#1e293b",
+      "accent": "#2563eb",
+      "text_primary": "#0f172a",
+      "text_secondary": "#64748b",
+      "border": "#e2e8f0",
+      "status_success": "#22c55e",
+      "status_pending": "#f59e0b",
+      "status_error": "#ef4444"
     }
   },
-  "grids_and_layouts": {
-    "app_layout": "h-screen w-full flex overflow-hidden bg-zinc-950",
-    "left_toolbar": "w-16 flex-shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col items-center py-4 gap-4 z-10",
-    "center_stage": "flex-1 relative flex flex-col items-center justify-center overflow-hidden bg-black",
-    "right_panel": "w-80 flex-shrink-0 border-l border-zinc-800 bg-zinc-900 flex flex-col overflow-y-auto z-10",
-    "canvas_area": "Workspace must have generous padding (p-12) around the actual photo to allow zooming and panning.",
-    "print_sheet_grid": "2x2 grid setup for the print layout with exactly thin gray dashed lines (stroke-dasharray: '4 4')."
+  "layouts": {
+    "public_site": {
+      "hero": "Full height (min-h-screen) with background image, dark overlay (bg-black/40). Text left-aligned or centered with asymmetrical decorative elements.",
+      "services_grid": "Bento Grid Mode A (Tetris). Mix of tall, wide, and square cards. Generous gaps (gap-8).",
+      "booking_flow": "Step-by-step layout. Clear progress indicators. Centered narrow container for form inputs to maintain focus.",
+      "calendar": "Interactive grid. Booked slots MUST be clearly disabled (opacity-50, cursor-not-allowed, line-through or greyed out). Open slots highlight on hover."
+    },
+    "admin_dashboard": {
+      "structure": "Sidebar navigation (w-64) + Main content area.",
+      "dashboard_grid": "High Density Grid (Mode B). gap-6. Cards for revenue, pending bookings, today's schedule.",
+      "table": "Dense data table for staff and bookings. Sticky headers, hover rows."
+    }
   },
-  "visual_enhancers": {
-    "surfaces": "Use 'Grid Borders' (The Technical Look) for the right panel sections. Divide properties with border-b border-zinc-800.",
-    "shadows": "Minimal. Rely on 1px borders (#27272A) for separation instead of shadows, keeping the UI flat and professional like Lightroom.",
-    "canvas_background": "Use an SVG checkerboard pattern on the center stage to indicate transparency when background is removed.",
-    "glassmorphism": "Avoid in the main workspace to prevent color distortion. Use Solid Backgrounds for all sidebars."
-  },
-  "component_usage": {
-    "sliders": "Shadcn Slider. Customize: track should be thin (h-1 bg-zinc-800), thumb should be small and use the accent color (#06B6D4). Value must be displayed next to slider in JetBrains Mono.",
-    "buttons": "Square or rounded-sm. No pill shapes for this technical tool. Primary buttons use bg-cyan-500 text-black hover:bg-cyan-400.",
-    "toggles": "ToggleGroup for tool selection (e.g., Retouch, Garment, Red Eye). Active state must have a crisp cyan border or icon tint.",
-    "tabs": "Use minimal tabs for switching between 'Düzenle' (Edit) and 'Baskı' (Print) modes. Active tab gets a bottom border (border-b-2 border-cyan-500)."
+  "components": {
+    "buttons": {
+      "primary": "Pill-shaped (rounded-full) or subtle radius (rounded-lg). High contrast. Hover triggers subtle scale and brightness change.",
+      "whatsapp": "Fixed floating button bottom right. Bright green (#25D366)."
+    },
+    "surfaces": {
+      "public_cards": "Glassmorphism. backdrop-blur-xl bg-white/5 border border-white/10.",
+      "admin_cards": "Solid white, flat, 1px border (border-slate-200), no shadow default, subtle shadow on hover."
+    },
+    "calendar_slot": {
+      "available": "border border-primary text-primary hover:bg-primary hover:text-black transition-colors",
+      "booked": "bg-neutral-800 text-neutral-500 cursor-not-allowed border-none",
+      "admin_booked": "bg-slate-100 text-slate-400 cursor-not-allowed"
+    }
   },
   "motion": {
-    "interactions": "Instantaneous or extremely fast (100ms) transitions. Tool selection should feel snappy, not floaty.",
-    "transitions": "transition-colors duration-150 ease-in-out for buttons/icons. NEVER use 'transition-all'.",
-    "loaders": "Minimalist spinner or progress bar using the accent cyan color."
+    "page_transitions": "Fade and slight slide up (framer-motion).",
+    "hover_states": "Buttons scale up (1.02) and change brightness. Images in Bento grid scale up slowly on hover (group-hover).",
+    "calendar": "Staggered fade-in for available time slots."
   },
-  "accessibility": {
-    "contrast": "Text must meet APCA standards. Gray text (#A1A1AA) on dark gray (#18181B) is high enough contrast.",
-    "focus": "All sliders and inputs must have focus:ring-1 focus:ring-cyan-500 focus:outline-none.",
-    "aria": "Use aria-labels for all left-toolbar icons since they lack text."
+  "icons": {
+    "library": "lucide-react",
+    "usage": "Use stroke-width 1.5 for elegance in public site. Use stroke-width 2 for clarity in Admin."
   },
-  "media_and_icons": {
-    "icon_library": "lucide-react",
-    "icon_rules": "Stroke width 1.5. Size 20px for sidebar, 16px for panel sub-tools.",
-    "image_urls": [
-      {
-        "url": "https://images.unsplash.com/photo-1770058443069-e384cd001e9b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTZ8MHwxfHNlYXJjaHwyfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMG5ldXRyYWwlMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc4NTg0OTQ0OHww&ixlib=rb-4.1.0&q=85",
-        "description": "Örnek Kadın Vesikalık (Sample image for testing auto-framing and background removal)",
-        "category": "sample_loader"
+  "media": {
+    "images": {
+      "hero": {
+        "url": "https://images.pexels.com/photos/5762880/pexels-photo-5762880.jpeg",
+        "description": "Moody DSLR camera setup in studio"
       },
-      {
-        "url": "https://images.unsplash.com/photo-1767175620484-1ed37931a0d1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTZ8MHwxfHNlYXJjaHwzfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMG5ldXRyYWwlMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc4NTg0OTQ0OHww&ixlib=rb-4.1.0&q=85",
-        "description": "Örnek Erkek Vesikalık (Alternative sample)",
-        "category": "sample_loader"
+      "service_wedding": {
+        "url": "https://images.unsplash.com/photo-1596457221755-b96bc3a6df18?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzl8MHwxfHNlYXJjaHwxfHx3ZWRkaW5nJTIwY291cGxlJTIwcGhvdG9ncmFwaHl8ZW58MHx8fHwxNzg0NDExNzI5fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Wedding couple photography"
+      },
+      "service_portrait": {
+        "url": "https://images.pexels.com/photos/23991042/pexels-photo-23991042.jpeg",
+        "description": "Elegant portrait model"
+      },
+      "service_product": {
+        "url": "https://images.unsplash.com/photo-1697301439938-46e2b8ff74da?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NjZ8MHwxfHNlYXJjaHwzfHxwcm9kdWN0JTIwcGhvdG9ncmFwaHklMjBzZXR1cHxlbnwwfHx8fDE3ODQ0MTE3Mjl8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Product photography setup"
+      },
+      "service_family": {
+        "url": "https://images.pexels.com/photos/37409083/pexels-photo-37409083.jpeg",
+        "description": "Family portrait studio"
       }
-    ]
-  },
-  "domain_specific_rules": {
-    "watermark": "Watermark band (orta banda filigran) must have adjustable opacity and thickness tied to a slider. Overlay in center of print sheet.",
-    "cut_lines": "Kesim çizgileri (cut lines) must be visible but non-intrusive. Thin dashed #A1A1AA lines bordering the 2x2 grid elements.",
-    "turkish_ui_labels": {
-      "upload": "Fotoğraf Yükle",
-      "edit_mode": "Düzenle",
-      "print_mode": "Baskı",
-      "brightness": "Parlaklık",
-      "contrast": "Kontrast",
-      "temperature": "Sıcaklık",
-      "red_eye": "Kırmızı Göz",
-      "sharpen_eyes": "Göz Netleştirme",
-      "retouch": "Rötuş",
-      "garment": "Kıyafet Rengi",
-      "bg_remove": "Arka Plan Sil",
-      "download_single": "Vesikalık İndir",
-      "download_print": "Baskı Şablonu İndir"
     }
   },
-  "universal_guidelines": [
-    "Prioritize using pre-existing components from src/components/ui.",
-    "DO NOT use generic centered layouts. The workspace MUST follow the precise 3-column structural layout.",
-    "Never use AI emoji characters.",
-    "All interactive and key informational elements MUST include a data-testid attribute in kebab-case based on their role (e.g., data-testid='brightness-slider').",
-    "Never apply transition: all in CSS.",
-    "Do not use complete transparent background on headers or panels with content underneath."
+  "specific_requirements": {
+    "contact_info": "Phone: 0(501) 000 25 23. Must be prominent in the 'Urgent Service' message and floating buttons.",
+    "urgent_message": "Next to blocked calendar slots, display: 'Bu saatte acil bir hizmete mi ihtiyacınız var?' with WhatsApp and Phone CTA.",
+    "deposit_workflow": "Client booking status defaults to 'Beklemede' (Pending). Displays custom message about deposit (kapora). Admin can change status to 'Onaylandı' (Approved) which blocks the slot on public calendar.",
+    "admin_features": "Revenue charts (use Recharts), deposit tracking, staff management list."
+  },
+  "instructions_to_main_agent": [
+    "Ensure all text is in Turkish as requested.",
+    "Implement Shadcn UI for the Admin dashboard heavily (Tables, Cards, Dialogs, Select, Calendar).",
+    "For the public site, rely on custom HTML/Tailwind for the layout to achieve the 'Luxury' archetype, but you can use Shadcn for forms/modals.",
+    "Create a toggle or distinct routing for Public Site (Dark) and Admin (Light). e.g., `/` is dark, `/admin` is light.",
+    "Use 'framer-motion' for scroll animations on the public site.",
+    "Add data-testid attributes to all interactive elements."
+  ],
+  "universal_guidelines_for_main_agent": [
+    "You tend to converge toward generic, 'on distribution' outputs. Avoid this.",
+    "Do not use dark colors as gradients. Use solid colors or subtle textures.",
+    "Never use AI assistant emoji characters like 🤖🧠💭.",
+    "Use 2-3x more spacing than feels comfortable.",
+    "DO NOT center align the app container. No `.App { text-align: center; }`.",
+    "DO NOT apply universal transition (transition: all).",
+    "Use 'sonner' for toasts.",
+    "Prioritize pre-existing components in src/components/ui.",
+    "DO NOT use a fully transparent background for headers/navs if content scrolls under it. Use backdrop-blur with a semi-transparent color."
   ]
 }

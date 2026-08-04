@@ -1,0 +1,36 @@
+{
+  "summary": "Frontend-only visual verification of the GuestUpload contrast/readability bug fix on /etkinlik/:token and /mekan/:venueToken. All targeted elements now render dark bg + light text with proper contrast. Welcome overlay couple name is white (not gold) as required. Regression checks on the venue endpoint and the /guest-events/{token}/upload endpoint both pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/venues/{qr_token}",
+        "issue": "Response has `event_type: null` even when the underlying guest event has event_type='wedding'. This causes the venue-route landing page to fall back to the generic 'Etkinlik' label instead of the correct 'Düğün' label (visible in venue screenshot vs event screenshot). Field is likely not being copied through from the guest event doc in the venues resolver."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_8.json"
+  ],
+  "action_items": [
+    "Minor: include event_type in the public /api/venues/{qr_token} payload so the venue landing shows the proper event label (Düğün/Nişan/Kına etc.) instead of the generic 'Etkinlik' fallback."
+  ],
+  "critical_code_review_comments": [
+    "GuestUpload.jsx now mixes Tailwind classes with inline styles for the same properties (e.g. `text-neutral-300 italic` and inline `style={{ color: '#e5e5e5' }}`). Works, but is brittle — future devs may 'clean up' the inline style and reintroduce the bug. Consider defining a small set of CSS custom properties (--fotuber-card-bg, --fotuber-card-text, --fotuber-card-heading, --fotuber-card-muted) in index.css and referencing them in one place, or fix the shadcn `Card` `bg-card` variable so the component itself renders correctly in the guest theme.",
+    "The .hero-title em { color: #d4af37 } rule in index.css is the actual root cause and is still live — any other page that uses <em> inside .hero-title will hit the same gold-on-gold problem. Scope the em rule to specific pages/components (e.g. .home-hero .hero-title em) or drop the em override entirely and set gold on a dedicated span class like .accent.",
+    "Two <h1 className='hero-title'> tags appear on the guest upload page in the same DOM (overlay + main). Accessibility/SEO-wise there should only be one h1 per page. Consider making the overlay one an h2 or an aria-hidden visual-only element."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "regression only — 2/2 endpoints tested pass (upload 200, venues 200)", "frontend": "100% — 6/6 contrast checks pass (root bg #0a0a0a, couple heading #fafafa on dark, info card #171717 bg / #e5e5e5 text with #fafafa headings and #a3a3a3 muted, signup card #171717 / #e5e5e5, welcome quote #e5e5e5, welcome overlay h1 #fafafa NOT gold, welcome continue button gold bg / black text)"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (from /app/memory/test_credentials.md). Customer created via /api/auth/register: test_guest_1784472821@example.com / TestPass1!",
+  "seed_data_creation": "Created a TEST_ guest event (name=TEST_EA_Kontrast, couple_names=Elif & Ali) and activated it on the existing 'Fotuber Nişanevi Test' venue (qr_token=AU40NI93aW0). The event was DELETED via /api/admin/guest-events/{id} at the end of testing. The test customer (test_guest_1784472821@example.com) was NOT deleted (no user-delete endpoint exposed) but is prefixed TEST_/test_ for identification. The venue remains activated but its current_event_id now points to a deleted event — main agent may want to clear it via /api/admin/venues/{id}/deactivate if that endpoint exists.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Contrast bug is fully resolved. Concrete computed colors verified via Playwright and screenshots taken at /app/.screenshots/guest_upload_unauth.png, authed_upload_page.png, welcome_overlay.png, venue_route.png. If you want to smoke-test the couple-name-in-white claim in the welcome overlay, note that the overlay is dismissed after 6s (sessionStorage key fotuber_welcome_<eventToken>_<userId>) so a repeat visit in the same session will NOT show it. Also the overlay closes on any click. Sample repro: login as a fresh customer, visit /etkinlik/{token}, welcome appears with h1 color rgb(250,250,250). Only real remaining issue is the venue endpoint not passing event_type through (see backend_issues.minor).",
+  "rca of the issue": "Fix verified. Root causes were correctly identified in the review request: (1) shadcn Card used `bg-card` (CSS var --card resolves to white in the light theme applied to the whole app root), which won out over Tailwind utility classes because of CSS specificity of the layered utility. The fix — replacing Card with a plain <div> and inline `style={{ backgroundColor: '#171717', color: '#e5e5e5' }}` — bypasses the theme variable entirely and cannot be overridden. (2) The animated welcome h1 had a nested <em>, and index.css line for `.hero-title em { color: #d4af37 }` turned the couple name gold, sitting on the gold radial gradient background = invisible. Removing the <em> plus adding inline `color: '#fafafa'` locks the text to white. Both fixes verified in DOM: hasEm:false, h1 color=rgb(250,250,250). The .hero-title em rule itself still lives in index.css and could re-bite any future page — see critical_code_review_comments."
+}

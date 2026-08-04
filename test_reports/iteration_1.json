@@ -1,0 +1,33 @@
+{
+  "summary": "First backend integration test iteration for Fotuber. All 14 backend tests pass covering auth (register/login/me/kvkk/unauth), services (seed count>=5 and admin CRUD), availability (11 hourly slots 09:00-19:00), full appointment workflow (pending->approved with kapora->slot becomes booked), conflict handling (second customer 409 on approved slot), blocked-slots (customer 409 on blocked slot, non-admin 403), staff CRUD, reports/summary (all keys + revenue_series with 7 entries), gallery categories (6), admin image upload -> list -> file download (bytes returned), non-admin upload 403 and admin-guard enforcement.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/availability", "issue": "Past-time comparison uses UTC for both slot_dt and 'now'; in Turkey (UTC+3) this may mark slots as booked slightly earlier/later than local intent. Not blocking today's tests since we use a date 3 days ahead."},
+      {"endpoint": "POST /api/auth/register", "issue": "Emails are silently lowercased server-side (good practice), but response does not echo back what was submitted verbatim. Frontend should be aware and normalize before display."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is ~780 lines and getting large - consider splitting routers (auth, gallery, appointments, admin) into separate modules for maintainability.",
+    "CORS uses allow_origin_regex='.*' with allow_credentials=True. Works with browsers because Starlette reflects Origin, but tighten to explicit domains for production.",
+    "put_object/get_object in gallery are synchronous requests.* calls inside async endpoints - blocks the event loop for large uploads. Consider offloading via run_in_executor or an async HTTP client.",
+    "In /api/appointments PATCH, only status=='approved' checks for conflicts; if admin manually changes date/time via other means (currently not exposed), double-booking is possible. Fine as-is because only status/deposit/paid/notes are updatable.",
+    "OPENING_HOUR/CLOSING_HOUR hard-coded (09-20). Should be config-driven for future flexibility."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (verified working)",
+  "seed_data_creation": "Tests dynamically create TEST_ prefixed users, services, staff, blocked-slots, appointments, gallery items. Cleanup handled inline for gallery, blocked-slots, staff, services, appointments. TEST_ customer accounts remain in DB (harmless).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend is fully functional. When re-running, use TEST_DATE = today+3 days to avoid the past-time booked flag. Emergent object storage upload works reliably (~2-3s). Admin login returns role='admin', customer register returns role='customer'. Availability returns 11 slots 09:00..19:00 inclusive. Approved appointments mark slot booked in availability. All admin routes correctly return 403 for customer role, and 401 without any auth. Cookies set with SameSite=None; Secure. Bearer header preferred for backend tests to avoid cookie session collisions between fixtures.",
+  "rca of the issue": "Only one initial test failure due to test-side assertion comparing raw vs lowercased email; fixed by comparing against email.lower(). No backend defects found."
+}

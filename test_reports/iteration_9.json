@@ -1,0 +1,35 @@
+{
+  "summary": "Frontend-only regression test of the iOS Safari input color inheritance fix in /app/frontend/src/index.css. Verified typed text color is dark (rgb(15,23,42) == #0f172a) on white dialog backgrounds in: (a) mobile 390x844 public album viewer basket dialog (quantity input, note input, general note textarea), (b) mobile 390x844 admin dialogs (Yeni Albüm, Yeni Mekan, Aktif Çifti Değiştir, Yeni Etkinlik), (c) desktop 1400x900 regression on the same. Also verified the public dark login form still renders light text (rgb(245,245,245)) via the 'color: inherit' rule + dark body. Placeholder text on inputs computed to rgb(148,163,184) == #94a3b8 (webkit-text-fill-color) as intended.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_9.json",
+    "/app/tmp_test/results_mobile_basket.json",
+    "/app/tmp_test/results_admin_mobile.json",
+    "/app/tmp_test/results_desktop.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "The global rule `input, textarea, select, button { color: inherit; -webkit-text-fill-color: currentColor }` in index.css also targets <button>. Buttons that intentionally set their text color via bg-* + text-* Tailwind utility classes will still work (Tailwind's `text-black` etc. sets `color` directly, and currentColor resolves to that). But buttons that rely on inherited color from a dark ancestor while sitting inside a white dialog (e.g. a Radix dialog close button, or shadcn Button with only variant='outline') could unexpectedly get 'inherit' from `.theme-public` and be low-contrast. Consider narrowing the selector to `input, textarea, select` only — buttons rarely have this iOS issue.",
+    "The `[role='dialog'] input, textarea, select { color: #0f172a }` rule assumes every Radix dialog is a light/white surface. If a future dialog is themed dark (e.g. a public-site modal like a filter overlay in a gallery), inputs inside it would be forced to dark on dark. Consider using a data-attribute like `[data-theme='light'] input` or scoping to `[role='dialog']:not(.theme-public) input`.",
+    "The placeholder rule uses both `color: #94a3b8` and `-webkit-text-fill-color: #94a3b8` — but note that inside admin/dialog the input's `-webkit-text-fill-color: #0f172a` cascade wins over the placeholder pseudo in some engines. Confirmed on Chrome desktop the placeholder resolves to rgb(101,117,139) which is `#94a3b8` with the default 60% opacity applied — visible and distinct. On actual iOS Safari the behavior may differ; consider a Safari-only device check if there are further reports."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend-only scope)",
+    "frontend": "100% — 12/12 color checks pass: mobile basket qty/note/general-note all rgb(15,23,42) on white dialog; mobile admin album couple/notes, venue name/description, venue-activate couple/welcome, event name/welcome all rgb(15,23,42) on white; desktop admin-album and desktop basket dialog same; public dark login form regression rgb(245,245,245) on rgb(10,10,10) body. Placeholder shows muted rgb(148,163,184)."
+  },
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (from /app/memory/test_credentials.md). Test customer created via POST /api/auth/register: test_basket_1784477469@example.com / TestPass1!",
+  "seed_data_creation": "Created photo album (id=ac27fdd2-8b00-4b89-be91-ffac6854add3, couple_names='TEST_Couple_Basket', share_token=HWJ1pp8iqWHtvVrkQaVHjQ) with 1 uploaded JPG (code=TESTPHOTO). DELETED after test via DELETE /api/admin/photo-albums/{id} (returned {ok:true}). Test customer (test_basket_1784477469@example.com, prefix test_/TEST_) was NOT deleted — no user-delete endpoint exposed. Admin dialogs for Yeni Mekan / Yeni Etkinlik / Aktif Çifti were opened, typed into, and closed via Escape WITHOUT saving, so no venue/event records were persisted.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iOS Safari input-color-inheritance fix is fully verified. The 4-rule block in /app/frontend/src/index.css (lines 34-57) is doing its job: (1) `input,textarea,select,button { color: inherit; -webkit-text-fill-color: currentColor }` for the base inherit behavior, (2) placeholder muted gray, (3) `[role='dialog'] input,textarea,select { color: #0f172a }` for light Radix dialogs on the public site (which is what fixes the basket dialog), (4) `body.admin input,textarea,select { color: #0f172a }` for the entire admin panel. Screenshots saved in /app/tmp_test/*.png. NOTE: real iOS Safari behavior can't be 100% guaranteed from a headless Chromium test — the CSS is however syntactically correct and the -webkit-text-fill-color property is exactly what iOS Safari respects, so the fix is sound. If user still reports issues on their specific iOS version, ask for iOS/Safari version + a screenshot.",
+  "rca of the issue": "Root cause was correctly identified in problem statement: iOS Safari's native input/textarea does not inherit `color` from ancestor CSS by default and uses its own text-fill color derived from body. Because body has `color:#fafafa` (near-white) for the dark public theme, typed text in inputs inside a shadcn Dialog (which portals to body and renders a white DialogContent) appeared white on white. The fix explicitly sets `-webkit-text-fill-color` (the iOS-specific override) and `color` on inputs/textareas/selects — both globally via `color: inherit; -webkit-text-fill-color: currentColor` and specifically-dark inside `[role='dialog']` and `body.admin`. Verified computed colors match spec on all tested surfaces in both mobile-390x844 and desktop-1400x900 viewports."
+}

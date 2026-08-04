@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 2 backend testing complete. All 16 new tests for site-settings and cash-flow transactions PASS (100%). Also re-ran iteration 1 suite (14 tests) — all still pass. Coverage: public GET /api/settings, admin PUT /api/settings, unauth 401 + customer 403 guard, admin logo upload/download (multipart PNG, image/* content-type roundtrip), transaction CRUD (income cash / expense card / update / delete) with GET verification and filter checks (kind, method, date_from), and the summary aggregation endpoint (today income=1500 expense=500 net=1000; by_method cash=1500 card=-500; daily_series=7 week_series=4 month_series=6; after update to 2000 → today.income=2000, net=1500, by_method.cash=2000). All 6 auth-guard tests pass (customer 403 for GET/POST transactions, GET summary, PUT settings, POST logo; unauth 401 for GET /transactions and /transactions/summary).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/transactions/summary", "issue": "Weekly aggregation uses (year, isoweek) tuple to bucket by week; if 'today' near ISO week boundary this behaves correctly, but the label 'H{week}' does not include the year, so two weeks from adjacent years could share the same label in edge cases (Jan 1 / Dec 31)."},
+      {"endpoint": "GET /api/transactions/summary", "issue": "Monthly series is computed as `today.replace(day=1) - timedelta(days=30*i)`. Because month lengths vary (28/29/30/31), for i=5 this can drift into the wrong month (e.g. starting in Aug it can accidentally hit July twice, missing a month). Only affects display labeling, not the today/week/month totals which use exact date-prefix matching. Recommend using dateutil.relativedelta or an explicit year/month decrement."},
+      {"endpoint": "PUT /api/transactions/{tid}", "issue": "TransactionIn is required as full payload for PUT; there is no PATCH. Not blocking, just noting: partial updates require sending all fields."},
+      {"endpoint": "GET /api/settings", "issue": "Public endpoint returns entire settings doc including internal 'updated_at' and 'logo_id'; considered acceptable but callers should be aware."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_settings_transactions.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iteration_2_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now ~1038 lines — even more urgent to split into routers (auth, settings, transactions, gallery, appointments, staff, reports).",
+    "GET /api/transactions/summary loads ALL transactions into memory (limit 5000). Fine at MVP scale but should be MongoDB-aggregated ($facet with date-bucketed pipelines) before production growth.",
+    "Monthly series calculation using `today.replace(day=1) - timedelta(days=30*i)` is off-by-one prone for months that don't have 30 days — replace with proper month arithmetic (dateutil.relativedelta or explicit y,m decrement).",
+    "Route order: /api/transactions/summary is declared AFTER /api/transactions/{tid}. Because HTTP methods differ (GET vs PUT/DELETE) FastAPI matches correctly today, but if a future GET /transactions/{tid} is added it must be declared AFTER /summary or /summary must move up.",
+    "PUT /api/settings uses `{k: v for k, v in payload.model_dump().items() if v is not None}` — good; but there's no way to clear a field to empty string (empty string is preserved, None is dropped). Fine for current UI.",
+    "put_object/get_object are still synchronous requests.* calls inside async endpoints (branding + gallery + transactions logo). Repeats the concern from iteration 1."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_settings_transactions.py"
+  ],
+  "success_rate": {"backend": "100% (16/16 new + 14/14 regression)", "frontend": "N/A (skipped per request)"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (verified working)",
+  "seed_data_creation": "Autouse module-scoped fixture cleans today's transactions before AND after the test module runs so summary assertions are deterministic. Test creates TEST_ prefixed customer for guard tests. Settings are mutated to 'Fotuber Test' / '05001112233' then restored to defaults 'Fotuber' / '05010002523'. One logo is uploaded to Emergent object storage under fotuber/branding/logo-<id>.png — not deleted (no delete-logo endpoint exists yet).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Both test suites (backend_test.py + test_settings_transactions.py) are pytest-clean and re-runnable. Pytest requires '-o \"addopts=\"' override because /app/backend/pytest.ini enables xdist by default and xdist reruns cleanup fixtures per worker — running single-worker is more reliable for these order-sensitive summary assertions. Use REACT_APP_BACKEND_URL from /app/frontend/.env (test file auto-loads it). Transactions summary is UTC-date-based — assertions use datetime.utcnow().date().isoformat() as TODAY. No delete-logo endpoint yet, so uploaded test logos accumulate in DB.site_assets — harmless.",
+  "rca of the issue": "No defects found in this iteration."
+}

@@ -1,0 +1,42 @@
+{
+  "summary": "Verified UI-contrast fix in /app/frontend/src/index.css (dialog dark-text override). All admin form dialogs pass on desktop (1400x900) and mobile (390x844) — labels, Select triggers, and dropdown options render with dark computed color rgb(15,23,42). Public dark-theme pages (/giris, /, /etkinlik/{token}) are NOT affected (body color stays rgb(250,250,250) on rgb(10,10,10) bg). CRITICAL REGRESSION FOUND: destructive AlertDialog (Radix uses role='alertdialog', not 'dialog') is NOT covered by the fix — delete confirmation title (H2) computes rgb(250,250,250) on rgb(255,255,255) background (invisible), and the 'Vazgeç' cancel button text is also white-on-white. Screenshot at .screenshots/alertdialog_contrast.png clearly shows the invisible title.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AlertDialog (venue delete confirmation & likely all destructive AlertDialogs)",
+        "issue": "Title (H2 inside [role='alertdialog']) computes color rgb(250,250,250) on white background rgb(255,255,255) — INVISIBLE. Cancel button 'Vazgeç' also has color rgb(250,250,250) on transparent bg over the white dialog. Only the description (uses text-slate-500 explicitly) and the destructive 'Sil' button (white-on-red) remain readable. The CSS fix in index.css only targets [role='dialog'] and [data-radix-popper-content-wrapper], but Radix AlertDialog uses role='alertdialog'.",
+        "selector": "[role='alertdialog'] h2, [role='alertdialog'] button:not(.bg-destructive)",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_11.json"
+  ],
+  "action_items": [
+    "In /app/frontend/src/index.css, extend the dark-text override selectors to also cover Radix AlertDialog. Change the block starting at line 47 to include role='alertdialog' — e.g.:\n\n[role=\"dialog\"], [role=\"dialog\"] *, [role=\"alertdialog\"], [role=\"alertdialog\"] *, [data-radix-popper-content-wrapper], [data-radix-popper-content-wrapper] * { color: #0f172a; }\n\nAlso apply the same expansion to the input override (line 53-58) and to every exception rule (lines 60-69: .text-white/.text-red-600/.text-emerald-600/.text-amber-700/.text-slate-500/.text-slate-600/.text-blue-600). Alternative: use a single combined selector list [role=\"dialog\"], [role=\"alertdialog\"] { ... } at the top and reuse everywhere. After the fix, re-verify by reopening the venue delete confirmation and asserting computed color of the H2 title and 'Vazgeç' button are rgb(15,23,42).",
+    "Consider destructive-button contrast policy: the 'Sil' (destructive) button in AlertDialogFooter still needs white text on red — that already works via .bg-destructive default. But once you add role='alertdialog' to the exceptions, ensure the 'destructive' variant's Tailwind text-white / text-destructive-foreground still overrides."
+  ],
+  "critical_code_review_comments": [
+    "The chosen CSS-selector approach [role='dialog'] * { color: #0f172a } is fragile — it depends on knowing every Radix role. AlertDialog was missed. A more robust approach would be to give DialogContent/AlertDialogContent components an explicit class (e.g. 'admin-dialog-scope') that scopes the dark-text rule, then rely on that class from a single .admin-dialog-scope, .admin-dialog-scope * { color: #0f172a } rule. This keeps the intent explicit and future-proof against new Radix primitives (Popover, HoverCard, ContextMenu).",
+    "The exception list (text-white/text-red-*/text-emerald-*/text-amber-*/text-slate-*/text-blue-*) is duplicated for each Radix role. Consolidate via a CSS custom property or a single ancestor selector list to avoid future drift.",
+    "Public site uses body { color:#fafafa } which forces the entire white admin dialog issue in the first place. Consider setting body { color:#fafafa } only on .theme-public sub-tree and letting admin routes reset via body.admin { color:#0f172a }. The current index.css already switches body.admin scrollbar styling but not the base body color."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "not-tested (frontend-only request)",
+    "frontend": "92% — 11/12 verifications pass. Only destructive AlertDialog fails due to CSS selector missing role='alertdialog'."
+  },
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (from /app/memory/test_credentials.md).",
+  "seed_data_creation": "Created 1 test venue via UI ('TEST_Venue_Iter11') and DELETED it via the same UI flow (Sil button in AlertDialog after opening delete confirmation on the venue card). Verified deletion by re-scanning DOM — TEST_Venue_Iter11 is no longer present. Final DB state: clean.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The verification approach for this fix is: (1) log in via /personel-girisi, (2) open each admin dialog, (3) run page.evaluate to read window.getComputedStyle(label).color for every <label> inside the dialog, (4) assert color==='rgb(15, 23, 42)'. Public pages must NOT be affected — their body color must stay rgb(250,250,250) on rgb(10,10,10) background. When re-testing after the AlertDialog fix, use the delete flow on any admin resource card and check the [role='alertdialog'] H2 title color. Detailed measurements per label in this iteration are logged in the tool output — every admin form dialog label passed at rgb(15,23,42) except the AlertDialog title/cancel-button which stayed at rgb(250,250,250).",
+  "rca of the issue": "The fix in /app/frontend/src/index.css (lines 47-69) forces color: #0f172a on all descendants of [role='dialog'] and [data-radix-popper-content-wrapper]. Radix Dialog primitive sets role='dialog', Radix Select portal is wrapped by data-radix-popper-content-wrapper. However Radix's AlertDialog primitive sets role='alertdialog' (per WAI-ARIA spec for confirmation dialogs), so the descendant selector never matches AlertDialog content. Body color (#fafafa, from body{color:#fafafa} at line 23) then cascades into AlertDialog title and buttons, rendering white text on the white AlertDialogContent background. Reproduction: /admin/mekanlar → click trash icon on any venue card → the confirmation title is invisible. Mitigation: add [role='alertdialog'], [role='alertdialog'] * to the same CSS rule and to all six exception rules for .text-white/.text-red-*/.text-emerald-*/.text-amber-*/.text-slate-*/.text-blue-*."
+}
