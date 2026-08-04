@@ -97,6 +97,7 @@ const AdminPassportPhoto = () => {
   // Baskı dizilimi ve filigran
   const [photoGap, setPhotoGap] = useState(0); // mm gap between photos on sheet
   const [wmPos, setWmPos] = useState("bc"); // 3x3 grid: tl tc tr ml mc mr bl bc br
+  const [wmAlign, setWmAlign] = useState("center"); // per-photo watermark: left | center | right
   const [wmScale, setWmScale] = useState(14); // % of photo height
   const [wmOpacity, setWmOpacity] = useState(85); // 0-100
   const [sheetOffset, setSheetOffset] = useState({ x: 0, y: 0 }); // mm manual offset
@@ -208,20 +209,29 @@ const AdminPassportPhoto = () => {
   }, [originalImage, spec, runBackgroundRemoval]);
 
   const applyRetouch = useCallback(async (dataUrl) => {
-    const updated = await loadImageFromSrc(dataUrl);
-    // Retouch dialog downscales huge photos to MAX_EDGE=1600. If the returned
-    // image is smaller than the current one, our crop rect is in old-pixel
-    // space and would fall outside the new image, producing a blank canvas.
-    // Rescale the crop to the new dimensions.
-    setImage((prev) => {
-      if (prev && (prev.w !== updated.w || prev.h !== updated.h)) {
-        const sx = updated.w / prev.w;
-        const sy = updated.h / prev.h;
-        setCrop((c) => ({ cx: c.cx * sx, cy: c.cy * sy, w: c.w * sx }));
-      }
-      return updated;
-    });
-    toast.success("Rötuş uygulandı");
+    try {
+      const updated = await loadImageFromSrc(dataUrl);
+      if (!updated?.el || !updated.w) { toast.error("Rötuş uygulanamadı"); return; }
+      // Retouch dialog downscales huge photos to MAX_EDGE=1600. If the returned
+      // image is a different size, rescale the crop rect to the new dimensions
+      // so it stays inside the image (otherwise the preview goes blank).
+      setImage((prev) => {
+        if (prev && prev.w && (prev.w !== updated.w || prev.h !== updated.h)) {
+          const sx = updated.w / prev.w;
+          const sy = updated.h / prev.h;
+          setCrop((c) => ({ cx: c.cx * sx, cy: c.cy * sy, w: c.w * sx }));
+        }
+        return updated;
+      });
+      // The retouched image is a flat photo (no alpha) and the dialog may have
+      // resized it, so the earlier background-removal alpha mask no longer lines
+      // up. Drop it so color adjustments use the color-key fallback and the
+      // base image always renders (prevents the blank/white preview).
+      setFgMask(null);
+      toast.success("Rötuş uygulandı");
+    } catch (e) {
+      toast.error("Rötuş uygulanamadı");
+    }
   }, []);
 
   // ---------- Pointer drag: pan the crop on the Tekli preview -------------
@@ -347,34 +357,40 @@ const AdminPassportPhoto = () => {
       ctx.drawImage(image.el, sx, sy, cropW, cropH, 0, 0, targetW, targetH);
       ctx.restore();
 
-      // 2) Filtered foreground layer on an offscreen canvas.
-      const off = document.createElement("canvas");
-      off.width = targetW; off.height = targetH;
-      const octx = off.getContext("2d");
-      octx.save();
-      octx.filter = cssFilter();
-      applyRot(octx);
-      octx.drawImage(image.el, sx, sy, cropW, cropH, 0, 0, targetW, targetH);
-      octx.restore();
-      octx.filter = "none";
-
-      // 3) Clip the filtered layer to the foreground only.
-      octx.globalCompositeOperation = "destination-in";
-      if (fgMask) {
-        const rx = fgMask.width / image.w;
-        const ry = fgMask.height / image.h;
+      // 2) Filtered foreground layer on an offscreen canvas. Guarded so any
+      // failure here can NEVER blank the preview — the unfiltered base above
+      // has already been drawn.
+      try {
+        const off = document.createElement("canvas");
+        off.width = targetW; off.height = targetH;
+        const octx = off.getContext("2d");
         octx.save();
+        octx.filter = cssFilter();
         applyRot(octx);
-        octx.drawImage(fgMask, sx * rx, sy * ry, cropW * rx, cropH * ry, 0, 0, targetW, targetH);
+        octx.drawImage(image.el, sx, sy, cropW, cropH, 0, 0, targetW, targetH);
         octx.restore();
-      } else {
-        const ck = buildColorKeyMask(image.el, sx, sy, cropW, cropH, targetW, targetH);
-        octx.drawImage(ck, 0, 0, targetW, targetH);
-      }
-      octx.globalCompositeOperation = "source-over";
+        octx.filter = "none";
 
-      // 4) Composite the masked, filtered foreground over the base.
-      ctx.drawImage(off, 0, 0);
+        // 3) Clip the filtered layer to the foreground only.
+        octx.globalCompositeOperation = "destination-in";
+        if (fgMask && fgMask.width && image.w) {
+          const rx = fgMask.width / image.w;
+          const ry = fgMask.height / image.h;
+          octx.save();
+          applyRot(octx);
+          octx.drawImage(fgMask, sx * rx, sy * ry, cropW * rx, cropH * ry, 0, 0, targetW, targetH);
+          octx.restore();
+        } else {
+          const ck = buildColorKeyMask(image.el, sx, sy, cropW, cropH, targetW, targetH);
+          octx.drawImage(ck, 0, 0, targetW, targetH);
+        }
+        octx.globalCompositeOperation = "source-over";
+
+        // 4) Composite the masked, filtered foreground over the base.
+        ctx.drawImage(off, 0, 0);
+      } catch (e) {
+        // Base image already visible; skip the foreground-only overlay.
+      }
     }
     // Skin retouch — luminance-diff edge-preserving smoother (surface-blur
     // family). Small luminance deviations (blemishes, fine lines, under-eye
@@ -476,79 +492,71 @@ const AdminPassportPhoto = () => {
     const cellW = mmToPx(spec.w);
     const cellH = mmToPx(spec.h);
 
-    // Optional PNG watermark loaded once — drawn as a SINGLE strip in the
-    // middle band between the top and bottom photo rows (BUG 1).
+    // Optional PNG watermark — drawn once PER photo (as many watermarks as
+    // there are photos), positioned at the bottom of each cell and aligned
+    // left / center / right (user selectable).
     let wmImg = null;
     if (watermark) {
       wmImg = await new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = watermark; });
     }
     const hasWm = !!wmImg;
-    // Band thickness tied to the "Filigran Boyutu" (wmScale) slider.
-    const bandPx = hasWm ? Math.max(mmToPx(3), Math.round(cellH * (wmScale / 100))) : 0;
 
     const blockW = cols * cellW + (cols - 1) * gap;
-    const blockH = rows * cellH + (rows - 1) * gap + bandPx;
+    const blockH = rows * cellH + (rows - 1) * gap;
     // True centering — allow overflow into the paper's bleed area on both sides.
     // `sheetOffset` lets the operator nudge the block with the mouse.
     const startX = (pw - blockW) / 2 + mmToPx(sheetOffset.x);
     const startY = (ph - blockH) / 2 + mmToPx(sheetOffset.y);
-    const midRow = Math.floor(rows / 2);
-    const rowY = (r) => startY + r * (cellH + gap) + (r >= midRow ? bandPx : 0);
     const colX = (c) => startX + c * (cellW + gap);
-    const bandTop = startY + midRow * (cellH + gap);
+    const rowY = (r) => startY + r * (cellH + gap);
 
-    let idx = 0;
-    for (let r = 0; r < rows && idx < count; r++) {
-      for (let c = 0; c < cols && idx < count; c++) {
-        ctx.drawImage(single, colX(c), rowY(r), cellW, cellH);
-        idx++;
-      }
-    }
-
-    // BUG 1: single watermark centered in the middle white band, clamped to
-    // the band height so it NEVER spills onto any photo.
-    if (hasWm) {
+    const drawWm = (x, y) => {
+      if (!hasWm) return;
       const ratio = wmImg.width / wmImg.height;
-      let wmH = bandPx * 0.9;
+      let wmH = cellH * (wmScale / 100);
       let wmW = wmH * ratio;
-      const maxW = blockW * 0.9;
+      const maxW = cellW * 0.9;
       if (wmW > maxW) { wmW = maxW; wmH = wmW / ratio; }
-      const posH = wmPos[1]; // l | c | r
-      const marg = mmToPx(3);
-      const wx = posH === "l" ? startX + marg
-               : posH === "r" ? startX + blockW - wmW - marg
-               : startX + (blockW - wmW) / 2;
-      const wy = bandTop + (bandPx - wmH) / 2;
+      const marg = mmToPx(2);
+      const wx = wmAlign === "left" ? x + marg
+               : wmAlign === "right" ? x + cellW - wmW - marg
+               : x + (cellW - wmW) / 2;
+      const wy = y + cellH - wmH - marg;
       ctx.save();
       ctx.globalAlpha = Math.max(0, Math.min(1, wmOpacity / 100));
       ctx.drawImage(wmImg, wx, wy, wmW, wmH);
       ctx.restore();
+    };
+
+    let idx = 0;
+    for (let r = 0; r < rows && idx < count; r++) {
+      for (let c = 0; c < cols && idx < count; c++) {
+        const x = colX(c), y = rowY(r);
+        ctx.drawImage(single, x, y, cellW, cellH);
+        drawWm(x, y); // one watermark per photo
+        idx++;
+      }
     }
 
-    // BUG 4: cutting lines — thin gray dashed, every photo boundary INCLUDING
-    // the outer edges, each line spanning the full paper edge-to-edge.
+    // BUG 4: cutting lines — thin gray dashed (or solid), every photo boundary
+    // INCLUDING the outer edges, each line spanning the full paper edge-to-edge.
     if (cutWidth > 0) {
       ctx.strokeStyle = cutColor;
       ctx.lineWidth = Math.max(1, mmToPx(cutWidth));
       ctx.setLineDash(cutStyle === "solid" ? [] : [mmToPx(2), mmToPx(1)]);
       const off = gap > 0 ? gap / 2 : 0;
-      // Vertical lines (top -> bottom of the whole paper).
       for (let c = 0; c <= cols; c++) {
         let x = startX + c * (cellW + gap);
         if (c > 0 && c < cols) x -= off;
         if (c === cols) x -= gap;
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ph); ctx.stroke();
       }
-      // Horizontal lines (left -> right of the whole paper) + band edges.
-      const ys = new Set();
       for (let r = 0; r <= rows; r++) {
-        let y = startY + r * (cellH + gap) + (r >= midRow ? bandPx : 0);
+        let y = startY + r * (cellH + gap);
         if (r > 0 && r < rows) y -= off;
         if (r === rows) y -= gap;
-        ys.add(Math.round(y));
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(pw, y); ctx.stroke();
       }
-      if (bandPx > 0) { ys.add(Math.round(bandTop)); ys.add(Math.round(bandTop + bandPx)); }
-      ys.forEach((y) => { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(pw, y); ctx.stroke(); });
       ctx.setLineDash([]);
     }
 
@@ -557,7 +565,7 @@ const AdminPassportPhoto = () => {
     ctx.font = `${mmToPx(2.5)}px sans-serif`;
     ctx.fillText(code, mmToPx(2), ph - mmToPx(2));
     return canvas;
-  }, [image, spec, paper, layout, count, cutColor, cutWidth, cutStyle, watermark, code, drawSingle, photoGap, sheetOffset, wmPos, wmScale, wmOpacity]);
+  }, [image, spec, paper, layout, count, cutColor, cutWidth, cutStyle, watermark, code, drawSingle, photoGap, sheetOffset, wmAlign, wmScale, wmOpacity]);
 
   // When spec changes, re-run auto detection so the aspect matches the new format
   useEffect(() => {
@@ -887,18 +895,21 @@ const AdminPassportPhoto = () => {
               {watermark && (
                 <>
                   <div>
-                    <Label className="text-xs">Filigran Konumu</Label>
-                    <div className="grid grid-cols-3 gap-1 mt-1 p-2 bg-slate-50 rounded border border-slate-200 w-max" data-testid="wm-pos-grid">
-                      {["tl","tc","tr","ml","mc","mr","bl","bc","br"].map((p) => (
+                    <Label className="text-xs">Filigran Konumu (her fotoğrafın alt kısmı)</Label>
+                    <div className="grid grid-cols-3 gap-1 mt-1 p-1 bg-slate-100 rounded-lg text-xs" data-testid="wm-align-switch">
+                      {[
+                        { k: "left", label: "Sol" },
+                        { k: "center", label: "Orta" },
+                        { k: "right", label: "Sağ" },
+                      ].map((o) => (
                         <button
-                          key={p}
+                          key={o.k}
                           type="button"
-                          onClick={() => setWmPos(p)}
-                          className={`w-7 h-7 rounded transition-colors ${wmPos === p ? "bg-emerald-600 text-white" : "bg-white border border-slate-300 hover:bg-emerald-50"}`}
-                          title={p.toUpperCase()}
-                          data-testid={`wm-pos-${p}`}
+                          onClick={() => setWmAlign(o.k)}
+                          className={`py-2 rounded-md transition-colors ${wmAlign === o.k ? "bg-emerald-600 text-white shadow font-semibold" : "text-slate-600 hover:bg-emerald-50"}`}
+                          data-testid={`wm-align-${o.k}`}
                         >
-                          <span className="text-[10px]">•</span>
+                          {o.label}
                         </button>
                       ))}
                     </div>

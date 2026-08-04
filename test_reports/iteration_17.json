@@ -1,0 +1,23 @@
+{
+  "summary": "Frontend-only verification of iteration_17 follow-up changes on /admin/vesikalik (Fotuber Vesikalık editor). All 3 requested changes verified working, plus regression checks. KEY BUG FIX confirmed: retouch Apply no longer blanks/whites-out the previews — canvas-single retains ~99.8% non-white pixels after Apply, canvas-sheet cell retains ~80% non-white pixels. Free recolor is fully removed and the AI garment editor shows the 'Ücretli' badge (data-testid=studio-paid-badge) and button label 'Kıyafeti Değiştir (AI) — Ücretli'. Watermark UI is replaced with a Sol/Orta/Sağ align switch (wm-align-switch/left/center/right); the old wm-pos-grid is gone. With Adet=4, one watermark is rendered per photo at the bottom of each of the 4 cells (visually confirmed in a full-sheet screenshot). Alignment change moves the watermark horizontally (LEFT click clearly places watermarks on left edge of each photo in the rendered sheet). Regression: download-single-btn and download-sheet-btn both trigger JPEG downloads (FTB00001_tekli.jpg, FTB00002_baski_4li_10x15.jpg). All regression testids present (cut-style-dashed/solid, cut-color, studio-redeye, studio-sharpen, adj-brightness). BG-stability: top-left corner samples on canvas-single stayed [255,255,255] before/after brightness change (foreground-only filter, background preserved).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AdminPassportPhoto.jsx is 999 lines — approaching the 1000-line soft limit; consider splitting per-feature (sheet drawing, single drawing, sidebar controls) into modules.",
+    "Retouch toast 'Rötuş uygulandı' was not detected during the automated scan (likely fast-dismissed / rendered outside DOM tree when queried); functional path still works (photo remains visible). Not blocking, but consider ensuring the toast is present in DOM for a minimum duration."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a", "frontend": "100%" },
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. Used /app/tests/assets/portrait1.jpg (photo) and portrait2.jpg (watermark).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Radix Select ([data-testid=select-count]) requires click-to-open then click option (option text is like \"4'lı\"). File input #vf is hidden; use page.set_input_files('input#vf', ...) directly. Sheet canvas at Adet=4 is 1181x1772 (10x15cm @ 300dpi), 2x2 layout. Watermark alignment verified both by DOM (data-testids present, pos-grid gone) and visually via screenshot (see below). Pixel-based centroid detection at cell bottom is noisy because portrait content dominates the sample; prefer visual confirmation or diff between snapshots.",
+  "rca of the issue": "N/A — all fixes verified. Previous whiteout was because drawSingle applied a filter through the fgMask path and any failure blanked the canvas; the fix wraps that path in try/catch and drops fgMask on retouch apply so the base image renders unconditionally. Verified: singleCenter nonWhiteRatio=0.998 after Apply."
+}

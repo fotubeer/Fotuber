@@ -384,37 +384,17 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Mode toggle */}
+          {/* AI Garment Editor — the only garment tool (paid) */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium flex items-center gap-2"><Shirt className="w-3.5 h-3.5" /> Kıyafet Modu</Label>
-            <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg text-xs" data-testid="studio-mode-switch">
-              <button
-                type="button"
-                onClick={() => setMode("recolor")}
-                className={`flex items-center justify-center gap-1 py-2 rounded-md transition-colors ${mode === "recolor" ? "bg-emerald-600 text-white shadow font-semibold" : "text-slate-600"}`}
-                data-testid="studio-mode-recolor"
-              >
-                <Droplet className="w-3.5 h-3.5" /> Renk (ücretsiz)
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("ai")}
-                className={`flex items-center justify-center gap-1 py-2 rounded-md transition-colors ${mode === "ai" ? "bg-indigo-600 text-white shadow font-semibold" : "text-slate-600"}`}
-                data-testid="studio-mode-ai"
-              >
-                <Wand2 className="w-3.5 h-3.5" /> AI Kıyafet
-              </button>
+            <Label className="text-sm font-medium flex items-center gap-2">
+              <Shirt className="w-3.5 h-3.5" /> AI Kıyafet &amp; Renk
+              <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 text-[10px] font-semibold" data-testid="studio-paid-badge">
+                <Wand2 className="w-3 h-3" /> Ücretli
+              </span>
+            </Label>
+            <div className="text-[11px] rounded px-2 py-1 border bg-indigo-50 border-indigo-200 text-indigo-800" data-testid="studio-mode-tip">
+              🟣 Kıyafetin tamamı AI ile değişir (renk dahil). "Kıyafeti Değiştir (AI)" butonuna bastığında çalışır — ücretlidir.
             </div>
-            <div className={`text-[11px] rounded px-2 py-1 border ${mode === "recolor" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-indigo-50 border-indigo-200 text-indigo-800"}`} data-testid="studio-mode-tip">
-              {mode === "recolor"
-                ? "🟢 Sadece renk değişir — kanvas maskeleme, AI yok, ücretsiz. Yüz/cilt/arka plan korunur."
-                : "🟣 Kıyafetin tamamı AI ile değişir. \"Kıyafeti Değiştir\" butonuna bastığında çalışır."}
-            </div>
-          </div>
-
-          {/* AI Garment Editor (visible only in AI mode) */}
-          {mode === "ai" && (
-          <div className="space-y-2">
             <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg text-xs">
               <button type="button" onClick={() => setGender("male")}   className={`py-2 rounded-md ${gender==="male"   ? "bg-white shadow font-semibold" : "text-slate-600"}`} data-testid="studio-gender-male">Erkek</button>
               <button type="button" onClick={() => setGender("female")} className={`py-2 rounded-md ${gender==="female" ? "bg-white shadow font-semibold" : "text-slate-600"}`} data-testid="studio-gender-female">Kadın</button>
@@ -436,7 +416,6 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
               <button type="button" onClick={() => setCollar("none")}      className={`py-1.5 rounded-md ${collar==="none"      ? "bg-white shadow font-semibold" : "text-slate-600"}`} data-testid="studio-collar-none">Fark Etmez</button>
             </div>
           </div>
-          )}
 
           {/* Color palette (common to both modes) */}
           <div>
@@ -461,21 +440,12 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
               </div>
             </div>
 
-            {mode === "recolor" ? (
-              <Button onClick={doRecolor} disabled={recolorBusy || !image} className="w-full bg-emerald-600 hover:bg-emerald-700" data-testid="studio-recolor-apply">
-                {recolorBusy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Droplet className="w-4 h-4 mr-2" />}
-                {recolorBusy ? "İşleniyor..." : "Rengi Değiştir"}
-              </Button>
-            ) : (
-              <Button onClick={doAiEdit} disabled={aiBusy || !image} className="w-full bg-indigo-600 hover:bg-indigo-700" data-testid="studio-ai-apply">
-                {aiBusy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Wand2 className="w-4 h-4 mr-2" />}
-                {aiBusy ? "AI çalışıyor..." : "Kıyafeti Değiştir (AI)"}
-              </Button>
-            )}
+            <Button onClick={doAiEdit} disabled={aiBusy || !image} className="w-full bg-indigo-600 hover:bg-indigo-700" data-testid="studio-ai-apply">
+              {aiBusy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Wand2 className="w-4 h-4 mr-2" />}
+              {aiBusy ? "AI çalışıyor..." : "Kıyafeti Değiştir (AI) — Ücretli"}
+            </Button>
             <div className="text-[10px] text-slate-500 leading-tight">
-              {mode === "recolor"
-                ? "Kanvas: yüz altındaki kıyafet piksellerine sadece hue+saturation transfer, luminance korunur — kumaş kıvrımları ve gölgeler değişmez."
-                : "AI: Gemini Nano Banana. Yüz/saç/arka plan korunur. Her uygulama ~5-15 sn sürer."}
+              AI: Gemini Nano Banana. Yüz/saç/arka plan korunur. Her uygulama ~5-15 sn sürer. Bu özellik ücretlidir.
             </div>
 
           <div className="border-t border-slate-200 pt-3 space-y-2">
