@@ -239,3 +239,13 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - **Admin — Üyelikler** (`/admin/uyelikler`, sidebar "Üyelikler", ownerOnly, AdminMemberships.jsx): GET /api/admin/memberships → members[] + groups{trial,monthly,yearly,expired} + counts + pricing. Her üye raporu: kişisel/iletişim, üyelik türü, paid_until/trial_end, trial_used_before, ai_credits, own_gemini_key, subscription_count, credit_topup_count, credits_purchased, total_spent, appointment_count/has_appointment (email/telefon eşleşmesi), features_used/labels. Sekmeler + arama + üye detay dialog + 2 CSV indirme: "İletişim Bilgileri" (kind=contacts) ve "Detaylı Rapor" (kind=memberships). CSV UTF-8 BOM ile (Excel TR uyumlu).
 - **/api/admin/*** endpoint'leri require_admin (member token'a 403). server.py ~4530 satır (ileride router'lara bölünmeli — backlog).
 - **PayTR canlı**: Link API'de canlı/test PayTR panelinden ayarlanır (koddan değil); kullanıcı onayladı. Kod mağaza moduna göre çalışır.
+
+## Session M (Jun 2026) — E-posta: Makbuz + Üyelik Hatırlatma (Gmail SMTP, gerçek gönderim doğrulandı)
+- **Sağlayıcı**: Gmail SMTP (aiosmtplib, smtp.gmail.com:587 STARTTLS, App Password). GMAIL_USER=fotubeer@gmail.com. Alan adı doğrulaması gerekmez. Düşük hacim için uygun; ileride Resend/SendGrid'e geçilebilir (backlog).
+- **email_service.py** (yeni): send_email + Türkçe HTML+text şablonlar (receipt_subscription, receipt_credits, expiry_reminder, test_email). Fotuber markalı.
+- **Makbuz**: PayTR callback grant sonrası `asyncio.create_task(_send_payment_receipt(order))`. Hem abonelik (aylık/yıllık) hem kredi yüklemede gönderilir. Idempotent: db.email_log (notification_key `receipt:{callback_id}` unique index).
+- **Hatırlatma**: `_membership_reminder_loop` (startup'ta başlar, 6 saatte bir) + `_run_expiry_reminders`. paid_until yoksa trial_end baz alınır; Europe/Istanbul tarihine göre bitişe **7 ve 3 gün** kala gönderilir. Idempotency key `expiry:{uid}:{field}:{date}:{days}`. Trial bitişine de aynı kural uygulanır.
+- **Admin uçları**: POST /api/admin/email-test {email?}, POST /api/admin/send-reminders, GET /api/admin/email-status (require_admin).
+- **Admin UI**: Üyelikler sayfası header'ında e-posta durum çubuğu + "Test E-postası" (email-test-btn) + "Hatırlatmaları Gönder" (send-reminders-btn).
+- **Doğrulama (curl + gerçek gönderim)**: test e-postası gönderildi ✅; kredi yükleme makbuzu (status sent) ✅; 3 gün kala hatırlatma gönderildi + ikinci çalıştırmada 0 (idempotent) ✅.
+- **Deps**: aiosmtplib eklendi (requirements.txt pip freeze). Not: reminder loop tek uvicorn worker varsayar; email_log unique key çoklu worker için de emniyet ağı.
