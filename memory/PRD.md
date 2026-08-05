@@ -257,3 +257,19 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - **Frontend**: InvitationCreate.jsx (`/davetiye-olustur`, public sihirbaz + canlı önizleme + son adımda üyelik gate + yayın sonrası QR/link/WhatsApp), InvitationView.jsx (`/davetiye/:slug`, TAM BAĞIMSIZ misafir sayfası, RSVP + anı duvarı + IBAN + geri sayım + harita + opsiyonel müzik), MyInvitations.jsx (`/davetiyelerim`, üye paneli: liste + rapor dialog + CSV + sil). InvitationPreview.jsx (görsel kart + useCountdown), lib/invitationThemes.js (4 tema: romantic/midnight/botanic/gold).
 - **Rotalar** App.js'e eklendi (3 bağımsız route). PublicLayout nav'a altın "Davetiye" girişi.
 - **Bilinen backlog**: cover upload auth yok (abuse limiti eklenebilir), RSVP rate-limit/captcha yok, server.py 4900+ satır (router'lara bölünmeli). Sonraki aşamalar: canlı misafir foto duvarı, AI davetiye metni, kendi sesinle karşılama, masa planı, QR kapıda check-in.
+
+## Session O (Jun 2026) — Davetiye PREMIUM & Animasyonlu Yeniden Tasarım (verified iteration_24, frontend 7/7)
+- **Neden?** Kullanıcı: "davetiyeler çok basit... animasyonlu ve özel basit şeyler dikkat çekmeyecektir". İlham themagicalday.com. Eski önizleme salt gradyan + kalp ikonu + düz kutulardı.
+- **design_agent** çağrıldı → `/app/design_guidelines.json` (mobile-first premium davetiye blueprint).
+- **Yeni bileşenler**:
+  - `components/invitation/InvitationMotifs.jsx`: Temaya özel animasyonlu CSS/SVG dekor katmanı (rose_petals, drifting_leaves, gold_dust, soft_clouds, gold_shimmer_particles, stardust_bokeh, water_caustics, marble_veins). framer-motion ile düşen/yükselen partiküller, bokeh, caustics, canlı mermer. `pointer-events-none absolute inset-0`.
+  - `components/invitation/EnvelopeReveal.jsx`: Sinematik ZARF AÇILIŞI (mühür/monogram pulse → kapak rotateX 180 açılır → kart yükselir → overlay fade). ~3.6sn'de otomatik açılır, dokununca atlanır, `onDone` çağırır. Tema renklerine uyumlu.
+- **Yeniden yazılanlar**:
+  - `components/invitation/InvitationPreview.jsx`: Great Vibes el yazısı isimler (premium temalarda altın metalik shimmer, backgroundPositionX animasyonu), Cormorant Garamond serif, Montserrat etiketler, container/item stagger reveals, kavisli (arch, rounded-t-[6rem]) detay kartı, cam efektli geri sayım. Motif katmanı entegre.
+  - `pages/InvitationView.jsx`: Misafir sayfası zarf açılışıyla başlar; açılınca içerik fade-in; müzik FAB (data-testid=music-fab, sadece müzik/ses varsa); RSVP & anı kartları kağıt-çizgi (bottom-border only, transparent) input stiliyle; anı duvarında el yazısı isimler. Tüm eski data-testid'ler korundu.
+- **Fontlar**: index.html font link'e Montserrat (300/400/500/600) eklendi (Great Vibes & Cormorant Garamond zaten vardı).
+- **Temalar** (`lib/invitationThemes.js`): 8 tema korundu (romantic/botanic/gold/sky ücretsiz; noir/royal/ocean/marble premium), her birine `motif` + `script` alanı eklendi. heading → Cormorant Garamond.
+- **Home CTA**: `pages/Home.jsx`'e büyük, animasyonlu "Davetiyeni Oluştur" bölümü (mor gradyan + uçuşan altın kalpler + altın pill buton, data-testid=home-invitation-cta → /davetiye-olustur). FOMO banner ile Instagram slayt arasına yerleştirildi.
+- **A11y**: Şablon galerisi Dialog'una DialogTitle eklendi (Radix uyarısı giderildi).
+- **Test (iteration_24, frontend 7/7 %100)**: zarf açılışı görünür/kaybolur, geri sayım sıfır değil, RSVP ad+soyad zorunlu, anı duvarı ekleme, Home CTA navigasyonu, wizard Noir↔Sky tema geçişi okunur, üyelik gate'te 3 onay zorunlu. Backend değişmedi (test atlandı).
+- **NOT (bloklamayan)**: Home'da önceden var olan dekoratif SVG `<circle>` cx/cy undefined konsol uyarısı (bu turda dokunulmadı). Premium tema/foto duvarı için BACKEND gating hâlâ zorlanmıyor (P1 backlog — yalnızca UI'da PREMIUM rozeti var).

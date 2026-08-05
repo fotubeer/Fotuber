@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
 import { INVITATION_THEMES, EVENT_TYPE_LABELS, getTheme } from "@/lib/invitationThemes";
@@ -281,7 +281,7 @@ export default function InvitationCreate() {
       {/* Template gallery */}
       <Dialog open={tplOpen} onOpenChange={setTplOpen}>
         <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto" data-testid="template-gallery">
-          <h3 className="text-lg font-bold text-slate-900">Şablon Seç</h3>
+          <DialogTitle className="text-lg font-bold text-slate-900">Şablon Seç</DialogTitle>
           <p className="text-sm text-slate-500 -mt-1">Önce inceleyin, beğendiğiniz şablonla devam edin. Premium şablonlar ücretlidir.</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
             {Object.entries(INVITATION_THEMES).map(([k, th]) => (
