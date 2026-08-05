@@ -9,17 +9,37 @@ from email.utils import formataddr
 from html import escape
 
 import aiosmtplib
+import asyncio
 
 GMAIL_USER = os.environ.get("GMAIL_USER", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 EMAIL_SENDER_NAME = os.environ.get("EMAIL_SENDER_NAME", "Fotuber")
 EMAIL_TIMEZONE = os.environ.get("EMAIL_TIMEZONE", "Europe/Istanbul")
 
+# Preferred provider: Resend (verified custom domain) → higher deliverability.
+# Falls back to Gmail SMTP when Resend is not configured.
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "")  # e.g. bilgi@fotuber.com.tr (verified domain)
+
 BRAND_COLOR = "#4f46e5"
 
 
+def provider() -> str:
+    if RESEND_API_KEY and EMAIL_FROM:
+        return "resend"
+    if GMAIL_USER and GMAIL_APP_PASSWORD:
+        return "gmail"
+    return ""
+
+
+def sender_address() -> str:
+    if provider() == "resend":
+        return EMAIL_FROM
+    return GMAIL_USER
+
+
 def email_configured() -> bool:
-    return bool(GMAIL_USER and GMAIL_APP_PASSWORD)
+    return provider() != ""
 
 
 def _make_message(to: str, subject: str, html: str, text: str) -> EmailMessage:
@@ -33,9 +53,26 @@ def _make_message(to: str, subject: str, html: str, text: str) -> EmailMessage:
     return msg
 
 
+async def _send_resend(to: str, subject: str, html: str, text: str) -> None:
+    import resend
+    resend.api_key = RESEND_API_KEY
+    params = {
+        "from": formataddr((EMAIL_SENDER_NAME, EMAIL_FROM)),
+        "to": [to],
+        "subject": subject,
+        "html": html,
+        "text": text,
+    }
+    await asyncio.to_thread(resend.Emails.send, params)
+
+
 async def send_email(to: str, subject: str, html: str, text: str) -> None:
-    if not email_configured():
-        raise RuntimeError("Gmail SMTP credentials are not configured")
+    prov = provider()
+    if not prov:
+        raise RuntimeError("E-posta sağlayıcısı yapılandırılmamış (Resend veya Gmail)")
+    if prov == "resend":
+        await _send_resend(to, subject, html, text)
+        return
     message = _make_message(to, subject, html, text)
     await aiosmtplib.send(
         message,

@@ -4643,7 +4643,8 @@ async def admin_send_reminders(admin: dict = Depends(require_admin)):
 @api_router.get("/admin/email-status")
 async def admin_email_status(admin: dict = Depends(require_admin)):
     recent = await db.email_log.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=50)
-    return {"configured": email_service.email_configured(), "sender": email_service.GMAIL_USER, "recent": recent}
+    return {"configured": email_service.email_configured(), "provider": email_service.provider(),
+            "sender": email_service.sender_address(), "recent": recent}
 
 
 # Register the router
