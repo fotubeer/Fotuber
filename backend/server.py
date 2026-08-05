@@ -15,12 +15,13 @@ import json
 import bcrypt
 import jwt
 import requests
+import email_service
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Literal
 
 from fastapi import (
     FastAPI, APIRouter, HTTPException, Depends, Request, Response, status,
-    UploadFile, File, Form, Query, Header,
+    UploadFile, File, Form, Query, Header, Body,
 )
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import Response as StarletteResponse
@@ -500,10 +501,13 @@ async def on_startup():
     await db.guest_uploads.create_index("delete_at")
     await db.venues.create_index("qr_token", unique=True)
     await db.guest_events.create_index("download_token")
+    await db.email_log.create_index("notification_key", unique=True)
     init_storage()
 
     # Start background cleanup task (deletes expired guest uploads once an hour)
     asyncio.create_task(_cleanup_expired_uploads())
+    # Start membership expiry reminder loop (7 & 3 days before expiry / trial end)
+    asyncio.create_task(_membership_reminder_loop())
 
     # Seed default site settings if missing
     if await db.site_settings.count_documents({}) == 0:
@@ -4255,6 +4259,7 @@ async def paytr_callback(request: Request):
     )
     if changed:
         await _grant_paid_order(changed)
+        asyncio.create_task(_send_payment_receipt(changed))
     return PlainTextResponse("OK")
 
 
@@ -4507,6 +4512,129 @@ async def _contacts_payload() -> dict:
                         "phone_2": a.get("phone_2") or "", "email": a.get("customer_email") or "",
                         "last_date": a.get("date")})
     return {"members": members, "customers": customers, "booking_contacts": booking}
+
+
+# ---------------------------------------------------------------------------
+# Email — payment receipts + membership expiry reminders (Gmail SMTP)
+# ---------------------------------------------------------------------------
+PUBLIC_APP_URL = os.environ.get("PUBLIC_APP_URL", "https://fotuber.com.tr")
+FRONTEND_PORTAL_PATH = "/vesikalik"
+
+
+def _portal_url() -> str:
+    return PUBLIC_APP_URL.rstrip("/") + FRONTEND_PORTAL_PATH
+
+
+async def _email_send_once(notification_key: str, to: str, subject: str, html: str, text: str):
+    """Idempotent send: a unique notification_key guards against duplicates."""
+    if not email_service.email_configured() or not to:
+        return
+    try:
+        await db.email_log.insert_one({
+            "notification_key": notification_key, "to": to, "status": "pending",
+            "subject": subject, "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as exc:
+        if getattr(exc, "code", None) == 11000:
+            return  # already claimed/sent
+        return
+    try:
+        await email_service.send_email(to, subject, html, text)
+        await db.email_log.update_one({"notification_key": notification_key},
+                                      {"$set": {"status": "sent", "sent_at": datetime.now(timezone.utc).isoformat()}})
+    except Exception as exc:
+        await db.email_log.update_one({"notification_key": notification_key},
+                                      {"$set": {"status": "failed", "error": str(exc)[:400]}})
+
+
+async def _send_payment_receipt(order: dict):
+    user = await db.users.find_one({"id": order.get("user_id")})
+    if not user or not user.get("email"):
+        return
+    ref = order.get("callback_id", "")
+    amount = f"{float(order.get('price') or 0):.2f}₺"
+    if order.get("kind") == "subscription":
+        plan_label = "Yıllık Üyelik" if int(order.get("days") or 30) >= 360 else "Aylık Üyelik"
+        until = (user.get("paid_until") or "")[:10]
+        subject, html, text = email_service.receipt_subscription(user.get("name"), plan_label, amount, ref, until)
+    else:
+        subject, html, text = email_service.receipt_credits(user.get("name"), int(order.get("credits") or 0), amount, ref)
+    await _email_send_once(f"receipt:{ref}", user["email"], subject, html, text)
+
+
+async def _run_expiry_reminders() -> dict:
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(email_service.EMAIL_TIMEZONE)
+    today = datetime.now(tz).date()
+    now = datetime.now(timezone.utc)
+    portal = _portal_url()
+    members = await db.users.find({"role": "member", "email": {"$ne": None}}).to_list(length=100000)
+    sent = 0
+    for m in members:
+        field = "paid_until" if m.get("paid_until") else ("trial_end" if m.get("trial_end") else None)
+        if not field:
+            continue
+        try:
+            exp = datetime.fromisoformat(m[field])
+        except Exception:
+            continue
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp <= now:
+            continue
+        days = (exp.astimezone(tz).date() - today).days
+        if days not in (7, 3):
+            continue
+        trial = field == "trial_end"
+        key = f"expiry:{m['id']}:{field}:{exp.date()}:{days}"
+        already = await db.email_log.find_one({"notification_key": key})
+        if already:
+            continue
+        subject, html, text = email_service.expiry_reminder(
+            m.get("name"), days, trial, MEMBER_MONTHLY_PRICE, MEMBER_YEARLY_PRICE, portal)
+        await _email_send_once(key, m["email"], subject, html, text)
+        sent += 1
+    return {"checked": len(members), "sent": sent}
+
+
+async def _membership_reminder_loop():
+    """Every 6 hours check for members expiring in 7 or 3 days. Idempotent per day."""
+    await asyncio.sleep(30)
+    while True:
+        try:
+            if email_service.email_configured():
+                res = await _run_expiry_reminders()
+                if res.get("sent"):
+                    logger.info(f"membership reminders sent: {res}")
+        except Exception as e:
+            logger.warning(f"reminder loop error: {e}")
+        await asyncio.sleep(6 * 3600)
+
+
+@api_router.post("/admin/email-test")
+async def admin_email_test(payload: dict = Body(default={}), admin: dict = Depends(require_admin)):
+    if not email_service.email_configured():
+        raise HTTPException(status_code=400, detail="Gmail SMTP yapılandırılmamış (GMAIL_USER / GMAIL_APP_PASSWORD)")
+    to = (payload or {}).get("email") or admin.get("email")
+    subject, html, text = email_service.test_email()
+    try:
+        await email_service.send_email(to, subject, html, text)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"E-posta gönderilemedi: {str(e)[:200]}")
+    return {"sent": True, "to": to}
+
+
+@api_router.post("/admin/send-reminders")
+async def admin_send_reminders(admin: dict = Depends(require_admin)):
+    if not email_service.email_configured():
+        raise HTTPException(status_code=400, detail="Gmail SMTP yapılandırılmamış")
+    return await _run_expiry_reminders()
+
+
+@api_router.get("/admin/email-status")
+async def admin_email_status(admin: dict = Depends(require_admin)):
+    recent = await db.email_log.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=50)
+    return {"configured": email_service.email_configured(), "sender": email_service.GMAIL_USER, "recent": recent}
 
 
 # Register the router

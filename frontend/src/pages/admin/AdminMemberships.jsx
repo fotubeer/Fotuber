@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { BadgeCheck, Download, Search, Building2, User, CalendarCheck, KeyRound, Sparkles, CreditCard } from "lucide-react";
+import { BadgeCheck, Download, Search, Building2, User, CalendarCheck, KeyRound, Sparkles, CreditCard, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 const GROUPS = [
@@ -24,6 +24,7 @@ const AdminMemberships = () => {
   const [tab, setTab] = useState("all");
   const [q, setQ] = useState("");
   const [detail, setDetail] = useState(null);
+  const [emailStatus, setEmailStatus] = useState(null);
 
   const load = async () => {
     try {
@@ -31,7 +32,23 @@ const AdminMemberships = () => {
       setData(data);
     } catch (e) { toast.error(formatApiError(e)); }
   };
-  useEffect(() => { load(); }, []);
+  const loadEmail = async () => {
+    try { const { data } = await api.get("/admin/email-status"); setEmailStatus(data); } catch (e) { /* ignore */ }
+  };
+  useEffect(() => { load(); loadEmail(); }, []);
+
+  const sendTestEmail = async () => {
+    try {
+      const { data } = await api.post("/admin/email-test", {});
+      toast.success(`Test e-postası gönderildi: ${data.to}`);
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+  const sendReminders = async () => {
+    try {
+      const { data } = await api.post("/admin/send-reminders", {});
+      toast.success(`Hatırlatma taraması tamam: ${data.sent} e-posta gönderildi (${data.checked} üye tarandı)`);
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
 
   const rows = useMemo(() => {
     if (!data) return [];
@@ -81,6 +98,21 @@ const AdminMemberships = () => {
           </Button>
         </div>
       </div>
+
+      <Card className="border-slate-200">
+        <CardContent className="py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm">
+            <Mail className="w-4 h-4 text-slate-500" />
+            {emailStatus?.configured
+              ? <span className="text-slate-600">E-posta aktif · Gönderen: <b>{emailStatus.sender}</b></span>
+              : <span className="text-amber-600">E-posta yapılandırılmamış (GMAIL_USER / GMAIL_APP_PASSWORD gerekli)</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" disabled={!emailStatus?.configured} onClick={sendTestEmail} data-testid="email-test-btn">Test E-postası</Button>
+            <Button size="sm" variant="outline" disabled={!emailStatus?.configured} onClick={sendReminders} data-testid="send-reminders-btn">Hatırlatmaları Gönder</Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {data && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
