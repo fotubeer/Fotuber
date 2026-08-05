@@ -4131,6 +4131,15 @@ async def _grant_paid_order(order: dict):
             "paid_until": new_until, "created_at": now.isoformat(),
         })
         await _track_feature(uid, "abonelik")
+    elif order.get("kind") == "invitation":
+        iid = order.get("invitation_id")
+        await db.invitations.update_one(
+            {"id": iid, "owner_user_id": uid},
+            {"$set": {"status": "published", "paid": True, "is_premium": True,
+                      "published_at": now.isoformat(), "paid_price": order.get("price"),
+                      "paid_callback_id": order.get("callback_id")}},
+        )
+        await _track_feature(uid, "davetiye_premium")
     else:
         current = _ai_credits_of(user)
         await db.users.update_one({"id": uid}, {"$set": {"ai_credits": current + int(order.get("credits", 0))}})
@@ -4144,9 +4153,10 @@ async def _grant_paid_order(order: dict):
 
 
 class PaytrCreateIn(BaseModel):
-    kind: str  # "subscription" | "credits"
+    kind: str  # "subscription" | "credits" | "invitation"
     period: str = "monthly"  # "monthly" | "yearly" (subscription only)
     package_id: Optional[str] = None
+    invitation_id: Optional[str] = None  # invitation only
     origin_url: str = ""
 
 
@@ -4159,6 +4169,7 @@ async def paytr_create(payload: PaytrCreateIn, request: Request, user: dict = De
 
     kind = payload.kind
     days = 0
+    invitation_id = None
     if kind == "subscription":
         if payload.period == "yearly":
             price = float(MEMBER_YEARLY_PRICE)
@@ -4176,6 +4187,19 @@ async def paytr_create(payload: PaytrCreateIn, request: Request, user: dict = De
         price = float(pkg["price"])
         title = f"{pkg['credits']} AI Kredisi (Fotuber Vesikalik)"
         credits = int(pkg["credits"])
+    elif kind == "invitation":
+        inv = await db.invitations.find_one({"id": payload.invitation_id or "", "owner_user_id": user.get("id")})
+        if not inv:
+            raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+        if inv.get("paid") or inv.get("status") == "published":
+            raise HTTPException(status_code=400, detail="Bu davetiye zaten yayında")
+        pr = _invitation_pricing(inv.get("theme"), inv.get("sections"))
+        if not pr["needs_payment"]:
+            raise HTTPException(status_code=400, detail="Bu davetiye ücretsiz, ödeme gerekmez")
+        price = float(pr["price"])
+        title = "Fotuber Premium Dijital Davetiye" + (" + Foto Duvari" if pr["photowall"] else "")
+        credits = 0
+        invitation_id = inv["id"]
     else:
         raise HTTPException(status_code=400, detail="Geçersiz işlem türü")
 
@@ -4226,6 +4250,7 @@ async def paytr_create(payload: PaytrCreateIn, request: Request, user: dict = De
         "callback_id": cid, "paytr_link_id": result.get("id"),
         "user_id": user.get("id"), "kind": kind, "days": days,
         "package_id": payload.package_id, "credits": credits,
+        "invitation_id": invitation_id,
         "expected_amount": price_kurus, "currency": "TRY", "price": price,
         "callback_link": callback_link,
         "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
@@ -4570,6 +4595,13 @@ async def _send_payment_receipt(order: dict):
         plan_label = "Yıllık Üyelik" if int(order.get("days") or 30) >= 360 else "Aylık Üyelik"
         until = (user.get("paid_until") or "")[:10]
         subject, html, text = email_service.receipt_subscription(user.get("name"), plan_label, amount, ref, until)
+    elif order.get("kind") == "invitation":
+        subject = "Fotuber · Premium Davetiye Ödemeniz Alındı"
+        html = (f"<div style='font-family:Georgia,serif;color:#3a2a2d'><p>Merhaba {user.get('name') or ''},</p>"
+                f"<p><b>{amount}</b> tutarındaki ödemeniz alınmıştır. Premium dijital davetiyeniz artık yayında! 🎉</p>"
+                f"<p>Davetiyelerinizi <a href='{_portal_url()}/davetiyelerim'>Davetiyelerim</a> sayfasından yönetebilirsiniz.</p>"
+                f"<p style='color:#8a6a6f;font-size:12px'>Referans: {ref}</p><p>Sevgiyle,<br/>Fotuber</p></div>")
+        text = f"Merhaba, {amount} tutarindaki odemeniz alindi. Premium davetiyeniz yayinda. Ref: {ref} — Fotuber"
     else:
         subject, html, text = email_service.receipt_credits(user.get("name"), int(order.get("credits") or 0), amount, ref)
     await _email_send_once(f"receipt:{ref}", user["email"], subject, html, text)
@@ -4664,9 +4696,32 @@ async def admin_email_status(admin: dict = Depends(require_admin)):
 # Guest page is standalone; RSVP requires name+surname; gift via creator's IBAN.
 # ---------------------------------------------------------------------------
 import re as _re
+import invitation_pdf
 
-INVITE_THEMES = ["romantic", "midnight", "botanic", "gold"]
+INVITE_THEMES = ["romantic", "botanic", "gold", "sky", "noir", "royal", "ocean", "marble"]
+INVITE_PREMIUM_THEMES = {"noir", "royal", "ocean", "marble"}
 INVITE_EVENT_TYPES = ["dugun", "nisan", "kina", "sunnet", "dogumgunu", "nikah", "diger"]
+INVITE_PREMIUM_PRICE = float(os.environ.get("INVITE_PREMIUM_PRICE", "200"))
+INVITE_PHOTOWALL_PRICE = float(os.environ.get("INVITE_PHOTOWALL_PRICE", "750"))
+
+
+def _invitation_pricing(theme: str, sections: dict) -> dict:
+    """Server-authoritative pricing. Print PDF is free. Premium DIGITAL invitations
+    require a one-time PayTR payment: premium theme = INVITE_PREMIUM_PRICE, adding the
+    QR live photo wall = INVITE_PHOTOWALL_PRICE (total)."""
+    photowall = bool((sections or {}).get("photowall"))
+    premium_theme = theme in INVITE_PREMIUM_THEMES
+    needs_payment = premium_theme or photowall
+    if photowall:
+        price = INVITE_PHOTOWALL_PRICE
+    elif premium_theme:
+        price = INVITE_PREMIUM_PRICE
+    else:
+        price = 0.0
+    return {"needs_payment": needs_payment, "price": price,
+            "premium_theme": premium_theme, "photowall": photowall,
+            "premium_price": INVITE_PREMIUM_PRICE, "photowall_price": INVITE_PHOTOWALL_PRICE,
+            "currency": "TRY"}
 
 
 def _slugify(text: str) -> str:
@@ -4700,10 +4755,13 @@ def _invite_public(doc: dict, owner: bool = False) -> dict:
         "checkin_enabled": bool(doc.get("checkin_enabled")),
         "sections": doc.get("sections") or {},
         "gift": doc.get("gift") or {},
+        "is_premium": bool(doc.get("is_premium")),
         "created_at": doc.get("created_at"), "expires_at": doc.get("expires_at"),
     }
     if owner:
         out["owner_user_id"] = doc.get("owner_user_id")
+        out["price"] = doc.get("price")
+        out["pricing"] = _invitation_pricing(doc.get("theme"), doc.get("sections"))
     return out
 
 
@@ -4795,6 +4853,49 @@ async def invitation_audio_get(aid: str):
                              headers={"Cache-Control": "public, max-age=86400", "Accept-Ranges": "bytes"})
 
 
+# ---- Print-ready invitation PDF (FREE, public) ----
+class PrintInvitationIn(BaseModel):
+    person1: str = ""
+    person2: Optional[str] = ""
+    event_type: str = "dugun"
+    event_date: Optional[str] = ""
+    event_time: Optional[str] = ""
+    venue_name: Optional[str] = ""
+    venue_address: Optional[str] = ""
+    message: Optional[str] = ""
+    size: str = "a5"
+    bg_color: str = "#FFF7F0"
+    accent_color: str = "#B76E79"
+    text_color: str = "#4A2F33"
+    symbol: str = "heart"
+
+
+@api_router.post("/invitations/print-pdf")
+async def invitation_print_pdf(payload: PrintInvitationIn):
+    """Generate a high quality, print-ready PDF (3mm bleed, embedded fonts). Free for everyone."""
+    if not (payload.person1 or "").strip():
+        raise HTTPException(status_code=400, detail="En az bir isim gerekli")
+    data = payload.dict()
+    if data.get("size") not in invitation_pdf.SIZES:
+        data["size"] = "a5"
+    if data.get("symbol") not in invitation_pdf.SYMBOLS:
+        data["symbol"] = "heart"
+    try:
+        pdf = invitation_pdf.render_invitation_pdf(data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF oluşturulamadı: {str(e)[:200]}")
+    fname = _slugify(f"{payload.person1}-{payload.person2}" if payload.person2 else payload.person1) or "davetiye"
+    return StarletteResponse(content=pdf, media_type="application/pdf",
+                             headers={"Content-Disposition": f"attachment; filename=davetiye-{fname}.pdf"})
+
+
+@api_router.get("/invitations/print-options")
+async def invitation_print_options():
+    return {"sizes": [{"key": k, "label": v} for k, v in invitation_pdf.SIZE_LABELS.items()],
+            "symbols": invitation_pdf.SYMBOLS,
+            "event_types": [{"key": k, "label": v} for k, v in invitation_pdf.EVENT_LABELS.items()]}
+
+
 # ---- Live guest photo wall ----
 @api_router.post("/invitations/public/{slug}/photos")
 async def upload_guest_photo(slug: str, file: UploadFile = File(...), uploader_name: str = Form("")):
@@ -4878,25 +4979,34 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
     base = _slugify(f"{payload.person1}-{payload.person2}" if payload.person2 else payload.person1)
     slug = f"{base}-{uuid.uuid4().hex[:6]}"
     default_sections = {"countdown": True, "map": True, "memories": True, "rsvp": True,
-                        "photowall": True,
+                        "photowall": False,
                         "gift": bool((payload.gift or {}).get("iban")), "music": bool(payload.music_url or payload.greeting_audio_id)}
+    theme = payload.theme if payload.theme in INVITE_THEMES else "romantic"
+    sections = {**default_sections, **(payload.sections or {})}
+    pricing = _invitation_pricing(theme, sections)
+    inv_status = "unpaid" if pricing["needs_payment"] else "published"
     doc = {
-        "id": iid, "slug": slug, "owner_user_id": user.get("id"), "status": "published",
+        "id": iid, "slug": slug, "owner_user_id": user.get("id"), "status": inv_status,
         "event_type": payload.event_type, "title": payload.title,
         "person1": payload.person1, "person2": payload.person2,
         "event_date": payload.event_date, "event_time": payload.event_time,
         "venue_name": payload.venue_name, "venue_address": payload.venue_address,
         "map_url": payload.map_url, "message": payload.message,
-        "theme": payload.theme if payload.theme in INVITE_THEMES else "romantic",
+        "theme": theme,
         "primary_color": payload.primary_color, "cover_image_id": payload.cover_image_id,
         "music_url": payload.music_url, "greeting_audio_id": payload.greeting_audio_id,
         "checkin_enabled": bool(payload.checkin_enabled),
-        "sections": {**default_sections, **(payload.sections or {})},
+        "sections": sections,
         "gift": payload.gift or {},
-        "created_at": now, "published_at": now, "expires_at": _invite_expires_at(payload.event_date),
+        "is_premium": pricing["needs_payment"], "price": pricing["price"],
+        "created_at": now, "published_at": (now if inv_status == "published" else None),
+        "expires_at": _invite_expires_at(payload.event_date),
     }
     await db.invitations.insert_one(doc)
-    return {"id": iid, "slug": slug, "url": f"/davetiye/{slug}", "invitation": _invite_public(doc, owner=True)}
+    return {"id": iid, "slug": slug, "url": f"/davetiye/{slug}",
+            "requires_payment": pricing["needs_payment"], "price": pricing["price"],
+            "pricing": pricing, "status": inv_status,
+            "invitation": _invite_public(doc, owner=True)}
 
 
 @api_router.get("/invitations")
@@ -4934,6 +5044,11 @@ async def update_invitation(iid: str, payload: InvitationIn, user: dict = Depend
     upd = payload.dict()
     upd["theme"] = upd["theme"] if upd["theme"] in INVITE_THEMES else "romantic"
     upd["sections"] = {**(d.get("sections") or {}), **(payload.sections or {})}
+    new_pricing = _invitation_pricing(upd["theme"], upd["sections"])
+    already_paid = bool(d.get("paid"))
+    upd["is_premium"] = new_pricing["needs_payment"]
+    upd["price"] = new_pricing["price"]
+    upd["status"] = "published" if (not new_pricing["needs_payment"] or already_paid) else "unpaid"
     upd["expires_at"] = _invite_expires_at(payload.event_date)
     upd["updated_at"] = now_iso()
     await db.invitations.update_one({"id": iid}, {"$set": upd})

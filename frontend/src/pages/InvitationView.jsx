@@ -6,6 +6,7 @@ import { Loader2, Send, MessageCircleHeart, Check, X, Volume2, VolumeX } from "l
 import { Button } from "@/components/ui/button";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
 import EnvelopeReveal from "@/components/invitation/EnvelopeReveal";
+import PhotoWall from "@/components/invitation/PhotoWall";
 import { getTheme } from "@/lib/invitationThemes";
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -209,6 +210,9 @@ export default function InvitationView() {
               )}
             </motion.div>
           )}
+
+          {/* Live photo wall (premium) */}
+          {sections.photowall && <PhotoWall slug={slug} t={t} />}
 
           <div className="text-center text-xs pt-4" style={{ color: t.sub }}>
             <span style={{ fontFamily: t.script, fontSize: "1.4rem", color: t.accent }}>Fotuber</span>

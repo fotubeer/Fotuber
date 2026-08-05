@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast, Toaster } from "sonner";
-import { Loader2, Sparkles, Check, Copy, ExternalLink, Upload, ArrowRight, Music, Eye, Lock, QrCode, Images } from "lucide-react";
+import { Loader2, Sparkles, Check, Copy, ExternalLink, Upload, ArrowRight, Music, Eye, Lock, QrCode, Images, Download, CreditCard } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,8 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
-import { INVITATION_THEMES, EVENT_TYPE_LABELS, getTheme } from "@/lib/invitationThemes";
+import VoiceRecorder from "@/components/invitation/VoiceRecorder";
+import { INVITATION_THEMES, EVENT_TYPE_LABELS, getTheme, printColors } from "@/lib/invitationThemes";
 import { getMessagesFor } from "@/lib/invitationMessages";
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -32,6 +33,8 @@ export default function InvitationCreate() {
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [published, setPublished] = useState(null); // { slug, url }
+  const [payGate, setPayGate] = useState(null); // { invitation_id, price, pricing, slug, url }
+  const [paying, setPaying] = useState(false);
   const [tplOpen, setTplOpen] = useState(false);
   const [previewTpl, setPreviewTpl] = useState(null); // theme key being inspected fullscreen
   const [mobilePrev, setMobilePrev] = useState(false);
@@ -56,6 +59,9 @@ export default function InvitationCreate() {
   };
 
   const canPublish = data.person1.trim() && data.event_date;
+  const isPremiumTheme = INVITATION_THEMES[data.theme]?.premium;
+  const hasPhotowall = !!data.sections.photowall;
+  const invPrice = hasPhotowall ? 750 : (isPremiumTheme ? 200 : 0);
   const shareUrl = useMemo(() => (published ? `${window.location.origin}/davetiye/${published.slug}` : ""), [published]);
 
   const uploadCover = async (file) => {
@@ -105,11 +111,64 @@ export default function InvitationCreate() {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.detail || "Yayınlanamadı");
-      setPublished({ slug: d.slug, url: d.url });
       setGate(false);
-      toast.success("Davetiyeniz yayında! 🎉");
+      if (d.requires_payment) {
+        setPayGate({ invitation_id: d.id, price: d.price, pricing: d.pricing, slug: d.slug, url: d.url });
+      } else {
+        setPublished({ slug: d.slug, url: d.url });
+        toast.success("Davetiyeniz yayında! 🎉");
+      }
     } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
+  };
+
+  const startInvitationPayment = async () => {
+    if (!payGate) return;
+    setPaying(true);
+    try {
+      const r = await api("/payments/paytr/create", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "invitation", invitation_id: payGate.invitation_id, origin_url: window.location.origin }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || "Ödeme başlatılamadı");
+      window.open(d.link, "_blank");
+      const iv = setInterval(async () => {
+        try {
+          const sr = await api(`/payments/status/${d.callback_id}`);
+          const sd = await sr.json().catch(() => ({}));
+          if (sd.status === "paid") {
+            clearInterval(iv); setPaying(false);
+            setPublished({ slug: payGate.slug, url: payGate.url });
+            setPayGate(null);
+            toast.success("Ödeme alındı, davetiyeniz yayında! 🎉");
+          }
+        } catch (e) { /* keep polling */ }
+      }, 3000);
+      setTimeout(() => clearInterval(iv), 300000);
+    } catch (e) { toast.error(e.message); setPaying(false); }
+  };
+
+  const downloadPrintPdf = async () => {
+    if (!data.person1.trim()) { toast.error("En az bir isim girin"); return; }
+    const colors = printColors(data.theme);
+    const body = {
+      person1: data.person1, person2: data.person2, event_type: data.event_type,
+      event_date: data.event_date, event_time: data.event_time, venue_name: data.venue_name,
+      venue_address: data.venue_address, message: data.message, size: "a5", symbol: "heart", ...colors,
+    };
+    try {
+      const r = await fetch(`${API}/api/invitations/print-pdf`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "PDF oluşturulamadı"); }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `davetiye-${(data.person1 || "baski").toLowerCase()}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      toast.success("Baskıya hazır PDF indirildi");
+    } catch (e) { toast.error(e.message); }
   };
 
   const copyLink = () => { navigator.clipboard.writeText(shareUrl); toast.success("Bağlantı kopyalandı"); };
@@ -208,6 +267,9 @@ export default function InvitationCreate() {
                 {data.greeting_audio_id ? "Ses eklendi — değiştir" : "Ses/müzik yükle (mp3)"}
                 <input type="file" accept="audio/*" className="hidden" onChange={(e) => uploadAudio(e.target.files?.[0])} data-testid="audio-upload" />
               </label>
+              <div className="text-center text-[11px] text-slate-400 my-2">— veya kendi sesinle kaydet —</div>
+              <VoiceRecorder onUpload={uploadAudio} uploading={uploading} />
+              {data.greeting_audio_id && <div className="mt-2 text-xs text-emerald-600 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Karşılama sesi eklendi</div>}
             </div>
 
             <div>
@@ -247,9 +309,23 @@ export default function InvitationCreate() {
               </div>
             </div>
 
+            {invPrice > 0 && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 flex items-start gap-2" data-testid="premium-price-note">
+                <Lock className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>Premium davetiye: <b>{invPrice}₺</b> {hasPhotowall ? "(canlı foto duvarı dahil)" : "(premium şablon)"} — yayınlarken PayTR ile tek seferlik ödenir.</span>
+              </div>
+            )}
+
             <Button onClick={startPublish} disabled={!canPublish || busy} className="w-full bg-indigo-600 hover:bg-indigo-700 h-12 text-base" data-testid="publish-btn">
-              {busy ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Sparkles className="w-5 h-5 mr-2" />} Davetiyeyi Yayınla
+              {busy ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Sparkles className="w-5 h-5 mr-2" />}
+              {invPrice > 0 ? `Yayınla ve Öde · ${invPrice}₺` : "Davetiyeyi Yayınla"}
             </Button>
+
+            <button onClick={downloadPrintPdf} type="button" data-testid="wizard-print-pdf"
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">
+              <Download className="w-4 h-4" /> Baskıya Hazır PDF İndir (ücretsiz)
+            </button>
+            <p className="text-[11px] text-slate-400 text-center -mt-1">Basılı davetiye için: yüksek kaliteli PDF, seçili şablon renkleriyle.</p>
           </div>
         </div>
 
@@ -364,6 +440,38 @@ export default function InvitationCreate() {
               {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ArrowRight className="w-4 h-4 mr-2" />} Üye Ol ve Yayınla
             </Button>
             <button onClick={() => setGate(false)} className="w-full mt-2 text-xs text-slate-500">Vazgeç</button>
+          </div>
+        </div>
+      )}
+      {/* Premium invitation payment (one-time via PayTR) */}
+      {payGate && (
+        <div className="fixed inset-0 bg-black/60 grid place-items-center z-50 p-4" data-testid="pay-gate">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-center">
+            <div className="w-14 h-14 rounded-full bg-amber-100 grid place-items-center mx-auto mb-4">
+              <Lock className="w-7 h-7 text-amber-600" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900">Premium Davetiye</h3>
+            <p className="text-sm text-slate-500 mt-1 mb-4">
+              {payGate.pricing?.photowall
+                ? "Premium şablon + canlı foto duvarı içeren davetiyeniz için tek seferlik ödeme."
+                : "Premium şablonlu davetiyeniz için tek seferlik ödeme."}
+            </p>
+            <div className="text-4xl font-bold text-slate-900 mb-1" data-testid="pay-amount">{payGate.price}₺</div>
+            <p className="text-xs text-slate-400 mb-5">Ödeme sonrası davetiyeniz otomatik yayına alınır.</p>
+            {paying ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-center gap-2 text-sm text-slate-600" data-testid="pay-waiting">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Ödeme bekleniyor…
+                </div>
+                <button onClick={startInvitationPayment} className="text-xs text-indigo-600" data-testid="pay-reopen">Ödeme sayfasını yeniden aç</button>
+              </div>
+            ) : (
+              <Button onClick={startInvitationPayment} className="w-full bg-amber-500 hover:bg-amber-600 text-amber-950 h-12" data-testid="pay-start">
+                <CreditCard className="w-5 h-5 mr-2" /> PayTR ile Öde
+              </Button>
+            )}
+            <button onClick={() => { setPayGate(null); setPaying(false); }} className="w-full mt-3 text-xs text-slate-500" data-testid="pay-cancel">Vazgeç</button>
+            <p className="text-[11px] text-slate-400 mt-3">Ödeme yapmadan da <button onClick={downloadPrintPdf} className="underline">baskıya hazır PDF</button> indirebilirsiniz (ücretsiz).</p>
           </div>
         </div>
       )}

@@ -74,3 +74,14 @@ export const getTheme = (code, primary) => {
   const t = INVITATION_THEMES[code] || INVITATION_THEMES.romantic;
   return primary ? { ...t, accent: primary } : t;
 };
+
+// Solid background colors for print-ready PDF (theme bg is a gradient, unusable for print).
+export const PRINT_BG = {
+  romantic: "#FFF1F2", botanic: "#F2F7F0", gold: "#FBF7EF", sky: "#EFF6FF",
+  noir: "#0D0D0D", royal: "#190826", ocean: "#041E1F", marble: "#FDF6F2",
+};
+
+export const printColors = (code) => {
+  const t = INVITATION_THEMES[code] || INVITATION_THEMES.romantic;
+  return { bg_color: PRINT_BG[code] || "#FFF7F0", accent_color: t.accent, text_color: t.text };
+};

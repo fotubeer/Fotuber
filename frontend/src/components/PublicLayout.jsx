@@ -15,6 +15,7 @@ const navItems = [
   { to: "/galeri", label: "Galeri" },
   { to: "/vesikalik", label: "Vesikalık", accent: true },
   { to: "/davetiye-olustur", label: "Davetiye", accent: true },
+  { to: "/baskiya-hazir-davetiye", label: "Baskı Davetiye", accent: true },
   { to: "/indirim-kodu", label: "İndirim Kodu", accent: true },
   { to: "/hakkimizda", label: "Hakkımızda" },
   { to: "/iletisim", label: "İletişim" },

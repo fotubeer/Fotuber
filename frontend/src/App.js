@@ -14,6 +14,7 @@ import MemberVesikalik from "@/pages/MemberVesikalik";
 import InvitationCreate from "@/pages/InvitationCreate";
 import InvitationView from "@/pages/InvitationView";
 import MyInvitations from "@/pages/MyInvitations";
+import PrintInvitation from "@/pages/PrintInvitation";
 
 import Home from "@/pages/Home";
 import Services from "@/pages/Services";
@@ -96,6 +97,7 @@ function App() {
               <Route path="/personel-girisi" element={<StaffLogin />} />
               <Route path="/vesikalik" element={<MemberVesikalik />} />
               <Route path="/davetiye-olustur" element={<InvitationCreate />} />
+              <Route path="/baskiya-hazir-davetiye" element={<PrintInvitation />} />
               <Route path="/davetiye/:slug" element={<InvitationView />} />
               <Route path="/davetiyelerim" element={<MyInvitations />} />
 
