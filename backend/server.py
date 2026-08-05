@@ -3871,6 +3871,7 @@ async def member_register(payload: MemberRegisterIn, response: Response):
     await db.users.insert_one(doc)
     access = create_access_token(uid, doc["email"], "member")
     set_auth_cookies(response, access, create_refresh_token(uid))
+    asyncio.create_task(_send_welcome_email(doc, trial=not trial_used))
     return {"token": access, "user": _member_public(doc), "membership": _membership_state(doc), "trial_used_before": trial_used}
 
 @api_router.post("/member/login")
@@ -4560,6 +4561,14 @@ async def _send_payment_receipt(order: dict):
     else:
         subject, html, text = email_service.receipt_credits(user.get("name"), int(order.get("credits") or 0), amount, ref)
     await _email_send_once(f"receipt:{ref}", user["email"], subject, html, text)
+
+
+async def _send_welcome_email(user: dict, trial: bool):
+    if not user or not user.get("email"):
+        return
+    subject, html, text = email_service.welcome_email(
+        user.get("name"), trial, MEMBER_MONTHLY_PRICE, MEMBER_YEARLY_PRICE, _portal_url())
+    await _email_send_once(f"welcome:{user.get('id')}", user["email"], subject, html, text)
 
 
 async def _run_expiry_reminders() -> dict:

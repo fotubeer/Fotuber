@@ -122,3 +122,33 @@ def test_email(name: str = "Fotuber"):
     inner = """<h2 style="margin:0 0 12px;font-size:18px;">E-posta ayarları çalışıyor</h2>
       <p style="margin:0;">Bu bir test e-postasıdır. Gmail SMTP entegrasyonu başarıyla yapılandırıldı.</p>"""
     return subject, _wrap(inner, "E-posta testi"), "Fotuber e-posta testi: Gmail SMTP çalışıyor."
+
+
+def welcome_email(name: str, trial: bool, monthly_price, yearly_price, portal_url: str):
+    n = escape(name or "Değerli üyemiz")
+    pu = escape(portal_url)
+    if trial:
+        offer = "🎁 İlk ayınız <b>ücretsiz</b>! Hemen tüm özellikleri denemeye başlayabilirsiniz."
+        offer_txt = "İlk ayınız ücretsiz! Hemen kullanmaya başlayın."
+    else:
+        offer = (f"Başlamak için bir plan seçin: Aylık <b>{escape(str(monthly_price))}₺</b> "
+                 f"veya Yıllık <b>{escape(str(yearly_price))}₺</b> (2 ay bedava).")
+        offer_txt = f"Başlamak için plan seçin: Aylık {monthly_price} TL / Yıllık {yearly_price} TL."
+    inner = f"""
+      <h2 style="margin:0 0 12px;font-size:18px;">Fotuber'e hoş geldiniz, {n}! 👋</h2>
+      <p style="margin:0 0 14px;">Vesikalık üyeliğiniz oluşturuldu. {offer}</p>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:12px 0;">
+        <div style="font-weight:700;margin-bottom:10px;">🚀 Hızlı Başlangıç</div>
+        <ol style="margin:0;padding-left:18px;line-height:1.9;font-size:14px;color:#334155;">
+          <li>Portala girin ve fotoğrafınızı yükleyin.</li>
+          <li>Arka plan otomatik temizlenir, biyometrik ölçülere göre kırpılır.</li>
+          <li>AI ile kıyafet ve renk değiştirin, kırmızı göz/göz netleştirme uygulayın.</li>
+          <li>Baskıya hazır şablonu (filigran + kesim çizgileri) tek tıkla indirin.</li>
+        </ol>
+      </div>
+      <a href="{pu}" style="display:inline-block;background:{BRAND_COLOR};color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:600;">Hemen Başla</a>
+      <p style="margin:16px 0 0;color:#64748b;font-size:13px;">Sorularınız için bize her zaman yazabilirsiniz. İyi çalışmalar!</p>"""
+    text = (f"Fotuber'e hoş geldiniz, {name}!\n\nVesikalık üyeliğiniz oluşturuldu. {offer_txt}\n\n"
+            f"Hızlı Başlangıç:\n1) Portala girip fotoğraf yükleyin\n2) Arka plan otomatik temizlenir ve biyometrik kırpılır\n"
+            f"3) AI ile kıyafet/renk değiştirin\n4) Baskıya hazır şablonu indirin\n\nBaşla: {portal_url}\n")
+    return "Fotuber'e hoş geldiniz 🎉", _wrap(inner, "Fotuber'e hoş geldiniz"), text
