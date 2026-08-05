@@ -247,6 +247,39 @@ async def require_staff_or_admin(user: dict = Depends(get_current_user)) -> dict
     return user
 
 
+MEMBER_MONTHLY_PRICE = float(os.environ.get("MEMBER_MONTHLY_PRICE", "80"))
+TRIAL_DAYS = 30
+
+def _membership_state(user: dict) -> dict:
+    now = datetime.now(timezone.utc)
+    def _parse(v):
+        try:
+            return datetime.fromisoformat(v) if v else None
+        except Exception:
+            return None
+    trial_end = _parse(user.get("trial_end"))
+    paid_until = _parse(user.get("paid_until"))
+    active, mstatus, until = False, "expired", None
+    if paid_until and paid_until > now:
+        active, mstatus, until = True, "active", user.get("paid_until")
+    elif trial_end and trial_end > now:
+        active, mstatus, until = True, "trial", user.get("trial_end")
+    return {"active": active, "status": mstatus, "until": until,
+            "price": MEMBER_MONTHLY_PRICE, "currency": "TRY", "trial_days": TRIAL_DAYS}
+
+
+async def require_vesikalik_access(user: dict = Depends(get_current_user)) -> dict:
+    """Admin/staff always allowed; firm members only with an ACTIVE membership."""
+    role = user.get("role")
+    if role in ("admin", "staff"):
+        return user
+    if role == "member":
+        if not _membership_state(user)["active"]:
+            raise HTTPException(status_code=402, detail="Üyeliğiniz aktif değil. Lütfen abone olun.")
+        return user
+    raise HTTPException(status_code=403, detail="Yetkisiz erişim")
+
+
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
@@ -3722,13 +3755,13 @@ class GeminiKeyIn(BaseModel):
     api_key: str
 
 @api_router.get("/vesikalik/gemini-key")
-async def get_gemini_key(admin: dict = Depends(require_admin)):
+async def get_gemini_key(admin: dict = Depends(require_vesikalik_access)):
     """Whether the current user has connected their own Gemini key (masked)."""
     raw = _user_gemini_key(admin)
     return {"connected": bool(raw), "masked": _mask_key(raw) if raw else None}
 
 @api_router.post("/vesikalik/gemini-key")
-async def set_gemini_key(payload: GeminiKeyIn, admin: dict = Depends(require_admin)):
+async def set_gemini_key(payload: GeminiKeyIn, admin: dict = Depends(require_vesikalik_access)):
     """Validate a user-supplied Google Gemini key against Google, then store it."""
     import asyncio as _asyncio
     raw = (payload.api_key or "").strip()
@@ -3741,12 +3774,84 @@ async def set_gemini_key(payload: GeminiKeyIn, admin: dict = Depends(require_adm
     return {"connected": True, "masked": _mask_key(raw)}
 
 @api_router.delete("/vesikalik/gemini-key")
-async def delete_gemini_key(admin: dict = Depends(require_admin)):
+async def delete_gemini_key(admin: dict = Depends(require_vesikalik_access)):
     await db.users.update_one({"id": admin.get("id")}, {"$unset": {"gemini_api_key_enc": ""}})
     return {"connected": False, "masked": None}
 
+class MemberRegisterIn(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=6, max_length=128)
+    full_name: str = Field(min_length=2, max_length=120)
+    phone: str = Field(min_length=7, max_length=20)
+    company_name: str = ""  # optional for individuals
+
+class MemberLoginIn(BaseModel):
+    email: EmailStr
+    password: str
+
+def _member_public(user: dict) -> dict:
+    return {
+        "id": user.get("id"), "email": user.get("email"), "name": user.get("name"),
+        "company_name": user.get("company_name", ""), "phone": user.get("phone"),
+        "role": user.get("role"),
+    }
+
+@api_router.post("/member/register")
+async def member_register(payload: MemberRegisterIn, response: Response):
+    import uuid
+    existing = await db.users.find_one({"email": payload.email.lower()})
+    if existing:
+        raise HTTPException(status_code=400, detail="Bu e-posta zaten kayıtlı")
+    now = datetime.now(timezone.utc)
+    uid = str(uuid.uuid4())
+    doc = {
+        "id": uid, "email": payload.email.lower(), "password": hash_password(payload.password),
+        "name": payload.full_name, "phone": payload.phone,
+        "company_name": (payload.company_name or "").strip(),
+        "role": "member", "created_at": now.isoformat(),
+        "trial_start": now.isoformat(), "trial_end": (now + timedelta(days=TRIAL_DAYS)).isoformat(),
+        "paid_until": None, "ai_credits": 0,
+    }
+    await db.users.insert_one(doc)
+    access = create_access_token(uid, doc["email"], "member")
+    set_auth_cookies(response, access, create_refresh_token(uid))
+    return {"token": access, "user": _member_public(doc), "membership": _membership_state(doc)}
+
+@api_router.post("/member/login")
+async def member_login(payload: MemberLoginIn, response: Response):
+    user = await db.users.find_one({"email": payload.email.lower()})
+    if not user or user.get("role") != "member" or not verify_password(payload.password, user.get("password", "")):
+        raise HTTPException(status_code=401, detail="E-posta veya şifre hatalı")
+    access = create_access_token(user["id"], user["email"], "member")
+    set_auth_cookies(response, access, create_refresh_token(user["id"]))
+    return {"token": access, "user": _member_public(user), "membership": _membership_state(user)}
+
+@api_router.get("/member/me")
+async def member_me(user: dict = Depends(get_current_user)):
+    return {"user": _member_public(user), "membership": _membership_state(user)}
+
+@api_router.post("/member/subscribe")
+async def member_subscribe(user: dict = Depends(get_current_user)):
+    """DEMO subscription — no real charge. Extends paid access by 30 days."""
+    now = datetime.now(timezone.utc)
+    from_dt = now
+    try:
+        pu = datetime.fromisoformat(user["paid_until"]) if user.get("paid_until") else None
+        if pu and pu > now:
+            from_dt = pu
+    except Exception:
+        pass
+    new_until = (from_dt + timedelta(days=30)).isoformat()
+    await db.users.update_one({"id": user["id"]}, {"$set": {"paid_until": new_until}})
+    user["paid_until"] = new_until
+    await db.member_subscriptions.insert_one({
+        "user_id": user["id"], "price": MEMBER_MONTHLY_PRICE, "currency": "TRY",
+        "demo": True, "paid_until": new_until, "created_at": now.isoformat(),
+    })
+    return {"ok": True, "demo": True, "charged": MEMBER_MONTHLY_PRICE, "membership": _membership_state(user)}
+
 @api_router.get("/vesikalik/ai-credits")
-async def vesikalik_ai_credits(admin: dict = Depends(require_admin)):
+async def vesikalik_ai_credits(admin: dict = Depends(require_vesikalik_access)):
     """Remaining paid AI-garment credits + own-key/role status + pricing."""
     raw = _user_gemini_key(admin)
     role = admin.get("role")
@@ -3764,7 +3869,7 @@ async def vesikalik_ai_credits(admin: dict = Depends(require_admin)):
     }
 
 @api_router.get("/vesikalik/credit-packages")
-async def vesikalik_credit_packages(admin: dict = Depends(require_admin)):
+async def vesikalik_credit_packages(admin: dict = Depends(require_vesikalik_access)):
     """Available credit top-up packages (per-user). Price = 2x Emergent cost."""
     return {
         "currency": "TRY",
@@ -3778,7 +3883,7 @@ class CreditTopupIn(BaseModel):
     package_id: str
 
 @api_router.post("/vesikalik/credits/topup")
-async def vesikalik_credit_topup(payload: CreditTopupIn, admin: dict = Depends(require_admin)):
+async def vesikalik_credit_topup(payload: CreditTopupIn, admin: dict = Depends(require_vesikalik_access)):
     """DEMO top-up: add the selected package's credits to the user's balance.
     No real payment yet — can be replaced by a Stripe checkout later."""
     pkg = _credit_packages().get(payload.package_id)
@@ -3799,7 +3904,7 @@ async def vesikalik_credit_topup(payload: CreditTopupIn, admin: dict = Depends(r
     return {"remaining": new_remaining, "added": pkg["credits"], "package": pkg}
 
 @api_router.post("/vesikalik/ai-edit")
-async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(require_admin)):
+async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(require_vesikalik_access)):
     """Send the studio photo to Gemini Nano Banana for garment editing.
     Prompt is tightly constrained: only the clothing changes, face/hair/skin
     and biometric-safe background must stay untouched.

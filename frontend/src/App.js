@@ -10,6 +10,7 @@ import PublicLayout from "@/components/PublicLayout";
 import AdminLayout from "@/components/AdminLayout";
 import StaffLayout from "@/components/StaffLayout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import MemberVesikalik from "@/pages/MemberVesikalik";
 
 import Home from "@/pages/Home";
 import Services from "@/pages/Services";
@@ -88,6 +89,7 @@ function App() {
               <Route path="/giris" element={<P><Login /></P>} />
               <Route path="/kayit" element={<P><Register /></P>} />
               <Route path="/personel-girisi" element={<StaffLogin />} />
+              <Route path="/vesikalik" element={<MemberVesikalik />} />
 
               <Route
                 path="/randevularim"
