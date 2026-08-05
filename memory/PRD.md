@@ -212,3 +212,20 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - Pricing model: unit_price = AI_CREDIT_BASE_COST(env,2.0) * AI_CREDIT_MARKUP(env,2) = 4 TRY/credit (customer pays 2x Emergent cost). Prices 40/100/200/400.
 - Role logic in ai-edit + ai-credits mode: BYOK own key -> own quota; admin/staff -> Emergent balance, NO purchased-credit deduction (mode "emergent"); site members -> consume 1 purchased credit/edit. ai-credits returns role/mode/unit_price/markup/currency.
 - Frontend PhotoStudio: "Kredi Yükle" button (open-topup-btn) + topup-dialog with 4 package cards (topup-pkg-*/topup-buy-*); mode-aware badge ("Yönetici · Emergent" / "Kalan: N kredi" / "Kendi anahtarınız aktif").
+
+## Session K (Jun 2026) — GERÇEK ÖDEME: PayTR Link API (Basic) + ana site girişi (verified iteration_22)
+- **Neden PayTR?** Kullanıcı Stripe istedi ama Stripe Türkiye'yi desteklemiyor (claimable sandbox `country_not_supported: TR`). Kullanıcının mevcut PayTR hesabı var. Hesapta yalnızca **Link API (Basic)** aktif; iFrame/Token (Pro API) kapalı (`Magazaniz icin yalnizca link cozumu aktiftir`). Bu yüzden **Link API** ile entegre edildi.
+- **DEMO abonelik + DEMO kredi yükleme kaldırıldı**, yerine gerçek PayTR ödemesi geldi.
+- Backend (server.py sonunda):
+  - `POST /api/payments/paytr/create` {kind:"subscription"|"credits", package_id?, origin_url} → PayTR `link/create` çağrısı, `{callback_id, link}` döner. Fiyat/kredi sunucuda belirlenir (frontend'e güvenilmez). Abonelik = MEMBER_MONTHLY_PRICE (80₺). Kredi = paket fiyatı. `callback_link` frontend `origin_url`'inden türetilir (public https, portsuz).
+  - `POST /api/payments/paytr-callback` (public, form) → hash doğrulaması sonrası hak verilir; düz metin "OK" döner. Hash = base64(HMAC_SHA256(key, callback_id+merchant_oid+salt+status+total_amount)). Idempotent (pending→paid atomik). Link API yalnızca BAŞARILI ödemede callback yapar.
+  - `GET /api/payments/status/{callback_id}` → {status, kind, membership?, ai_credits?} (kendi siparişi, auth gerekli).
+  - `_grant_paid_order`: subscription → paid_until +30 gün; credits → ai_credits += paket kredisi. db.payment_orders / member_subscriptions / ai_credit_topups.
+  - `_paytr_link_token`: hash_str = name+price+currency+max_installment+link_type+lang+min_count (+salt). max_installment "1" (taksitsiz), link_type "product", max_count "1".
+- Backend .env: PAYTR_MERCHANT_ID=583863, PAYTR_MERCHANT_KEY, PAYTR_MERCHANT_SALT (+ eski PAYTR_TEST_MODE kullanılmıyor).
+- Frontend:
+  - MemberVesikalik.jsx: `subscribe()` → paytr/create, PayTR linkini yeni sekmede açar, `pollPayment(callback_id)` ile 3sn'de bir status sorgular; paid olunca üyelik güncellenir. Gate butonu "Abone Ol · 80₺/ay" (Demo yazısı kaldırıldı). pay-waiting/pay-reopen-btn/pay-cancel-btn.
+  - PhotoStudio.jsx: `buyPackage()` → paytr/create {kind:"credits"}, link açar + status poll; topup-dialog metni PayTR'ye güncellendi.
+- **Ana site girişi**: PublicLayout navItems'e `{to:"/vesikalik", label:"Vesikalık", accent:true}` eklendi → masaüstü nav, mobil menü ve footer'da görünür. Böylece ücretli üyelik (BYOK/AI) ana siteden erişilebilir.
+- **NOT (mocked yok ama dikkat)**: PayTR Link API'de test_mode API parametresi yok; test için PayTR panelinden **Test Modu** açılmalı, aksi halde gerçek kart çekilir. Link API callback_link her istekte gönderildiği için panelde ayrı "Bildirim URL" ayarı gerekmez.
+- Uçtan uca gerçek kart ödemesi otomatik test edilemez (PayTR barındırmalı sayfa). create + callback grant + idempotency + bad-hash reddi curl ve testing_agent (iteration_22) ile doğrulandı.

@@ -8,6 +8,10 @@ import os
 import logging
 import asyncio
 import uuid
+import base64
+import hmac
+import hashlib
+import json
 import bcrypt
 import jwt
 import requests
@@ -4011,6 +4015,199 @@ async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(re
 @api_router.get("/")
 async def root():
     return {"service": "Fotuber API", "ok": True}
+
+
+# ---------------------------------------------------------------------------
+# PayTR payment gateway (Turkey) — Link API (Basic)
+# Replaces the earlier DEMO subscribe + credit top-up flows with real payments.
+# We create a per-order payment link; PayTR notifies our callback on success.
+# ---------------------------------------------------------------------------
+PAYTR_MERCHANT_ID = os.environ.get("PAYTR_MERCHANT_ID", "")
+PAYTR_MERCHANT_KEY = os.environ.get("PAYTR_MERCHANT_KEY", "")
+PAYTR_MERCHANT_SALT = os.environ.get("PAYTR_MERCHANT_SALT", "")
+PAYTR_LINK_CREATE_URL = "https://www.paytr.com/odeme/api/link/create"
+
+
+def _paytr_link_token(name: str, price: str, currency: str, max_installment: str,
+                      link_type: str, lang: str, min_count: str) -> str:
+    required = name + price + currency + max_installment + link_type + lang + min_count
+    digest = hmac.new(PAYTR_MERCHANT_KEY.encode(), (required + PAYTR_MERCHANT_SALT).encode(), hashlib.sha256).digest()
+    return base64.b64encode(digest).decode()
+
+
+def _paytr_callback_hash(callback_id: str, merchant_oid: str, pay_status: str, total_amount: str) -> str:
+    msg = callback_id + merchant_oid + PAYTR_MERCHANT_SALT + pay_status + total_amount
+    return base64.b64encode(hmac.new(PAYTR_MERCHANT_KEY.encode(), msg.encode(), hashlib.sha256).digest()).decode()
+
+
+async def _grant_paid_order(order: dict):
+    """Apply the entitlement (membership days or AI credits) for a paid order."""
+    uid = order.get("user_id")
+    user = await db.users.find_one({"id": uid})
+    if not user:
+        return
+    now = datetime.now(timezone.utc)
+    if order.get("kind") == "subscription":
+        from_dt = now
+        try:
+            pu = datetime.fromisoformat(user["paid_until"]) if user.get("paid_until") else None
+            if pu and pu > now:
+                from_dt = pu
+        except Exception:
+            pass
+        new_until = (from_dt + timedelta(days=30)).isoformat()
+        await db.users.update_one({"id": uid}, {"$set": {"paid_until": new_until}})
+        await db.member_subscriptions.insert_one({
+            "user_id": uid, "price": order.get("price"), "currency": "TRY",
+            "demo": False, "paytr": True, "callback_id": order.get("callback_id"),
+            "paid_until": new_until, "created_at": now.isoformat(),
+        })
+    else:
+        current = _ai_credits_of(user)
+        await db.users.update_one({"id": uid}, {"$set": {"ai_credits": current + int(order.get("credits", 0))}})
+        await db.ai_credit_topups.insert_one({
+            "user_id": uid, "package_id": order.get("package_id"),
+            "credits": order.get("credits"), "price": order.get("price"),
+            "currency": "TRY", "demo": False, "paytr": True,
+            "callback_id": order.get("callback_id"), "created_at": now.isoformat(),
+        })
+
+
+class PaytrCreateIn(BaseModel):
+    kind: str  # "subscription" | "credits"
+    package_id: Optional[str] = None
+    origin_url: str = ""
+
+
+@api_router.post("/payments/paytr/create")
+async def paytr_create(payload: PaytrCreateIn, request: Request, user: dict = Depends(get_current_user)):
+    """Create a PayTR payment link. Price/credits are server-defined — never trusted from the client."""
+    import httpx as _httpx
+    if not (PAYTR_MERCHANT_ID and PAYTR_MERCHANT_KEY and PAYTR_MERCHANT_SALT):
+        raise HTTPException(status_code=500, detail="PayTR yapılandırılmamış")
+
+    kind = payload.kind
+    if kind == "subscription":
+        price = float(MEMBER_MONTHLY_PRICE)
+        title = "Fotuber Vesikalik Aylik Uyelik"
+        credits = 0
+    elif kind == "credits":
+        pkg = _credit_packages().get(payload.package_id or "")
+        if not pkg:
+            raise HTTPException(status_code=400, detail="Geçersiz paket")
+        price = float(pkg["price"])
+        title = f"{pkg['credits']} AI Kredisi (Fotuber Vesikalik)"
+        credits = int(pkg["credits"])
+    else:
+        raise HTTPException(status_code=400, detail="Geçersiz işlem türü")
+
+    price_kurus = str(int(round(price * 100)))
+    cid = uuid.uuid4().hex  # our callback_id (alphanumeric, <=64)
+    max_installment = "1"   # no installments → total_amount equals price
+    currency = "TL"
+    lang = "tr"
+    link_type = "product"
+    min_count = "1"
+
+    token = _paytr_link_token(title, price_kurus, currency, max_installment, link_type, lang, min_count)
+    # Build the notification URL from the live frontend origin (public, https, no port).
+    origin = (payload.origin_url or "").strip().rstrip("/")
+    if (not origin.startswith("http")) or origin.startswith("http://localhost") or origin.startswith("http://127."):
+        origin = f"{request.base_url}".rstrip("/")
+    origin = origin.replace("http://", "https://")
+    callback_link = f"{origin}/api/payments/paytr-callback"
+
+    post_data = {
+        "merchant_id": PAYTR_MERCHANT_ID,
+        "name": title,
+        "price": price_kurus,
+        "currency": currency,
+        "max_installment": max_installment,
+        "link_type": link_type,
+        "lang": lang,
+        "min_count": min_count,
+        "max_count": "1",
+        "callback_link": callback_link,
+        "callback_id": cid,
+        "debug_on": "1",
+        "get_qr": "0",
+        "paytr_token": token,
+    }
+
+    async with _httpx.AsyncClient(timeout=25) as http:
+        r = await http.post(PAYTR_LINK_CREATE_URL, data=post_data,
+                            headers={"Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        result = r.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail=f"PayTR yanıtı okunamadı: {r.text[:200]}")
+    if result.get("status") != "success":
+        raise HTTPException(status_code=502, detail=result.get("err_msg") or result.get("reason") or "PayTR link oluşturulamadı")
+
+    await db.payment_orders.insert_one({
+        "callback_id": cid, "paytr_link_id": result.get("id"),
+        "user_id": user.get("id"), "kind": kind,
+        "package_id": payload.package_id, "credits": credits,
+        "expected_amount": price_kurus, "currency": "TRY", "price": price,
+        "callback_link": callback_link,
+        "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"callback_id": cid, "link": result.get("link"), "paytr_link_id": result.get("id")}
+
+
+@api_router.post("/payments/paytr-callback")
+async def paytr_callback(request: Request):
+    """Public PayTR Link API notification. Grants entitlement only after hash verification."""
+    from fastapi.responses import PlainTextResponse
+    form = await request.form()
+    callback_id = str(form.get("callback_id", ""))
+    merchant_oid = str(form.get("merchant_oid", ""))
+    pay_status = str(form.get("status", ""))
+    total_amount = str(form.get("total_amount", ""))
+    received = str(form.get("hash", ""))
+
+    if not callback_id or not received:
+        raise HTTPException(status_code=400, detail="Geçersiz bildirim")
+    expected = _paytr_callback_hash(callback_id, merchant_oid, pay_status, total_amount)
+    if not hmac.compare_digest(expected, received):
+        raise HTTPException(status_code=400, detail="PAYTR notification failed: bad hash")
+
+    order = await db.payment_orders.find_one({"callback_id": callback_id})
+    if not order:
+        return PlainTextResponse("OK")
+    if order.get("status") == "paid":
+        return PlainTextResponse("OK")
+
+    now = datetime.now(timezone.utc).isoformat()
+    # Link API only notifies on success; guard anyway.
+    if pay_status != "success":
+        await db.payment_orders.update_one(
+            {"callback_id": callback_id, "status": "pending"},
+            {"$set": {"status": "failed", "callback": dict(form), "updated_at": now}},
+        )
+        return PlainTextResponse("OK")
+
+    changed = await db.payment_orders.find_one_and_update(
+        {"callback_id": callback_id, "status": "pending"},
+        {"$set": {"status": "paid", "merchant_oid": merchant_oid, "paid_at": now,
+                  "callback": dict(form), "updated_at": now}},
+    )
+    if changed:
+        await _grant_paid_order(changed)
+    return PlainTextResponse("OK")
+
+
+@api_router.get("/payments/status/{callback_id}")
+async def paytr_status(callback_id: str, user: dict = Depends(get_current_user)):
+    order = await db.payment_orders.find_one({"callback_id": callback_id})
+    if not order or order.get("user_id") != user.get("id"):
+        raise HTTPException(status_code=404, detail="Sipariş bulunamadı")
+    resp = {"callback_id": callback_id, "status": order.get("status"), "kind": order.get("kind")}
+    if order.get("status") == "paid":
+        fresh = await db.users.find_one({"id": user.get("id")})
+        resp["membership"] = _membership_state(fresh)
+        resp["ai_credits"] = _ai_credits_of(fresh)
+    return resp
 
 
 # Register the router

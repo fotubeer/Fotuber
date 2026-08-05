@@ -13,6 +13,7 @@ const navItems = [
   { to: "/hizmetler", label: "Hizmetler" },
   { to: "/fotuber-medya", label: "Fotuber Medya" },
   { to: "/galeri", label: "Galeri" },
+  { to: "/vesikalik", label: "Vesikalık", accent: true },
   { to: "/indirim-kodu", label: "İndirim Kodu", accent: true },
   { to: "/hakkimizda", label: "Hakkımızda" },
   { to: "/iletisim", label: "İletişim" },

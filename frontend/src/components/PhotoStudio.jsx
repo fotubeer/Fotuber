@@ -328,18 +328,36 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
   const buyPackage = async (id) => {
     setTopupBusy(id);
     try {
-      const res = await fetch(`${API}/api/vesikalik/credits/topup`, {
+      const res = await fetch(`${API}/api/payments/paytr/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ package_id: id }),
+        body: JSON.stringify({ kind: "credits", package_id: id, origin_url: window.location.origin }),
       });
       const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d.detail || "Yükleme başarısız");
-      setCredits((c) => ({ ...(c || {}), total: c?.total ?? 25, remaining: d.remaining }));
-      toast.success(`${d.added} kredi yüklendi (demo)`);
+      if (!res.ok) throw new Error(d.detail || "Ödeme başlatılamadı");
+      const win = window.open(d.link, "_blank");
+      if (!win) toast.error("Açılır pencere engellendi — ödeme sekmesine izin verin");
+      toast.info("Ödeme sayfası açıldı. Ödeme tamamlanınca krediniz otomatik yüklenir.");
       setTopupOpen(false);
+      // Poll until the callback marks the order paid, then refresh credits.
+      let tries = 0;
+      const iv = setInterval(async () => {
+        tries++;
+        try {
+          const r = await fetch(`${API}/api/payments/status/${d.callback_id}`, { headers: { ...authHeaders() } });
+          if (r.ok) {
+            const s = await r.json();
+            if (s.status === "paid") {
+              clearInterval(iv);
+              setCredits((c) => ({ ...(c || {}), total: c?.total ?? 25, remaining: s.ai_credits }));
+              toast.success("Ödeme başarılı — krediniz yüklendi!");
+            }
+          }
+        } catch (e) { /* keep polling */ }
+        if (tries > 160) clearInterval(iv);
+      }, 3000);
     } catch (e) {
-      toast.error(e.message || "Yükleme başarısız");
+      toast.error(e.message || "Ödeme başlatılamadı");
     } finally { setTopupBusy(null); }
   };
 
@@ -615,11 +633,11 @@ const PhotoStudio = ({ image, applyImage, originalSrc, loadImageFromSrc }) => {
         <DialogContent className="max-w-md" data-testid="topup-dialog">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Wand2 className="w-4 h-4" />Kredi Yükle</DialogTitle></DialogHeader>
           <p className="text-xs text-slate-500 -mt-1">
-            Demo yükleme — şu an gerçek ödeme alınmaz, krediler anında hesabınıza eklenir. (İleride Emergent ödemesine bağlanacak.)
+            Ödeme PayTR güvenli sayfasında alınır. Ödeme tamamlanınca krediniz otomatik hesabınıza yüklenir.
           </p>
           {packages && (
             <p className="text-[11px] text-slate-400">
-              Kredi başı {packages.unit_price}₺ — Emergent işlem maliyetinin {packages.markup}× katı.
+              Kredi başı {packages.unit_price}₺ — kredi kartı ile güvenli ödeme (PayTR).
             </p>
           )}
           <div className="grid grid-cols-2 gap-3 mt-1">

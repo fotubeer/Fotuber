@@ -16,6 +16,7 @@ export default function MemberVesikalik() {
   const [me, setMe] = useState(null); // { user, membership }
   const [tab, setTab] = useState("login");
   const [busy, setBusy] = useState(false);
+  const [payWait, setPayWait] = useState(null); // { link, cid } while a payment is in progress
   const [form, setForm] = useState({ email: "", password: "", full_name: "", phone: "", company_name: "" });
 
   const fetchMe = useCallback(async () => {
@@ -54,14 +55,41 @@ export default function MemberVesikalik() {
     finally { setBusy(false); }
   };
 
+  const pollPayment = useCallback((cid) => {
+    let tries = 0;
+    const iv = setInterval(async () => {
+      tries++;
+      try {
+        const r = await api(`/payments/status/${cid}`);
+        if (r.ok) {
+          const s = await r.json();
+          if (s.status === "paid") {
+            clearInterval(iv);
+            setPayWait(null);
+            setMe((m) => ({ ...m, membership: s.membership }));
+            toast.success("Ödeme başarılı — üyeliğiniz etkinleşti!");
+          }
+        }
+      } catch (e) { /* keep polling */ }
+      if (tries > 160) { clearInterval(iv); } // ~8 dk sonra durur
+    }, 3000);
+  }, []);
+
   const subscribe = async () => {
     setBusy(true);
     try {
-      const res = await api("/member/subscribe", { method: "POST" });
+      const res = await api("/payments/paytr/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "subscription", origin_url: window.location.origin }),
+      });
       const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d.detail || "Abonelik başarısız");
-      setMe((m) => ({ ...m, membership: d.membership }));
-      toast.success("Aboneliğiniz etkinleştirildi (demo)");
+      if (!res.ok) throw new Error(d.detail || "Ödeme başlatılamadı");
+      const win = window.open(d.link, "_blank");
+      if (!win) toast.error("Açılır pencere engellendi — aşağıdaki butondan ödeme sayfasını açın");
+      setPayWait({ link: d.link, cid: d.callback_id });
+      toast.info("Ödeme sayfası açıldı. Ödeme tamamlanınca üyeliğiniz otomatik etkinleşecek.");
+      pollPayment(d.callback_id);
     } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   };
@@ -114,10 +142,23 @@ export default function MemberVesikalik() {
             <div className="text-3xl font-extrabold">{me.membership.price}₺<span className="text-base font-medium text-slate-400">/ay</span></div>
             <div className="text-xs text-slate-400 mt-1">İlk ay ücretsiz — sonrasında aylık {me.membership.price}₺</div>
           </div>
-          <Button onClick={subscribe} disabled={busy} className="w-full bg-indigo-600 hover:bg-indigo-700" data-testid="subscribe-btn">
-            {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-            Abone Ol (Demo)
-          </Button>
+          {payWait ? (
+            <div className="space-y-3" data-testid="pay-waiting">
+              <div className="flex items-center justify-center gap-2 text-sm text-indigo-300">
+                <Loader2 className="w-4 h-4 animate-spin" /> Ödeme bekleniyor…
+              </div>
+              <p className="text-xs text-slate-400">Ödeme sayfası yeni sekmede açıldı. Tamamladığınızda üyeliğiniz otomatik etkinleşir.</p>
+              <a href={payWait.link} target="_blank" rel="noreferrer" className="block">
+                <Button variant="outline" className="w-full border-indigo-400 text-indigo-200 hover:bg-indigo-500/10" data-testid="pay-reopen-btn">Ödeme sayfasını tekrar aç</Button>
+              </a>
+              <button onClick={() => setPayWait(null)} className="text-xs text-slate-500 hover:text-slate-300" data-testid="pay-cancel-btn">İptal</button>
+            </div>
+          ) : (
+            <Button onClick={subscribe} disabled={busy} className="w-full bg-indigo-600 hover:bg-indigo-700" data-testid="subscribe-btn">
+              {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+              Abone Ol · {me.membership.price}₺/ay
+            </Button>
+          )}
           <button onClick={logout} className="mt-4 text-xs text-slate-500 hover:text-slate-300" data-testid="gate-logout">Çıkış yap</button>
         </div>
       </div>
