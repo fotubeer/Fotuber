@@ -17,7 +17,7 @@ export default function MemberVesikalik() {
   const [tab, setTab] = useState("login");
   const [busy, setBusy] = useState(false);
   const [payWait, setPayWait] = useState(null); // { link, cid } while a payment is in progress
-  const [form, setForm] = useState({ email: "", password: "", full_name: "", phone: "", company_name: "" });
+  const [form, setForm] = useState({ email: "", password: "", full_name: "", phone: "", company_name: "", kvkk_accepted: false, sms_consent: false, email_consent: false });
 
   const fetchMe = useCallback(async () => {
     try {
@@ -39,10 +39,11 @@ export default function MemberVesikalik() {
     const isReg = tab === "register";
     if (!form.email || !form.password) { toast.error("E-posta ve şifre gerekli"); return; }
     if (isReg && (!form.full_name || !form.phone)) { toast.error("Ad Soyad ve telefon gerekli"); return; }
+    if (isReg && !(form.kvkk_accepted && form.sms_consent && form.email_consent)) { toast.error("Lütfen KVKK, SMS ve e-posta izinlerini onaylayın"); return; }
     setBusy(true);
     try {
       const body = isReg
-        ? { email: form.email, password: form.password, full_name: form.full_name, phone: form.phone, company_name: form.company_name }
+        ? { email: form.email, password: form.password, full_name: form.full_name, phone: form.phone, company_name: form.company_name, kvkk_accepted: form.kvkk_accepted, sms_consent: form.sms_consent, email_consent: form.email_consent }
         : { email: form.email, password: form.password };
       const res = await api(isReg ? "/member/register" : "/member/login", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -231,6 +232,22 @@ export default function MemberVesikalik() {
               <Label className="text-xs text-slate-400">Şifre</Label>
               <Input type="password" value={form.password} onChange={upd("password")} className="bg-slate-900 border-slate-700" data-testid="auth-password" />
             </div>
+            {tab === "register" && (
+              <div className="space-y-2 pt-1">
+                <label className="flex items-start gap-2 text-xs text-slate-400 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5" checked={form.kvkk_accepted} onChange={(e) => setForm((f) => ({ ...f, kvkk_accepted: e.target.checked }))} data-testid="reg-kvkk" />
+                  <span><b className="text-slate-300">KVKK Aydınlatma Metni</b>'ni okudum, kişisel verilerimin işlenmesini kabul ediyorum.</span>
+                </label>
+                <label className="flex items-start gap-2 text-xs text-slate-400 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5" checked={form.sms_consent} onChange={(e) => setForm((f) => ({ ...f, sms_consent: e.target.checked }))} data-testid="reg-sms" />
+                  <span>SMS ile kampanya ve duyuru gönderilmesine izin veriyorum.</span>
+                </label>
+                <label className="flex items-start gap-2 text-xs text-slate-400 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5" checked={form.email_consent} onChange={(e) => setForm((f) => ({ ...f, email_consent: e.target.checked }))} data-testid="reg-email-consent" />
+                  <span>E-posta ile kampanya ve duyuru gönderilmesine izin veriyorum.</span>
+                </label>
+              </div>
+            )}
             <Button onClick={submitAuth} disabled={busy} className="w-full bg-indigo-600 hover:bg-indigo-700" data-testid="auth-submit">
               {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
               {tab === "register" ? "Üye Ol (İlk ay ücretsiz)" : "Giriş Yap"}

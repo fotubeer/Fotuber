@@ -1,59 +1,72 @@
-// Digital invitation themes + labels. Kept intentionally simple and elegant.
+// Digital invitation themes. 4 free + 4 premium. Each has explicit text colors
+// so nothing ever renders as white-on-white.
 export const INVITATION_THEMES = {
+  // ---- FREE ----
   romantic: {
-    name: "Romantik Gül",
+    name: "Romantik Gül", premium: false,
     bg: "radial-gradient(1200px 600px at 50% -10%, #ffe4e6 0%, #fff1f2 40%, #fde7ea 100%)",
-    panel: "rgba(255,255,255,0.72)",
-    border: "rgba(225,29,72,0.18)",
-    accent: "#e11d48",
-    text: "#4c1d24",
-    sub: "#8a5a63",
-    heading: "'Georgia', 'Times New Roman', serif",
-    dark: false,
-  },
-  midnight: {
-    name: "Gece Mavisi",
-    bg: "radial-gradient(1200px 600px at 50% -10%, #1e293b 0%, #111c34 45%, #0b1220 100%)",
-    panel: "rgba(255,255,255,0.07)",
-    border: "rgba(212,175,55,0.28)",
-    accent: "#d4af37",
-    text: "#eef1f7",
-    sub: "#aeb6c9",
-    heading: "'Georgia', 'Times New Roman', serif",
-    dark: true,
+    panel: "rgba(255,255,255,0.78)", border: "rgba(225,29,72,0.18)",
+    accent: "#e11d48", text: "#4c1d24", sub: "#8a5a63",
+    heading: "'Georgia', 'Times New Roman', serif", dark: false,
   },
   botanic: {
-    name: "Botanik Yeşil",
+    name: "Botanik Yeşil", premium: false,
     bg: "radial-gradient(1200px 600px at 50% -10%, #e3efe1 0%, #f2f7f0 45%, #dcebd8 100%)",
-    panel: "rgba(255,255,255,0.72)",
-    border: "rgba(47,125,81,0.2)",
-    accent: "#2f7d51",
-    text: "#22402f",
-    sub: "#5c745f",
-    heading: "'Georgia', 'Times New Roman', serif",
-    dark: false,
+    panel: "rgba(255,255,255,0.78)", border: "rgba(47,125,81,0.2)",
+    accent: "#2f7d51", text: "#22402f", sub: "#5c745f",
+    heading: "'Georgia', 'Times New Roman', serif", dark: false,
   },
   gold: {
-    name: "Altın Zarafet",
+    name: "Altın Zarafet", premium: false,
     bg: "radial-gradient(1200px 600px at 50% -10%, #f3e9d6 0%, #fbf7ef 45%, #efe1c6 100%)",
-    panel: "rgba(255,255,255,0.7)",
-    border: "rgba(184,134,11,0.24)",
-    accent: "#b8860b",
-    text: "#4a3b1e",
-    sub: "#8a7647",
-    heading: "'Georgia', 'Times New Roman', serif",
-    dark: false,
+    panel: "rgba(255,255,255,0.76)", border: "rgba(184,134,11,0.24)",
+    accent: "#b8860b", text: "#4a3b1e", sub: "#8a7647",
+    heading: "'Georgia', 'Times New Roman', serif", dark: false,
+  },
+  sky: {
+    name: "Gökyüzü Mavi", premium: false,
+    bg: "radial-gradient(1200px 600px at 50% -10%, #dbeafe 0%, #eff6ff 45%, #e0ecff 100%)",
+    panel: "rgba(255,255,255,0.8)", border: "rgba(37,99,235,0.18)",
+    accent: "#2563eb", text: "#1e293b", sub: "#5b6b86",
+    heading: "'Georgia', 'Times New Roman', serif", dark: false,
+  },
+  // ---- PREMIUM ----
+  noir: {
+    name: "Noir Lüks", premium: true,
+    bg: "radial-gradient(1200px 600px at 50% -10%, #1a1a1a 0%, #0d0d0d 45%, #000000 100%)",
+    panel: "rgba(255,255,255,0.06)", border: "rgba(212,175,55,0.35)",
+    accent: "#d4af37", text: "#f5eede", sub: "#c9bd9a",
+    heading: "'Georgia', 'Times New Roman', serif", dark: true,
+  },
+  royal: {
+    name: "Kraliyet Moru", premium: true,
+    bg: "radial-gradient(1200px 600px at 50% -10%, #3b1258 0%, #2a0d43 45%, #190826 100%)",
+    panel: "rgba(255,255,255,0.07)", border: "rgba(233,201,110,0.35)",
+    accent: "#e9c96e", text: "#f4ecff", sub: "#c8b6dd",
+    heading: "'Georgia', 'Times New Roman', serif", dark: true,
+  },
+  ocean: {
+    name: "Okyanus Zümrüt", premium: true,
+    bg: "radial-gradient(1200px 600px at 50% -10%, #063b3a 0%, #052a2b 45%, #041e1f 100%)",
+    panel: "rgba(255,255,255,0.07)", border: "rgba(94,234,212,0.3)",
+    accent: "#5eead4", text: "#e8fbf7", sub: "#a7d8cf",
+    heading: "'Georgia', 'Times New Roman', serif", dark: true,
+  },
+  marble: {
+    name: "Mermer Roz-Altın", premium: true,
+    bg: "radial-gradient(1200px 600px at 50% -10%, #f7e7e3 0%, #fdf6f2 45%, #f2dcd6 100%)",
+    panel: "rgba(255,255,255,0.82)", border: "rgba(183,110,121,0.3)",
+    accent: "#b76e79", text: "#4a2f33", sub: "#8a6a6f",
+    heading: "'Georgia', 'Times New Roman', serif", dark: false,
   },
 };
 
+export const FREE_THEMES = Object.keys(INVITATION_THEMES).filter((k) => !INVITATION_THEMES[k].premium);
+export const PREMIUM_THEMES = Object.keys(INVITATION_THEMES).filter((k) => INVITATION_THEMES[k].premium);
+
 export const EVENT_TYPE_LABELS = {
-  dugun: "Düğün",
-  nisan: "Nişan",
-  kina: "Kına Gecesi",
-  sunnet: "Sünnet",
-  dogumgunu: "Doğum Günü",
-  nikah: "Nikah",
-  diger: "Özel Etkinlik",
+  dugun: "Düğün", nisan: "Nişan", kina: "Kına Gecesi", sunnet: "Sünnet",
+  dogumgunu: "Doğum Günü", nikah: "Nikah", diger: "Özel Etkinlik",
 };
 
 export const getTheme = (code, primary) => {

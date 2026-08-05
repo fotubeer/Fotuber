@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast, Toaster } from "sonner";
-import { Loader2, Sparkles, Check, Copy, ExternalLink, Upload, ArrowRight } from "lucide-react";
+import { Loader2, Sparkles, Check, Copy, ExternalLink, Upload, ArrowRight, Music, Eye, Lock, QrCode, Images } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
-import { INVITATION_THEMES, EVENT_TYPE_LABELS } from "@/lib/invitationThemes";
+import { INVITATION_THEMES, EVENT_TYPE_LABELS, getTheme } from "@/lib/invitationThemes";
+import { getMessagesFor } from "@/lib/invitationMessages";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const api = (path, opts = {}) => fetch(`${API}/api${path}`, { credentials: "include", ...opts });
@@ -25,13 +28,32 @@ export default function InvitationCreate() {
   });
   const [gate, setGate] = useState(false); // membership gate at the end
   const [authTab, setAuthTab] = useState("register");
-  const [authForm, setAuthForm] = useState({ email: "", password: "", full_name: "", phone: "", company_name: "" });
+  const [authForm, setAuthForm] = useState({ email: "", password: "", full_name: "", phone: "", company_name: "", kvkk_accepted: false, sms_consent: false, email_consent: false });
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [published, setPublished] = useState(null); // { slug, url }
+  const [tplOpen, setTplOpen] = useState(false);
+  const [previewTpl, setPreviewTpl] = useState(null); // theme key being inspected fullscreen
+  const [mobilePrev, setMobilePrev] = useState(false);
 
   const set = (k, v) => setData((d) => ({ ...d, [k]: v }));
   const setGift = (k, v) => setData((d) => ({ ...d, gift: { ...d.gift, [k]: v } }));
+  const setSection = (k, v) => setData((d) => ({ ...d, sections: { ...d.sections, [k]: v } }));
+
+  const uploadAudio = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const r = await api("/invitations/audio", { method: "POST", body: fd });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Yüklenemedi");
+      set("greeting_audio_id", d.id);
+      setSection("music", true);
+      toast.success("Karşılama sesi eklendi");
+    } catch (e) { toast.error(e.message); }
+    finally { setUploading(false); }
+  };
 
   const canPublish = data.person1.trim() && data.event_date;
   const shareUrl = useMemo(() => (published ? `${window.location.origin}/davetiye/${published.slug}` : ""), [published]);
@@ -62,6 +84,7 @@ export default function InvitationCreate() {
     const isReg = authTab === "register";
     if (!authForm.email || !authForm.password) { toast.error("E-posta ve şifre gerekli"); return; }
     if (isReg && (!authForm.full_name || !authForm.phone)) { toast.error("Ad Soyad ve telefon gerekli"); return; }
+    if (isReg && !(authForm.kvkk_accepted && authForm.sms_consent && authForm.email_consent)) { toast.error("Lütfen tüm izinleri onaylayın"); return; }
     setBusy(true);
     try {
       const body = isReg ? authForm : { email: authForm.email, password: authForm.password };
@@ -153,7 +176,20 @@ export default function InvitationCreate() {
             <div><Label>Mekân Adı</Label><Input value={data.venue_name} onChange={(e) => set("venue_name", e.target.value)} placeholder="Deniz Restoran" data-testid="venue-name" /></div>
             <div><Label>Adres</Label><Input value={data.venue_address} onChange={(e) => set("venue_address", e.target.value)} placeholder="İzmir" data-testid="venue-address" /></div>
             <div><Label>Harita Bağlantısı (Google Maps)</Label><Input value={data.map_url} onChange={(e) => set("map_url", e.target.value)} placeholder="https://maps.google.com/..." data-testid="map-url" /></div>
-            <div><Label>Davet Mesajı</Label><Textarea value={data.message} onChange={(e) => set("message", e.target.value)} rows={3} placeholder="Mutluluğumuza ortak olmanızdan onur duyarız." data-testid="message" /></div>
+            <div>
+              <Label>Davet Mesajı</Label>
+              <Textarea value={data.message} onChange={(e) => set("message", e.target.value)} rows={3} placeholder="Kendiniz yazın ya da aşağıdan hazır bir metin seçin." data-testid="message" />
+              <div className="mt-2">
+                <div className="text-xs text-slate-500 mb-1">Hazır metinler ({EVENT_TYPE_LABELS[data.event_type]}):</div>
+                <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                  {getMessagesFor(data.event_type).map((m, i) => (
+                    <button key={i} type="button" onClick={() => set("message", m)}
+                      className={`text-left text-[11px] leading-snug px-2 py-1 rounded border transition ${data.message === m ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                      data-testid={`preset-msg-${i}`}>{m.length > 60 ? m.slice(0, 60) + "…" : m}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
 
             <div>
               <Label>Kapak Fotoğrafı (isteğe bağlı)</Label>
@@ -165,14 +201,40 @@ export default function InvitationCreate() {
             </div>
 
             <div>
-              <Label>Tema</Label>
-              <div className="grid grid-cols-4 gap-2 mt-1">
-                {Object.entries(INVITATION_THEMES).map(([k, th]) => (
-                  <button key={k} onClick={() => set("theme", k)} data-testid={`theme-${k}`}
-                    className={`h-14 rounded-lg text-[10px] font-medium flex items-end p-1 transition ${data.theme === k ? "ring-2 ring-offset-1 ring-indigo-500" : ""}`}
-                    style={{ background: th.bg, color: th.text }}>{th.name}</button>
-                ))}
+              <Label>Sesli / Müzikli Karşılama (isteğe bağlı)</Label>
+              <p className="text-xs text-slate-500 mb-1">Davetiye açılınca çalacak sesinizi veya müziği yükleyin.</p>
+              <label className="flex items-center gap-2 px-3 py-2 border border-dashed rounded-lg cursor-pointer text-sm text-slate-600 hover:bg-slate-50">
+                {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Music className="w-4 h-4" />}
+                {data.greeting_audio_id ? "Ses eklendi — değiştir" : "Ses/müzik yükle (mp3)"}
+                <input type="file" accept="audio/*" className="hidden" onChange={(e) => uploadAudio(e.target.files?.[0])} data-testid="audio-upload" />
+              </label>
+            </div>
+
+            <div>
+              <Label>Şablon</Label>
+              <button type="button" onClick={() => setTplOpen(true)} data-testid="open-template-gallery"
+                className="mt-1 w-full flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-400 transition"
+                style={{ background: getTheme(data.theme).bg }}>
+                <span className="font-medium" style={{ color: getTheme(data.theme).text }}>
+                  {INVITATION_THEMES[data.theme]?.name}
+                  {INVITATION_THEMES[data.theme]?.premium && <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-400 text-amber-950">PREMIUM</span>}
+                </span>
+                <span className="text-xs px-3 py-1.5 rounded-full bg-white/80 text-slate-700 flex items-center gap-1"><Eye className="w-3.5 h-3.5" /> Şablonları Gör</span>
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 p-4 space-y-3">
+              <div className="font-medium text-sm">Özellikler</div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm text-slate-700"><Images className="w-4 h-4 text-indigo-600" /> Etkinlik Anı Duvarı <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950">PREMIUM</span></div>
+                <Switch checked={data.sections.photowall} onCheckedChange={(v) => setSection("photowall", v)} data-testid="toggle-photowall" />
               </div>
+              <p className="text-[11px] text-slate-500 -mt-1">QR kod ile misafirler etkinlik anında fotoğraf yükler, canlı akar.</p>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm text-slate-700"><QrCode className="w-4 h-4 text-indigo-600" /> QR ile Kapıda Giriş</div>
+                <Switch checked={data.checkin_enabled} onCheckedChange={(v) => set("checkin_enabled", v)} data-testid="toggle-checkin" />
+              </div>
+              <p className="text-[11px] text-slate-500 -mt-1">Katılımı onaylayan misafirlere QR verilir; kapıda hızlı giriş yapılır.</p>
             </div>
 
             <div className="rounded-xl border border-slate-200 p-4">
@@ -191,11 +253,77 @@ export default function InvitationCreate() {
           </div>
         </div>
 
-        {/* Live preview */}
-        <div className="hidden lg:block sticky top-0 h-screen overflow-y-auto">
+        {/* Live preview (desktop) */}
+        <div className="hidden lg:block sticky top-0 h-screen overflow-y-auto bg-slate-200">
           <InvitationPreview data={data} />
         </div>
       </div>
+
+      {/* Mobile preview floating button */}
+      <button onClick={() => setMobilePrev(true)} data-testid="mobile-preview-btn"
+        className="lg:hidden fixed bottom-4 right-4 z-40 bg-indigo-600 text-white rounded-full shadow-lg px-5 py-3 text-sm font-semibold flex items-center gap-2">
+        <Eye className="w-4 h-4" /> Önizle
+      </button>
+
+      {/* Mobile preview modal */}
+      {mobilePrev && (
+        <div className="lg:hidden fixed inset-0 z-50 bg-slate-900/60" data-testid="mobile-preview-modal">
+          <div className="absolute inset-x-0 bottom-0 top-10 bg-white rounded-t-2xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-2 border-b">
+              <span className="font-medium text-slate-700">Önizleme</span>
+              <button onClick={() => setMobilePrev(false)} className="text-slate-500" data-testid="mobile-preview-close">Kapat</button>
+            </div>
+            <div className="flex-1 overflow-y-auto"><InvitationPreview data={data} /></div>
+          </div>
+        </div>
+      )}
+
+      {/* Template gallery */}
+      <Dialog open={tplOpen} onOpenChange={setTplOpen}>
+        <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto" data-testid="template-gallery">
+          <h3 className="text-lg font-bold text-slate-900">Şablon Seç</h3>
+          <p className="text-sm text-slate-500 -mt-1">Önce inceleyin, beğendiğiniz şablonla devam edin. Premium şablonlar ücretlidir.</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
+            {Object.entries(INVITATION_THEMES).map(([k, th]) => (
+              <div key={k} className={`rounded-xl overflow-hidden border ${data.theme === k ? "ring-2 ring-indigo-500" : "border-slate-200"}`} data-testid={`tpl-card-${k}`}>
+                <div className="h-24 flex items-center justify-center relative" style={{ background: th.bg }}>
+                  <span style={{ color: th.text, fontFamily: th.heading }} className="text-sm">Aa</span>
+                  {th.premium && <span className="absolute top-1 right-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950 flex items-center gap-0.5"><Lock className="w-2.5 h-2.5" />PREMIUM</span>}
+                </div>
+                <div className="p-2 bg-white">
+                  <div className="text-xs font-medium text-slate-800 truncate">{th.name}</div>
+                  <div className="flex gap-1 mt-1">
+                    <button onClick={() => setPreviewTpl(k)} className="flex-1 text-[11px] py-1 rounded border border-slate-200 text-slate-600" data-testid={`tpl-inspect-${k}`}>İncele</button>
+                    <button onClick={() => { set("theme", k); setTplOpen(false); }} className="flex-1 text-[11px] py-1 rounded bg-indigo-600 text-white" data-testid={`tpl-use-${k}`}>Kullan</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Full template inspect */}
+      {previewTpl && (
+        <div className="fixed inset-0 z-[60] bg-black/70" data-testid="tpl-inspect-modal">
+          <div className="absolute inset-x-0 bottom-0 top-6 bg-white rounded-t-2xl overflow-hidden flex flex-col max-w-2xl mx-auto">
+            <div className="flex items-center justify-between px-4 py-2 border-b">
+              <span className="font-medium text-slate-700">{INVITATION_THEMES[previewTpl]?.name} {INVITATION_THEMES[previewTpl]?.premium && <span className="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950">PREMIUM</span>}</span>
+              <button onClick={() => setPreviewTpl(null)} className="text-slate-500" data-testid="tpl-inspect-close">Kapat</button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <InvitationPreview data={{ ...data, theme: previewTpl,
+                person1: data.person1 || "Ahmet", person2: data.person2 || "Yasemin",
+                event_date: data.event_date || "2026-12-31", message: data.message || "Mutluluğumuza ortak olmanızdan onur duyarız." }} />
+            </div>
+            <div className="p-3 border-t">
+              <Button onClick={() => { set("theme", previewTpl); setPreviewTpl(null); setTplOpen(false); }} className="w-full bg-indigo-600 hover:bg-indigo-700" data-testid="tpl-inspect-use">
+                Bu Şablonla Devam Et
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Membership gate (last step) */}
       {gate && (
@@ -216,6 +344,22 @@ export default function InvitationCreate() {
               <Input type="email" placeholder="E-posta" value={authForm.email} onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })} data-testid="gate-email" />
               <Input type="password" placeholder="Şifre" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} data-testid="gate-password" />
             </div>
+            {authTab === "register" && (
+              <div className="mt-3 space-y-2">
+                <label className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5" checked={authForm.kvkk_accepted} onChange={(e) => setAuthForm({ ...authForm, kvkk_accepted: e.target.checked })} data-testid="gate-kvkk" />
+                  <span><b>KVKK Aydınlatma Metni</b>'ni okudum, kişisel verilerimin işlenmesini kabul ediyorum.</span>
+                </label>
+                <label className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5" checked={authForm.sms_consent} onChange={(e) => setAuthForm({ ...authForm, sms_consent: e.target.checked })} data-testid="gate-sms" />
+                  <span>SMS ile kampanya ve duyuruların gönderilmesine izin veriyorum.</span>
+                </label>
+                <label className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5" checked={authForm.email_consent} onChange={(e) => setAuthForm({ ...authForm, email_consent: e.target.checked })} data-testid="gate-email-consent" />
+                  <span>E-posta ile kampanya ve duyuruların gönderilmesine izin veriyorum.</span>
+                </label>
+              </div>
+            )}
             <Button onClick={doAuthThenPublish} disabled={busy} className="w-full mt-4 bg-indigo-600 hover:bg-indigo-700" data-testid="gate-submit">
               {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ArrowRight className="w-4 h-4 mr-2" />} Üye Ol ve Yayınla
             </Button>

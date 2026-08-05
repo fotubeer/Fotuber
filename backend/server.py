@@ -506,6 +506,8 @@ async def on_startup():
     await db.invitations.create_index([("owner_user_id", 1), ("created_at", -1)])
     await db.invitation_rsvps.create_index([("invitation_id", 1), ("created_at", -1)])
     await db.invitation_memories.create_index([("invitation_id", 1), ("created_at", -1)])
+    await db.invitation_photos.create_index([("invitation_id", 1), ("created_at", -1)])
+    await db.invitation_rsvps.create_index("checkin_token")
     init_storage()
 
     # Start background cleanup task (deletes expired guest uploads once an hour)
@@ -3825,6 +3827,9 @@ class MemberRegisterIn(BaseModel):
     full_name: str = Field(min_length=2, max_length=120)
     phone: str = Field(min_length=7, max_length=20)
     company_name: str = ""  # optional for individuals
+    kvkk_accepted: bool = False
+    sms_consent: bool = False
+    email_consent: bool = False
 
 class MemberLoginIn(BaseModel):
     email: EmailStr
@@ -3840,6 +3845,8 @@ def _member_public(user: dict) -> dict:
 @api_router.post("/member/register")
 async def member_register(payload: MemberRegisterIn, response: Response):
     import uuid
+    if not (payload.kvkk_accepted and payload.sms_consent and payload.email_consent):
+        raise HTTPException(status_code=400, detail="Devam etmek için KVKK, SMS ve e-posta izinlerini onaylamalısınız")
     existing = await db.users.find_one({"email": payload.email.lower()})
     if existing:
         raise HTTPException(status_code=400, detail="Bu e-posta zaten kayıtlı")
@@ -3871,6 +3878,7 @@ async def member_register(payload: MemberRegisterIn, response: Response):
         "trial_end": None if trial_used else (now + timedelta(days=TRIAL_DAYS)).isoformat(),
         "trial_used_before": trial_used,
         "paid_until": None, "ai_credits": 0, "features_used": [],
+        "consents": {"kvkk": True, "sms": True, "email": True, "accepted_at": now.isoformat()},
     }
     await db.users.insert_one(doc)
     access = create_access_token(uid, doc["email"], "member")
@@ -4688,6 +4696,8 @@ def _invite_public(doc: dict, owner: bool = False) -> dict:
         "map_url": doc.get("map_url"), "message": doc.get("message"),
         "theme": doc.get("theme"), "primary_color": doc.get("primary_color"),
         "cover_image_id": doc.get("cover_image_id"), "music_url": doc.get("music_url"),
+        "greeting_audio_id": doc.get("greeting_audio_id"),
+        "checkin_enabled": bool(doc.get("checkin_enabled")),
         "sections": doc.get("sections") or {},
         "gift": doc.get("gift") or {},
         "created_at": doc.get("created_at"), "expires_at": doc.get("expires_at"),
@@ -4712,6 +4722,8 @@ class InvitationIn(BaseModel):
     primary_color: Optional[str] = ""
     cover_image_id: Optional[str] = ""
     music_url: Optional[str] = ""
+    greeting_audio_id: Optional[str] = ""
+    checkin_enabled: bool = False
     sections: Optional[dict] = None
     gift: Optional[dict] = None
 
@@ -4756,6 +4768,107 @@ async def invitation_cover_get(cid: str):
                              headers={"Cache-Control": "public, max-age=86400"})
 
 
+@api_router.post("/invitations/audio")
+async def invitation_audio_upload(file: UploadFile = File(...)):
+    ct = file.content_type or "audio/mpeg"
+    if not ct.startswith("audio"):
+        raise HTTPException(status_code=400, detail="Sadece ses dosyası yüklenebilir")
+    aid = new_id()
+    ext = (file.filename or "mp3").split(".")[-1].lower()[:5]
+    path = f"{APP_NAME}/invitations/audio/{aid}.{ext}"
+    data = await file.read()
+    if len(data) > 12 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Ses dosyası en fazla 12MB olabilir")
+    put_object(path, data, ct)
+    await db.invitation_covers.insert_one({"id": aid, "storage_path": path, "content_type": ct,
+                                           "kind": "audio", "created_at": now_iso()})
+    return {"id": aid, "url": f"/api/invitations/audio/{aid}"}
+
+
+@api_router.get("/invitations/audio/{aid}")
+async def invitation_audio_get(aid: str):
+    doc = await db.invitation_covers.find_one({"id": aid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Ses bulunamadı")
+    data, ct = get_object(doc["storage_path"])
+    return StarletteResponse(content=data, media_type=doc.get("content_type", ct),
+                             headers={"Cache-Control": "public, max-age=86400", "Accept-Ranges": "bytes"})
+
+
+# ---- Live guest photo wall ----
+@api_router.post("/invitations/public/{slug}/photos")
+async def upload_guest_photo(slug: str, file: UploadFile = File(...), uploader_name: str = Form("")):
+    d = await _get_active_invitation(slug)
+    ct = file.content_type or "image/jpeg"
+    if not ct.startswith("image"):
+        raise HTTPException(status_code=400, detail="Sadece görsel yüklenebilir")
+    data = await file.read()
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Görsel en fazla 10MB olabilir")
+    count = await db.invitation_photos.count_documents({"invitation_id": d["id"]})
+    if count >= 1000:
+        raise HTTPException(status_code=400, detail="Fotoğraf yükleme sınırına ulaşıldı")
+    pid = new_id()
+    ext = (file.filename or "jpg").split(".")[-1].lower()[:5]
+    path = f"{APP_NAME}/invitations/photos/{pid}.{ext}"
+    put_object(path, data, ct)
+    await db.invitation_photos.insert_one({
+        "id": pid, "invitation_id": d["id"], "storage_path": path, "content_type": ct,
+        "uploader_name": (uploader_name or "").strip()[:60], "created_at": now_iso(),
+    })
+    return {"ok": True, "id": pid}
+
+
+@api_router.get("/invitations/public/{slug}/photos")
+async def list_guest_photos(slug: str, since: Optional[str] = None):
+    d = await db.invitations.find_one({"slug": slug, "status": "published"}, {"id": 1, "_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    q = {"invitation_id": d["id"]}
+    if since:
+        q["created_at"] = {"$gt": since}
+    photos = await db.invitation_photos.find(q, {"_id": 0, "storage_path": 0}).sort("created_at", -1).to_list(length=1000)
+    return {"photos": [{"id": p["id"], "uploader_name": p.get("uploader_name", ""), "created_at": p.get("created_at")} for p in photos]}
+
+
+@api_router.get("/invitations/photo/{pid}")
+async def get_guest_photo(pid: str):
+    doc = await db.invitation_photos.find_one({"id": pid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Fotoğraf bulunamadı")
+    data, ct = get_object(doc["storage_path"])
+    return StarletteResponse(content=data, media_type=doc.get("content_type", ct),
+                             headers={"Cache-Control": "public, max-age=86400"})
+
+
+# ---- Optional QR door check-in ----
+@api_router.get("/invitations/checkin/{token}")
+async def checkin_info(token: str):
+    r = await db.invitation_rsvps.find_one({"checkin_token": token}, {"_id": 0})
+    if not r:
+        raise HTTPException(status_code=404, detail="Geçersiz giriş kodu")
+    inv = await db.invitations.find_one({"id": r["invitation_id"]}, {"_id": 0, "person1": 1, "person2": 1, "id": 1})
+    return {"name": r.get("name"), "surname": r.get("surname"), "guest_count": r.get("guest_count"),
+            "attending": r.get("attending"), "checked_in": bool(r.get("checked_in")),
+            "checked_in_at": r.get("checked_in_at"), "invitation_id": r.get("invitation_id"),
+            "invitation": {"person1": inv.get("person1"), "person2": inv.get("person2")} if inv else {}}
+
+
+@api_router.post("/invitations/checkin/{token}")
+async def do_checkin(token: str, user: dict = Depends(get_current_user)):
+    r = await db.invitation_rsvps.find_one({"checkin_token": token})
+    if not r:
+        raise HTTPException(status_code=404, detail="Geçersiz giriş kodu")
+    inv = await db.invitations.find_one({"id": r["invitation_id"]})
+    if not inv or inv.get("owner_user_id") != user.get("id"):
+        raise HTTPException(status_code=403, detail="Bu davetiye size ait değil")
+    if r.get("checked_in"):
+        return {"ok": True, "already": True, "name": r.get("name"), "surname": r.get("surname")}
+    await db.invitation_rsvps.update_one({"checkin_token": token},
+                                         {"$set": {"checked_in": True, "checked_in_at": now_iso()}})
+    return {"ok": True, "already": False, "name": r.get("name"), "surname": r.get("surname"), "guest_count": r.get("guest_count")}
+
+
 @api_router.post("/invitations")
 async def create_invitation(payload: InvitationIn, user: dict = Depends(get_current_user)):
     """Publish an invitation. Membership (a logged-in account) is required — this is the
@@ -4765,7 +4878,8 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
     base = _slugify(f"{payload.person1}-{payload.person2}" if payload.person2 else payload.person1)
     slug = f"{base}-{uuid.uuid4().hex[:6]}"
     default_sections = {"countdown": True, "map": True, "memories": True, "rsvp": True,
-                        "gift": bool((payload.gift or {}).get("iban")), "music": bool(payload.music_url)}
+                        "photowall": True,
+                        "gift": bool((payload.gift or {}).get("iban")), "music": bool(payload.music_url or payload.greeting_audio_id)}
     doc = {
         "id": iid, "slug": slug, "owner_user_id": user.get("id"), "status": "published",
         "event_type": payload.event_type, "title": payload.title,
@@ -4775,7 +4889,8 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
         "map_url": payload.map_url, "message": payload.message,
         "theme": payload.theme if payload.theme in INVITE_THEMES else "romantic",
         "primary_color": payload.primary_color, "cover_image_id": payload.cover_image_id,
-        "music_url": payload.music_url,
+        "music_url": payload.music_url, "greeting_audio_id": payload.greeting_audio_id,
+        "checkin_enabled": bool(payload.checkin_enabled),
         "sections": {**default_sections, **(payload.sections or {})},
         "gift": payload.gift or {},
         "created_at": now, "published_at": now, "expires_at": _invite_expires_at(payload.event_date),
@@ -4870,14 +4985,19 @@ async def submit_rsvp(slug: str, payload: RsvpIn):
     if not payload.name.strip() or not payload.surname.strip():
         raise HTTPException(status_code=400, detail="Ad ve soyad zorunludur")
     d = await _get_active_invitation(slug)
+    token = uuid.uuid4().hex[:12]
     rec = {
         "id": new_id(), "invitation_id": d["id"], "name": payload.name.strip(),
         "surname": payload.surname.strip(), "attending": bool(payload.attending),
         "guest_count": max(1, int(payload.guest_count or 1)), "note": (payload.note or "").strip(),
+        "checkin_token": token, "checked_in": False, "checked_in_at": None,
         "created_at": now_iso(),
     }
     await db.invitation_rsvps.insert_one(rec)
-    return {"ok": True}
+    resp = {"ok": True}
+    if d.get("checkin_enabled") and payload.attending:
+        resp["checkin_token"] = token
+    return resp
 
 
 @api_router.post("/invitations/public/{slug}/memory")
@@ -4912,11 +5032,12 @@ async def invitation_report(iid: str, user: dict = Depends(get_current_user)):
     yes = [r for r in rsvps if r.get("attending")]
     no = [r for r in rsvps if not r.get("attending")]
     heads = sum(int(r.get("guest_count") or 1) for r in yes)
+    checked = sum(1 for r in rsvps if r.get("checked_in"))
     return {
         "invitation": _invite_public(d, owner=True),
         "rsvps": rsvps, "memories": memories,
         "stats": {"rsvp_total": len(rsvps), "attending": len(yes), "declined": len(no),
-                  "total_guests": heads, "memories": len(memories)},
+                  "total_guests": heads, "memories": len(memories), "checked_in": checked},
     }
 
 

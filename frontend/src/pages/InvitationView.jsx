@@ -103,8 +103,8 @@ export default function InvitationView() {
             ) : (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <Input placeholder="Ad *" value={rsvp.name} onChange={(e) => setRsvp({ ...rsvp, name: e.target.value })} data-testid="rsvp-name" />
-                  <Input placeholder="Soyad *" value={rsvp.surname} onChange={(e) => setRsvp({ ...rsvp, surname: e.target.value })} data-testid="rsvp-surname" />
+                  <Input placeholder="Ad *" value={rsvp.name} onChange={(e) => setRsvp({ ...rsvp, name: e.target.value })} className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300" data-testid="rsvp-name" />
+                  <Input placeholder="Soyad *" value={rsvp.surname} onChange={(e) => setRsvp({ ...rsvp, surname: e.target.value })} className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300" data-testid="rsvp-surname" />
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => setRsvp({ ...rsvp, attending: true })}
@@ -120,10 +120,10 @@ export default function InvitationView() {
                   <div>
                     <label className="text-xs" style={{ color: t.sub }}>Kaç kişi geleceksiniz?</label>
                     <Input type="number" min={1} value={rsvp.guest_count}
-                      onChange={(e) => setRsvp({ ...rsvp, guest_count: Math.max(1, parseInt(e.target.value || "1")) })} data-testid="rsvp-count" />
+                      onChange={(e) => setRsvp({ ...rsvp, guest_count: Math.max(1, parseInt(e.target.value || "1")) })} className="bg-white text-slate-900 border-slate-300" data-testid="rsvp-count" />
                   </div>
                 )}
-                <Textarea placeholder="Not (isteğe bağlı)" value={rsvp.note} onChange={(e) => setRsvp({ ...rsvp, note: e.target.value })} rows={2} data-testid="rsvp-note" />
+                <Textarea placeholder="Not (isteğe bağlı)" value={rsvp.note} onChange={(e) => setRsvp({ ...rsvp, note: e.target.value })} rows={2} className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300" data-testid="rsvp-note" />
                 <Button onClick={submitRsvp} disabled={busy} className="w-full" style={{ background: t.accent, color: "#fff" }} data-testid="rsvp-submit">
                   {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />} Yanıtı Gönder
                 </Button>
@@ -139,8 +139,8 @@ export default function InvitationView() {
               <MessageCircleHeart className="w-5 h-5" style={{ color: t.accent }} /> Anı & Dilek Bırakın
             </h3>
             <div className="space-y-3 mt-3">
-              <Input placeholder="Adınız" value={mem.name} onChange={(e) => setMem({ ...mem, name: e.target.value })} data-testid="memory-name" />
-              <Textarea placeholder="Dileğinizi / anınızı yazın..." value={mem.message} onChange={(e) => setMem({ ...mem, message: e.target.value })} rows={3} data-testid="memory-message" />
+              <Input placeholder="Adınız" value={mem.name} onChange={(e) => setMem({ ...mem, name: e.target.value })} className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300" data-testid="memory-name" />
+              <Textarea placeholder="Dileğinizi / anınızı yazın..." value={mem.message} onChange={(e) => setMem({ ...mem, message: e.target.value })} rows={3} className="bg-white text-slate-900 placeholder:text-slate-500 border-slate-300" data-testid="memory-message" />
               <Button onClick={submitMemory} disabled={busy} variant="outline" className="w-full" style={{ borderColor: t.accent, color: t.accent }} data-testid="memory-submit">
                 Duvara Ekle
               </Button>
