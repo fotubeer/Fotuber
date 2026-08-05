@@ -336,11 +336,17 @@ const AdminPassportPhoto = () => {
     // Background
     ctx.fillStyle = spec.bg;
     ctx.fillRect(0, 0, targetW, targetH);
-    // Pixel-space source rect from crop
-    const cropW = crop.w;
-    const cropH = crop.w * (spec.h / spec.w);
-    const sx = crop.cx - cropW / 2;
-    const sy = crop.cy - cropH / 2;
+    // Pixel-space source rect from crop, HARD-CLAMPED inside the image so a
+    // stale/rescaled crop (e.g. right after a downscaled retouch) can never
+    // point off-canvas and render a blank/white photo.
+    const iw = (image.el && (image.el.naturalWidth || image.el.width)) || image.w;
+    const ih = (image.el && (image.el.naturalHeight || image.el.height)) || image.h;
+    const cropW = Math.min(crop.w, iw);
+    const cropH = Math.min(crop.w * (spec.h / spec.w), ih);
+    let sx = crop.cx - cropW / 2;
+    let sy = crop.cy - cropH / 2;
+    sx = Math.min(Math.max(0, sx), Math.max(0, iw - cropW));
+    sy = Math.min(Math.max(0, sy), Math.max(0, ih - cropH));
     if (image.el) {
       // BUG 2: color adjustments (brightness/contrast/saturation/warmth) must
       // affect ONLY the foreground person, never the background. Draw an

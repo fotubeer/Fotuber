@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 20 — Focused verification of the RE-REPORTED retouch WHITE-OUT bug on /admin/vesikalik. Login via POST /api/auth/login (admin@fotuber.com.tr / FTB.2024) with token injected into localStorage, then navigated directly to /admin/vesikalik (bypasses flaky /giris E2E). Uploaded /app/tests/assets/portrait1.jpg via input#vf; canvas-single (591x709) and canvas-sheet (1535x2126) render with real photo pixels. Ran 4 retouch scenarios and sampled pixel data via HTMLCanvasElement.getContext('2d').getImageData() at 5 points (center, upper y=h*0.35, lower y=h*0.6, q1, q2) on BOTH [data-testid=canvas-single] and [data-testid=canvas-sheet]. Non-white sample criteria: alpha===255 AND (r<235 OR g<235 OR b<235). RESULTS: ALL 4 SCENARIOS PASS — no white-out. (1) Plain retouch heal (Onarım) with 3 strokes → single nWC=5 (e.g. center RGB=(227,177,149,255)), sheet nWC=4 (e.g. center=(156,163,175,255) — background pixel; face cells q1=(158,126,110), q2=(109,95,78)). (2) Retouch applied TWICE (open again, paint, apply) → single nWC=5, sheet nWC=4 with fresh face pixels. (3) Boya (paint) mode with a small stroke → single nWC=5, sheet nWC=4, photo intact around the painted spot (visible in screenshot). (4) After background removal (clicked [data-testid=bg-remove-btn], waited 25s for @imgly model) then retouch heal → single nWC=5, sheet nWC=4 — photo still visible, not blank. Regression testids present: bg-remove-btn, retouch-open-btn, download-single-btn, download-sheet-btn, ai-credits-badge='Yönetici · Emergent' (implicit), open-topup-btn (Kredi Yükle opens [data-testid=topup-dialog] with all 4 packages 40/100/200/400₺). Watermark align switch [data-testid=wm-align-left/center/right] is conditionally rendered only when a watermark image is uploaded (see AdminPassportPhoto.jsx L901-921) — testids exist in code but were not on-DOM at test time; not a bug, just a documentation nit. Face-detect: no [data-testid=face-detect-btn] found — the 'Otomatik Yüz Tespiti' button exists (see prior iterations' screenshots) but is not tagged with that specific testid. Pre-existing transient toast 'Model yüklenemedi. İnternet bağlantınızı kontrol edin.' appears on face-api warm-up (unchanged from iter_16/18/19).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_20.json"
+  ],
+  "action_items": [
+    "Cosmetic (optional): add data-testid='face-detect-btn' to the 'Otomatik Yüz Tespiti' button in AdminPassportPhoto.jsx for cleaner regression selectors; currently reachable only by text.",
+    "Doc (optional): wm-align-* testids only mount when a watermark image is uploaded — the review checklist wording 'at Adet=4' seems unrelated; consider clarifying in future review requests."
+  ],
+  "critical_code_review_comments": [
+    "drawSingle clamp (crop.w/crop.h and sx/sy clamped into image bounds via naturalWidth/Height) is effective — no stale/rescaled crop pointed off-canvas across any of the 4 scenarios, including after bg-remove which changes image.el dimensions.",
+    "applyRetouch drop-fgMask + try/catch around foreground mask overlay is holding up under repeated apply cycles (scenario 2)."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "N/A (frontend-only run)", "frontend": "100% — 4/4 retouch scenarios non-white on both canvas-single and canvas-sheet" },
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. No downloads or uploads persisted to backend.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Retouch white-out (single+sheet) is now RESOLVED across plain heal, twice-applied, paint mode, and after-bg-removal. Verification approach that works: after clicking retouch-apply, wait ~2-3s, then getImageData 5 points on canvas-single AND canvas-sheet; a healthy render yields >=2 non-white samples per canvas. /giris E2E remains flaky — always inject token from POST /api/auth/login into localStorage.token & localStorage.access_token, then navigate to /admin/vesikalik directly. Input#vf is hidden (class='hidden'); use set_input_files with state='attached'. face-api model warm-up shows a transient error toast — non-blocking, ignore. wm-align-* testids only mount when a watermark is uploaded via [data-testid=watermark-upload].",
+  "rca of the issue": "N/A — bug not reproduced. The hard-clamp in drawSingle (iw/ih from image.el.naturalWidth/Height; cropW=min(crop.w,iw); sx/sy clamped into [0,iw-cropW]/[0,ih-cropH]) plus the applyRetouch fgMask drop + try/catch around the foreground overlay prevents the source rect from ever pointing off-canvas, eliminating the previous white-out. Confirmed by getImageData sampling on both preview canvases across all 4 requested scenarios."
+}
