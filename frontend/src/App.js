@@ -46,6 +46,8 @@ import AdminIntroSettings from "@/pages/admin/AdminIntroSettings";
 import AdminInstagramSlideshow from "@/pages/admin/AdminInstagramSlideshow";
 import AdminAIAssistant from "@/pages/admin/AdminAIAssistant";
 import AdminPassportPhoto from "@/pages/admin/AdminPassportPhoto";
+import AdminContacts from "@/pages/admin/AdminContacts";
+import AdminMemberships from "@/pages/admin/AdminMemberships";
 
 import DiscountCode from "@/pages/DiscountCode";
 import FotuberMedya from "@/pages/FotuberMedya";
@@ -127,6 +129,8 @@ function App() {
               <Route path="/admin/instagram-slayt" element={<AdminGuard><AdminInstagramSlideshow /></AdminGuard>} />
               <Route path="/admin/fotuber-asistan" element={<AdminGuard><AdminAIAssistant /></AdminGuard>} />
               <Route path="/admin/vesikalik" element={<AdminGuard><AdminPassportPhoto /></AdminGuard>} />
+              <Route path="/admin/kisiler" element={<AdminGuard><AdminContacts /></AdminGuard>} />
+              <Route path="/admin/uyelikler" element={<AdminGuard><AdminMemberships /></AdminGuard>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

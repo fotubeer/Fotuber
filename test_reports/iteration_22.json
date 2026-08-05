@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 22 tested the new pricing (99/899), yearly plan create link, trial-once-per-phone/company registration, feature tracking via PayTR callback, and the two new admin pages (Kişiler + Üyelikler) with CSV export. Backend: 11/11 pytest cases pass in /app/backend/tests/test_admin_memberships_contacts.py. Frontend: /vesikalik shows both plan cards (99₺, 899₺) with the two subscribe buttons; both post the correct period to /api/payments/paytr/create and show pay-waiting UI. Admin (owner) sidebar exposes both 'Kişiler' and 'Üyelikler' links; /admin/uyelikler renders title, tabs (all/trial/monthly/yearly/expired), search, and both CSV downloads (fotuber_kisiler.csv, fotuber_uyelikler.csv) succeed; /admin/kisiler renders title, 3 ctabs, search and CSV download. Admin endpoints properly return 403 to member tokens. Feature tracking: p10 credit callback with computed hash grants credits, sets credit_topup_count>=1 and features_used contains 'kredi_yukleme'.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_admin_memberships_contacts.py",
+    "/app/test_reports/pytest/iter22.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 4530 lines — membership/admin-report/PayTR routes should be split into dedicated routers for maintainability.",
+    "AdminMemberships row iterates data.members even when a group tab is active — value already correct via data.groups[tab]; but the 'Toplam' count in the KPI grid uses data.counts.total (OK). Consider disabling detail button when trial_used_before but no purchases for cleaner UX.",
+    "PayTR callback endpoint returns 400 on missing callback_id/hash and 400 on bad hash. Consider always returning 'OK' text to PayTR while logging server-side, to avoid PayTR retry storms on tampered callbacks (defensive)."
+  ],
+  "updated_files": ["/app/backend/tests/test_admin_memberships_contacts.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin admin@fotuber.com.tr / FTB.2024; expired member expired@fotuber.com.tr / Test1234.",
+  "seed_data_creation": "Dynamic test members TEST_*@example.com created with unique/duplicate phone+company for trial-once verification; one paid credits order (p10) simulated via callback for feature-tracking test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `pytest backend/tests/test_admin_memberships_contacts.py -v` to regress admin memberships/contacts/export, trial-once, PayTR create monthly+yearly, and callback feature tracking. Testids: /vesikalik gate → subscribe-gate, plan-monthly, plan-yearly, subscribe-btn, subscribe-yearly-btn, pay-waiting. Admin: nav Kişiler & Üyelikler are ownerOnly-visible; /admin/uyelikler → admin-memberships-title, tab-all/trial/monthly/yearly/expired, memberships-search, membership-detail-{id}, membership-detail-dialog, export-contacts-btn, export-detailed-btn. /admin/kisiler → admin-contacts-title, ctab-members/customers/booking_contacts, contacts-search, contacts-export-btn."
+}

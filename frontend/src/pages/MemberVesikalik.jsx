@@ -50,7 +50,11 @@ export default function MemberVesikalik() {
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.detail || "İşlem başarısız");
       setMe({ user: d.user, membership: d.membership });
-      toast.success(isReg ? "Üyelik oluşturuldu — ilk ay ücretsiz!" : "Giriş başarılı");
+      if (isReg && d.trial_used_before) {
+        toast.info("Bu telefon/firma için ücretsiz deneme daha önce kullanılmış. Devam etmek için bir plan seçin.");
+      } else {
+        toast.success(isReg ? "Üyelik oluşturuldu — ilk ay ücretsiz!" : "Giriş başarılı");
+      }
     } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   };
@@ -75,13 +79,13 @@ export default function MemberVesikalik() {
     }, 3000);
   }, []);
 
-  const subscribe = async () => {
+  const subscribe = async (period = "monthly") => {
     setBusy(true);
     try {
       const res = await api("/payments/paytr/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "subscription", origin_url: window.location.origin }),
+        body: JSON.stringify({ kind: "subscription", period, origin_url: window.location.origin }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.detail || "Ödeme başlatılamadı");
@@ -138,9 +142,16 @@ export default function MemberVesikalik() {
           <p className="text-slate-400 text-sm mt-2">
             Vesikalık aracını kullanmaya devam etmek için aboneliğinizi yenileyin.
           </p>
-          <div className="my-6 rounded-xl border border-indigo-500/40 bg-indigo-500/10 p-4">
-            <div className="text-3xl font-extrabold">{me.membership.price}₺<span className="text-base font-medium text-slate-400">/ay</span></div>
-            <div className="text-xs text-slate-400 mt-1">İlk ay ücretsiz — sonrasında aylık {me.membership.price}₺</div>
+          <div className="my-6 grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4 text-left" data-testid="plan-monthly">
+              <div className="text-xs text-slate-400">Aylık</div>
+              <div className="text-2xl font-extrabold">{me.membership.price}₺<span className="text-xs font-medium text-slate-400">/ay</span></div>
+            </div>
+            <div className="rounded-xl border border-indigo-500/50 bg-indigo-500/10 p-4 text-left relative" data-testid="plan-yearly">
+              <span className="absolute -top-2 right-2 text-[9px] font-bold bg-indigo-500 text-white px-2 py-0.5 rounded-full">2 AY BEDAVA</span>
+              <div className="text-xs text-slate-400">Yıllık</div>
+              <div className="text-2xl font-extrabold">{me.membership.yearly_price}₺<span className="text-xs font-medium text-slate-400">/yıl</span></div>
+            </div>
           </div>
           {payWait ? (
             <div className="space-y-3" data-testid="pay-waiting">
@@ -154,10 +165,16 @@ export default function MemberVesikalik() {
               <button onClick={() => setPayWait(null)} className="text-xs text-slate-500 hover:text-slate-300" data-testid="pay-cancel-btn">İptal</button>
             </div>
           ) : (
-            <Button onClick={subscribe} disabled={busy} className="w-full bg-indigo-600 hover:bg-indigo-700" data-testid="subscribe-btn">
-              {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-              Abone Ol · {me.membership.price}₺/ay
-            </Button>
+            <div className="space-y-2">
+              <Button onClick={() => subscribe("monthly")} disabled={busy} className="w-full bg-indigo-600 hover:bg-indigo-700" data-testid="subscribe-btn">
+                {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                Aylık Abone Ol · {me.membership.price}₺
+              </Button>
+              <Button onClick={() => subscribe("yearly")} disabled={busy} variant="outline" className="w-full border-indigo-400 text-indigo-200 hover:bg-indigo-500/10" data-testid="subscribe-yearly-btn">
+                {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                Yıllık Abone Ol · {me.membership.yearly_price}₺
+              </Button>
+            </div>
           )}
           <button onClick={logout} className="mt-4 text-xs text-slate-500 hover:text-slate-300" data-testid="gate-logout">Çıkış yap</button>
         </div>
@@ -173,7 +190,7 @@ export default function MemberVesikalik() {
         <h2 className="text-4xl font-black mt-6 leading-tight">Fotuber Vesikalık<br />Firma Paneli</h2>
         <p className="text-white/70 mt-4 max-w-sm">
           Biyometrik vesikalık üretimi, AI kıyafet & renk değiştirme, baskıya hazır şablon.
-          Firmanız için ilk ay <b>ücretsiz</b>, sonrasında aylık 80₺.
+          Firmanız için ilk ay <b>ücretsiz</b>, sonrasında aylık 99₺ veya yıllık 899₺.
         </p>
         <ul className="mt-6 space-y-2 text-white/80 text-sm">
           <li className="flex items-center gap-2"><Sparkles className="w-4 h-4" /> AI kıyafet/renk (kendi Gemini anahtarınız veya kredi)</li>

@@ -251,7 +251,8 @@ async def require_staff_or_admin(user: dict = Depends(get_current_user)) -> dict
     return user
 
 
-MEMBER_MONTHLY_PRICE = float(os.environ.get("MEMBER_MONTHLY_PRICE", "80"))
+MEMBER_MONTHLY_PRICE = float(os.environ.get("MEMBER_MONTHLY_PRICE", "99"))
+MEMBER_YEARLY_PRICE = float(os.environ.get("MEMBER_YEARLY_PRICE", "899"))
 TRIAL_DAYS = 30
 
 def _membership_state(user: dict) -> dict:
@@ -269,11 +270,39 @@ def _membership_state(user: dict) -> dict:
     elif trial_end and trial_end > now:
         active, mstatus, until = True, "trial", user.get("trial_end")
     return {"active": active, "status": mstatus, "until": until,
-            "price": MEMBER_MONTHLY_PRICE, "currency": "TRY", "trial_days": TRIAL_DAYS}
+            "plan": user.get("plan") or ("trial" if mstatus == "trial" else ("paid" if mstatus == "active" else "none")),
+            "price": MEMBER_MONTHLY_PRICE, "yearly_price": MEMBER_YEARLY_PRICE,
+            "currency": "TRY", "trial_days": TRIAL_DAYS}
+
+
+def _norm_phone(raw: str) -> str:
+    digits = "".join(ch for ch in (raw or "") if ch.isdigit())
+    if digits.startswith("90"):
+        digits = digits[2:]
+    if digits.startswith("0"):
+        digits = digits[1:]
+    return digits
+
+
+def _norm_company(raw: str) -> str:
+    return (raw or "").strip().lower()
+
+
+async def _track_feature(user_id: str, feature: str):
+    """Record that a user used a given site feature (for admin membership reporting)."""
+    if not user_id:
+        return
+    try:
+        await db.users.update_one(
+            {"id": user_id},
+            {"$addToSet": {"features_used": feature},
+             "$set": {"last_active": datetime.now(timezone.utc).isoformat()}},
+        )
+    except Exception:
+        pass
 
 
 async def require_vesikalik_access(user: dict = Depends(get_current_user)) -> dict:
-    """Admin/staff always allowed; firm members only with an ACTIVE membership."""
     role = user.get("role")
     if role in ("admin", "staff"):
         return user
@@ -804,8 +833,7 @@ async def create_appointment(payload: AppointmentIn, user: dict = Depends(get_cu
         "created_at": now,
     }
     await db.appointments.insert_one(doc)
-
-    # In-panel notification for the admin team
+    await _track_feature(user["id"], "randevu")
     await db.notifications.insert_one({
         "id": new_id(),
         "kind": "appointment_pending",
@@ -3775,6 +3803,7 @@ async def set_gemini_key(payload: GeminiKeyIn, admin: dict = Depends(require_ves
     if not ok:
         raise HTTPException(status_code=400, detail="Geçersiz Gemini anahtarı — Google doğrulaması başarısız oldu")
     await db.users.update_one({"id": admin.get("id")}, {"$set": {"gemini_api_key_enc": _encrypt_secret(raw)}})
+    await _track_feature(admin.get("id"), "byok")
     return {"connected": True, "masked": _mask_key(raw)}
 
 @api_router.delete("/vesikalik/gemini-key")
@@ -3808,18 +3837,37 @@ async def member_register(payload: MemberRegisterIn, response: Response):
         raise HTTPException(status_code=400, detail="Bu e-posta zaten kayıtlı")
     now = datetime.now(timezone.utc)
     uid = str(uuid.uuid4())
+    phone_norm = _norm_phone(payload.phone)
+    company_norm = _norm_company(payload.company_name)
+
+    # Free 1-month trial is granted ONCE per phone number OR per company name.
+    # If any prior member already claimed a trial with the same phone or company,
+    # this account starts WITHOUT a trial (must subscribe to use paid features).
+    match_or = [{"phone_norm": phone_norm}] if phone_norm else []
+    if company_norm:
+        match_or.append({"company_norm": company_norm})
+    trial_used = False
+    if match_or:
+        prior = await db.users.find_one({
+            "role": "member", "trial_start": {"$ne": None}, "$or": match_or,
+        })
+        trial_used = bool(prior)
+
     doc = {
         "id": uid, "email": payload.email.lower(), "password": hash_password(payload.password),
         "name": payload.full_name, "phone": payload.phone,
         "company_name": (payload.company_name or "").strip(),
+        "phone_norm": phone_norm, "company_norm": company_norm,
         "role": "member", "created_at": now.isoformat(),
-        "trial_start": now.isoformat(), "trial_end": (now + timedelta(days=TRIAL_DAYS)).isoformat(),
-        "paid_until": None, "ai_credits": 0,
+        "trial_start": None if trial_used else now.isoformat(),
+        "trial_end": None if trial_used else (now + timedelta(days=TRIAL_DAYS)).isoformat(),
+        "trial_used_before": trial_used,
+        "paid_until": None, "ai_credits": 0, "features_used": [],
     }
     await db.users.insert_one(doc)
     access = create_access_token(uid, doc["email"], "member")
     set_auth_cookies(response, access, create_refresh_token(uid))
-    return {"token": access, "user": _member_public(doc), "membership": _membership_state(doc)}
+    return {"token": access, "user": _member_public(doc), "membership": _membership_state(doc), "trial_used_before": trial_used}
 
 @api_router.post("/member/login")
 async def member_login(payload: MemberLoginIn, response: Response):
@@ -4004,6 +4052,7 @@ async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(re
     if not images:
         raise HTTPException(status_code=502, detail="AI görüntü üretmedi, farklı bir kıyafet/renk deneyin")
     out = images[0]
+    await _track_feature(admin.get("id"), "ai_kiyafet")
     if owner_side:
         # Owner's own Emergent balance — no purchasable-credit deduction.
         return {"image_base64": out.get("data", ""), "mime_type": out.get("mime_type", "image/png"), "own_key": False, "emergent": True, "credits_remaining": remaining}
@@ -4055,13 +4104,16 @@ async def _grant_paid_order(order: dict):
                 from_dt = pu
         except Exception:
             pass
-        new_until = (from_dt + timedelta(days=30)).isoformat()
-        await db.users.update_one({"id": uid}, {"$set": {"paid_until": new_until}})
+        days = int(order.get("days") or 30)
+        new_until = (from_dt + timedelta(days=days)).isoformat()
+        plan = "yearly" if days >= 360 else "monthly"
+        await db.users.update_one({"id": uid}, {"$set": {"paid_until": new_until, "plan": plan}})
         await db.member_subscriptions.insert_one({
-            "user_id": uid, "price": order.get("price"), "currency": "TRY",
+            "user_id": uid, "price": order.get("price"), "currency": "TRY", "plan": plan, "days": days,
             "demo": False, "paytr": True, "callback_id": order.get("callback_id"),
             "paid_until": new_until, "created_at": now.isoformat(),
         })
+        await _track_feature(uid, "abonelik")
     else:
         current = _ai_credits_of(user)
         await db.users.update_one({"id": uid}, {"$set": {"ai_credits": current + int(order.get("credits", 0))}})
@@ -4071,10 +4123,12 @@ async def _grant_paid_order(order: dict):
             "currency": "TRY", "demo": False, "paytr": True,
             "callback_id": order.get("callback_id"), "created_at": now.isoformat(),
         })
+        await _track_feature(uid, "kredi_yukleme")
 
 
 class PaytrCreateIn(BaseModel):
     kind: str  # "subscription" | "credits"
+    period: str = "monthly"  # "monthly" | "yearly" (subscription only)
     package_id: Optional[str] = None
     origin_url: str = ""
 
@@ -4087,9 +4141,16 @@ async def paytr_create(payload: PaytrCreateIn, request: Request, user: dict = De
         raise HTTPException(status_code=500, detail="PayTR yapılandırılmamış")
 
     kind = payload.kind
+    days = 0
     if kind == "subscription":
-        price = float(MEMBER_MONTHLY_PRICE)
-        title = "Fotuber Vesikalik Aylik Uyelik"
+        if payload.period == "yearly":
+            price = float(MEMBER_YEARLY_PRICE)
+            title = "Fotuber Vesikalik Yillik Uyelik"
+            days = 365
+        else:
+            price = float(MEMBER_MONTHLY_PRICE)
+            title = "Fotuber Vesikalik Aylik Uyelik"
+            days = 30
         credits = 0
     elif kind == "credits":
         pkg = _credit_packages().get(payload.package_id or "")
@@ -4146,7 +4207,7 @@ async def paytr_create(payload: PaytrCreateIn, request: Request, user: dict = De
 
     await db.payment_orders.insert_one({
         "callback_id": cid, "paytr_link_id": result.get("id"),
-        "user_id": user.get("id"), "kind": kind,
+        "user_id": user.get("id"), "kind": kind, "days": days,
         "package_id": payload.package_id, "credits": credits,
         "expected_amount": price_kurus, "currency": "TRY", "price": price,
         "callback_link": callback_link,
@@ -4208,6 +4269,244 @@ async def paytr_status(callback_id: str, user: dict = Depends(get_current_user))
         resp["membership"] = _membership_state(fresh)
         resp["ai_credits"] = _ai_credits_of(fresh)
     return resp
+
+
+# ---------------------------------------------------------------------------
+# Admin — Kişiler (Contacts) & Üyelikler (Memberships) reporting + CSV export
+# ---------------------------------------------------------------------------
+FEATURE_LABELS = {
+    "abonelik": "Üyelik Aboneliği",
+    "kredi_yukleme": "AI Kredi Yükleme",
+    "ai_kiyafet": "AI Kıyafet/Renk",
+    "byok": "Kendi Gemini Anahtarı",
+    "randevu": "Randevu Oluşturma",
+}
+
+
+async def _build_membership_reports() -> list:
+    """Rich per-member report: info, membership, purchases, appointments, features used."""
+    members = await db.users.find({"role": "member"}).to_list(length=100000)
+    subs = await db.member_subscriptions.find({}).to_list(length=100000)
+    topups = await db.ai_credit_topups.find({"demo": {"$ne": True}}).to_list(length=100000)
+    appts = await db.appointments.find({}, {
+        "user_id": 1, "customer_email": 1, "customer_phone": 1, "date": 1, "status": 1, "_id": 0,
+    }).to_list(length=100000)
+
+    subs_by_user, topups_by_user = {}, {}
+    for s in subs:
+        subs_by_user.setdefault(s.get("user_id"), []).append(s)
+    for t in topups:
+        topups_by_user.setdefault(t.get("user_id"), []).append(t)
+
+    def _member_appts(m):
+        emails = {(m.get("email") or "").lower()}
+        pnorm = _norm_phone(m.get("phone"))
+        out = []
+        for a in appts:
+            if a.get("user_id") and a.get("user_id") == m.get("id"):
+                out.append(a); continue
+            if (a.get("customer_email") or "").lower() in emails and (a.get("customer_email")):
+                out.append(a); continue
+            if pnorm and _norm_phone(a.get("customer_phone")) == pnorm:
+                out.append(a)
+        return out
+
+    reports = []
+    for m in members:
+        state = _membership_state(m)
+        usubs = subs_by_user.get(m.get("id"), [])
+        utops = topups_by_user.get(m.get("id"), [])
+        total_spent = sum(float(s.get("price") or 0) for s in usubs) + sum(float(t.get("price") or 0) for t in utops)
+        m_appts = _member_appts(m)
+        feats = m.get("features_used") or []
+        reports.append({
+            "id": m.get("id"),
+            "name": m.get("name"),
+            "email": m.get("email"),
+            "phone": m.get("phone"),
+            "company_name": m.get("company_name") or "",
+            "account_type": "firma" if (m.get("company_name") or "").strip() else "sahis",
+            "created_at": m.get("created_at"),
+            "last_active": m.get("last_active"),
+            "status": state["status"],          # active | trial | expired
+            "plan": m.get("plan") or ("trial" if state["status"] == "trial" else "none"),
+            "paid_until": m.get("paid_until"),
+            "trial_end": m.get("trial_end"),
+            "trial_used_before": bool(m.get("trial_used_before")),
+            "ai_credits": _ai_credits_of(m),
+            "own_gemini_key": bool(m.get("gemini_api_key_enc")),
+            "subscription_count": len(usubs),
+            "credit_topup_count": len(utops),
+            "credits_purchased": sum(int(t.get("credits") or 0) for t in utops),
+            "total_spent": round(total_spent, 2),
+            "appointment_count": len(m_appts),
+            "has_appointment": len(m_appts) > 0,
+            "features_used": feats,
+            "features_labels": [FEATURE_LABELS.get(f, f) for f in feats],
+        })
+    return reports
+
+
+def _membership_group_key(r: dict) -> str:
+    if r["status"] == "trial":
+        return "trial"
+    if r["status"] == "active":
+        return "yearly" if (r.get("plan") == "yearly") else "monthly"
+    return "expired"
+
+
+@api_router.get("/admin/memberships")
+async def admin_memberships(admin: dict = Depends(require_admin)):
+    """Admin-only. Everyone who registered a membership, grouped by membership type,
+    with full info, purchases, appointment usage and features used."""
+    reports = await _build_membership_reports()
+    groups = {"trial": [], "monthly": [], "yearly": [], "expired": []}
+    for r in reports:
+        groups[_membership_group_key(r)].append(r)
+    counts = {k: len(v) for k, v in groups.items()}
+    counts["total"] = len(reports)
+    return {
+        "members": reports,
+        "groups": groups,
+        "counts": counts,
+        "pricing": {"monthly": MEMBER_MONTHLY_PRICE, "yearly": MEMBER_YEARLY_PRICE, "currency": "TRY"},
+        "feature_labels": FEATURE_LABELS,
+    }
+
+
+@api_router.get("/admin/contacts")
+async def admin_contacts(admin: dict = Depends(require_admin)):
+    """Admin-only. Everyone who left their info on the site: members (firma/şahıs),
+    customers (site sign-up), and booking-form contacts (from appointments)."""
+    users = await db.users.find({"role": {"$in": ["member", "customer"]}}).to_list(length=100000)
+    appts = await db.appointments.find({}, {
+        "customer_name": 1, "customer_phone": 1, "customer_email": 1, "phone_2": 1,
+        "date": 1, "created_at": 1, "user_id": 1, "_id": 0,
+    }).to_list(length=100000)
+
+    members, customers = [], []
+    known_phones = set()
+    for u in users:
+        pnorm = _norm_phone(u.get("phone"))
+        if pnorm:
+            known_phones.add(pnorm)
+        base = {
+            "id": u.get("id"), "name": u.get("name"), "email": u.get("email"),
+            "phone": u.get("phone"), "created_at": u.get("created_at"),
+        }
+        if u.get("role") == "member":
+            st = _membership_state(u)
+            members.append({**base,
+                "company_name": u.get("company_name") or "",
+                "account_type": "firma" if (u.get("company_name") or "").strip() else "sahis",
+                "status": st["status"], "plan": u.get("plan") or st["status"],
+                "ai_credits": _ai_credits_of(u)})
+        else:
+            customers.append(base)
+
+    # Booking contacts from appointments that are not tied to a known user phone.
+    seen = set()
+    booking_contacts = []
+    for a in appts:
+        pnorm = _norm_phone(a.get("customer_phone"))
+        if pnorm and pnorm in known_phones:
+            continue
+        dedup = pnorm or (a.get("customer_email") or "").lower() or (a.get("customer_name") or "")
+        if dedup in seen:
+            continue
+        seen.add(dedup)
+        booking_contacts.append({
+            "name": a.get("customer_name"), "phone": a.get("customer_phone"),
+            "phone_2": a.get("phone_2") or "", "email": a.get("customer_email") or "",
+            "last_date": a.get("date"), "created_at": a.get("created_at"),
+        })
+
+    return {
+        "members": members,
+        "customers": customers,
+        "booking_contacts": booking_contacts,
+        "counts": {"members": len(members), "customers": len(customers), "booking_contacts": len(booking_contacts)},
+    }
+
+
+@api_router.get("/admin/export")
+async def admin_export(kind: str = "contacts", admin: dict = Depends(require_admin)):
+    """CSV export. kind='contacts' → personal+contact info only.
+    kind='memberships' → detailed membership report."""
+    import csv, io
+    from fastapi.responses import StreamingResponse
+    buf = io.StringIO()
+    w = csv.writer(buf)
+
+    if kind == "memberships":
+        reports = await _build_membership_reports()
+        w.writerow([
+            "Ad Soyad", "E-posta", "Telefon", "Firma", "Tip", "Üyelik Durumu", "Plan",
+            "Bitiş", "Deneme Kullanıldı", "AI Kredi", "Kendi Anahtarı",
+            "Abonelik Sayısı", "Kredi Yükleme Sayısı", "Satın Alınan Kredi", "Toplam Harcama (TRY)",
+            "Randevu Sayısı", "Kullandığı Özellikler", "Kayıt Tarihi", "Son Aktiflik",
+        ])
+        for r in reports:
+            w.writerow([
+                r["name"], r["email"], r["phone"], r["company_name"], r["account_type"],
+                r["status"], r["plan"], r["paid_until"] or r["trial_end"] or "",
+                "Evet" if r["trial_used_before"] else "Hayır", r["ai_credits"],
+                "Evet" if r["own_gemini_key"] else "Hayır", r["subscription_count"],
+                r["credit_topup_count"], r["credits_purchased"], r["total_spent"],
+                r["appointment_count"], ", ".join(r["features_labels"]),
+                r["created_at"] or "", r["last_active"] or "",
+            ])
+        fname = "fotuber_uyelikler.csv"
+    else:
+        data = await _contacts_payload()
+        w.writerow(["Tip", "Ad Soyad", "E-posta", "Telefon", "2. Telefon", "Firma", "Kayıt/Son Tarih"])
+        for m in data["members"]:
+            w.writerow(["Üye (" + m["account_type"] + ")", m["name"], m["email"], m["phone"], "", m.get("company_name", ""), m.get("created_at") or ""])
+        for c in data["customers"]:
+            w.writerow(["Müşteri", c["name"], c["email"], c["phone"], "", "", c.get("created_at") or ""])
+        for b in data["booking_contacts"]:
+            w.writerow(["Randevu Kişisi", b["name"], b["email"], b["phone"], b.get("phone_2", ""), "", b.get("last_date") or ""])
+        fname = "fotuber_kisiler.csv"
+
+    buf.seek(0)
+    return StreamingResponse(
+        iter(["\ufeff" + buf.getvalue()]),  # BOM for Excel Turkish chars
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )
+
+
+async def _contacts_payload() -> dict:
+    """Same aggregation as admin_contacts but callable internally (for CSV export)."""
+    users = await db.users.find({"role": {"$in": ["member", "customer"]}}).to_list(length=100000)
+    appts = await db.appointments.find({}, {
+        "customer_name": 1, "customer_phone": 1, "customer_email": 1, "phone_2": 1,
+        "date": 1, "created_at": 1, "_id": 0,
+    }).to_list(length=100000)
+    members, customers, known = [], [], set()
+    for u in users:
+        pnorm = _norm_phone(u.get("phone"))
+        if pnorm:
+            known.add(pnorm)
+        base = {"name": u.get("name"), "email": u.get("email"), "phone": u.get("phone"), "created_at": u.get("created_at")}
+        if u.get("role") == "member":
+            members.append({**base, "company_name": u.get("company_name") or "",
+                            "account_type": "firma" if (u.get("company_name") or "").strip() else "sahis"})
+        else:
+            customers.append(base)
+    seen, booking = set(), []
+    for a in appts:
+        pnorm = _norm_phone(a.get("customer_phone"))
+        if pnorm and pnorm in known:
+            continue
+        dedup = pnorm or (a.get("customer_email") or "").lower() or (a.get("customer_name") or "")
+        if dedup in seen:
+            continue
+        seen.add(dedup)
+        booking.append({"name": a.get("customer_name"), "phone": a.get("customer_phone"),
+                        "phone_2": a.get("phone_2") or "", "email": a.get("customer_email") or "",
+                        "last_date": a.get("date")})
+    return {"members": members, "customers": customers, "booking_contacts": booking}
 
 
 # Register the router

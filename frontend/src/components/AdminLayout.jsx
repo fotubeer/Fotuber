@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, CalendarDays, CalendarClock, Users, Wallet,
   ImageIcon, Camera, LogOut, Menu, X, Package, Settings, Coins, Ticket, Film, KeyRound, ArrowLeftRight,
-  Images, QrCode, Frame, MapPin, Instagram, Bot,
+  Images, QrCode, Frame, MapPin, Instagram, Bot, Contact, BadgeCheck,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
@@ -27,6 +27,8 @@ const items = [
   { to: "/admin/fotuber-medya", label: "Fotuber Medya", icon: Film },
   { to: "/admin/indirim-kodlari", label: "İndirim Kodları", icon: Ticket },
   { to: "/admin/personel", label: "Personel Listesi", icon: Users },
+  { to: "/admin/kisiler", label: "Kişiler", icon: Contact },
+  { to: "/admin/uyelikler", label: "Üyelikler", icon: BadgeCheck, ownerOnly: true },
   { to: "/admin/kullanicilar", label: "Personel Hesapları", icon: KeyRound, ownerOnly: true },
   { to: "/admin/ayarlar", label: "Site Ayarları", icon: Settings, ownerOnly: true },
   { to: "/admin/animasyon-ayarlari", label: "Açılış Animasyonu", icon: Film, ownerOnly: true },
