@@ -98,7 +98,7 @@ export default function PrintInvitation() {
 
       <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-0">
         {/* Form */}
-        <div className="p-6 sm:p-10 bg-white min-h-screen overflow-y-auto">
+        <div className="p-6 sm:p-10 bg-white min-h-screen overflow-y-auto text-slate-900">
           <div className="mb-6">
             <div className="text-xs uppercase tracking-widest text-rose-600 font-semibold">Fotuber · Baskıya Hazır Davetiye</div>
             <h1 className="text-3xl font-bold text-slate-900 mt-1">Baskı Davetiyesi Oluştur</h1>

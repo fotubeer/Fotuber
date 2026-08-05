@@ -207,7 +207,7 @@ export default function InvitationCreate() {
       <Toaster position="top-center" richColors />
       <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-0">
         {/* Form */}
-        <div className="p-6 sm:p-10 bg-white min-h-screen overflow-y-auto">
+        <div className="p-6 sm:p-10 bg-white min-h-screen overflow-y-auto text-slate-900">
           <div className="mb-6">
             <div className="text-xs uppercase tracking-widest text-indigo-600 font-semibold">Fotuber · Dijital Davetiye</div>
             <h1 className="text-3xl font-bold text-slate-900 mt-1">Davetiyeni Oluştur</h1>
@@ -404,7 +404,7 @@ export default function InvitationCreate() {
       {/* Membership gate (last step) */}
       {gate && (
         <div className="fixed inset-0 bg-black/60 grid place-items-center z-50 p-4" data-testid="publish-gate">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-6">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 text-slate-900">
             <h3 className="text-xl font-bold text-slate-900">Son adım: Üyelik</h3>
             <p className="text-sm text-slate-500 mt-1 mb-4">Davetiyenizi kaydetmek ve yönetmek için ücretsiz üyelik gerekli.</p>
             <div className="flex gap-2 mb-4">
