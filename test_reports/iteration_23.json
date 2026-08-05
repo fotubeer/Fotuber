@@ -1,0 +1,36 @@
+{
+  "summary": "Full end-to-end verification of the new Digital Invitation (Dijital Davetiye) module. Backend: 14/14 pytest tests passed (create/public/expires_at+15d, RSVP surname required (400), RSVP valid, memory submit+list, report stats, report.csv, cross-member 404 isolation, expired-invitation 410, my-invitations list). Frontend: 15/15 Playwright checks passed — wizard (event-type/person1/2/date/time/venue/map/message/theme/gift-IBAN) with live preview, membership gate on publish (unauthenticated), register→publish success (QR + share link + copy/whatsapp/open), standalone guest page (no site nav) with RSVP surname enforcement, memory wall append, /davetiyelerim card + report dialog with correct stats (1 attending / 2 total_guests / 1 memory). Countdown showed 29 days for a 30-day-future event (useCountdown works correctly — NOT stuck at zeros).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "MyInvitations report dialog", "issues": ["Radix DialogContent missing aria-describedby / DialogDescription (a11y warning in console, non-blocking)"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_invitations.py",
+    "/app/test_reports/pytest/invitations_results.xml"
+  ],
+  "action_items": [
+    "(Optional a11y) Add <DialogDescription> or aria-describedby to the report dialog in MyInvitations.jsx to silence Radix a11y warning."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 4959 lines — should be split into routers (invitations, member, admin, paytr, email) for maintainability.",
+    "_invite_expires_at uses `datetime.fromisoformat` on a bare YYYY-MM-DD; on Python 3.11+ this works but adds +15d+23h → guests get most of day-15 as grace, matches PRD intent (15 days after event).",
+    "public_invitation returns owner-only fields correctly stripped via _invite_public (owner=False) — verified no owner_user_id leaks publicly.",
+    "invitation_cover_upload has NO auth — anyone can upload up to 8MB images to storage. Should require member auth to prevent anonymous storage abuse.",
+    "RSVP endpoint has no rate limiting / captcha — public slug can be spammed.",
+    "InvitationPreview.useCountdown parses `${dateStr}T${time}:00` without timezone; treated as local time. Works correctly in tests but could differ by TZ between server-stored event_date and viewer."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_invitations.py (new)"
+  ],
+  "success_rate": { "backend": "100% (14/14)", "frontend": "100% (15/15)" },
+  "test_credentials": "Wizard creates ephemeral TEST_wiz_<uuid>@example.com / TestPass123! members. Admin admin@fotuber.com.tr / FTB.2024 (unused here).",
+  "seed_data_creation": "Multiple TEST_ prefixed members and invitations created via API/UI. Cover uploads NOT tested.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest file /app/backend/tests/test_invitations.py must be run WITHOUT xdist parallelization (module-scoped fixture requires ordered run). Use pytestmark xdist_group already applied. If cover-upload auth is added later, test_invitations.py needs a new TestCover class.",
+  "rca of the issue": "N/A — no defects found."
+}

@@ -502,6 +502,10 @@ async def on_startup():
     await db.venues.create_index("qr_token", unique=True)
     await db.guest_events.create_index("download_token")
     await db.email_log.create_index("notification_key", unique=True)
+    await db.invitations.create_index("slug", unique=True)
+    await db.invitations.create_index([("owner_user_id", 1), ("created_at", -1)])
+    await db.invitation_rsvps.create_index([("invitation_id", 1), ("created_at", -1)])
+    await db.invitation_memories.create_index([("invitation_id", 1), ("created_at", -1)])
     init_storage()
 
     # Start background cleanup task (deletes expired guest uploads once an hour)
@@ -4645,6 +4649,293 @@ async def admin_email_status(admin: dict = Depends(require_admin)):
     recent = await db.email_log.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=50)
     return {"configured": email_service.email_configured(), "provider": email_service.provider(),
             "sender": email_service.sender_address(), "recent": recent}
+
+
+# ---------------------------------------------------------------------------
+# Digital Invitations (Dijital Davetiye) — build → publish (member) → share link/QR
+# Guest page is standalone; RSVP requires name+surname; gift via creator's IBAN.
+# ---------------------------------------------------------------------------
+import re as _re
+
+INVITE_THEMES = ["romantic", "midnight", "botanic", "gold"]
+INVITE_EVENT_TYPES = ["dugun", "nisan", "kina", "sunnet", "dogumgunu", "nikah", "diger"]
+
+
+def _slugify(text: str) -> str:
+    tr = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+    s = (text or "").translate(tr)
+    s = _re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower()
+    return s[:40] or "davetiye"
+
+
+def _invite_expires_at(event_date: str) -> str:
+    try:
+        d = datetime.fromisoformat(event_date)
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=timezone.utc)
+    except Exception:
+        d = datetime.now(timezone.utc) + timedelta(days=90)
+    return (d + timedelta(days=15, hours=23)).isoformat()
+
+
+def _invite_public(doc: dict, owner: bool = False) -> dict:
+    out = {
+        "id": doc.get("id"), "slug": doc.get("slug"), "status": doc.get("status"),
+        "event_type": doc.get("event_type"), "title": doc.get("title"),
+        "person1": doc.get("person1"), "person2": doc.get("person2"),
+        "event_date": doc.get("event_date"), "event_time": doc.get("event_time"),
+        "venue_name": doc.get("venue_name"), "venue_address": doc.get("venue_address"),
+        "map_url": doc.get("map_url"), "message": doc.get("message"),
+        "theme": doc.get("theme"), "primary_color": doc.get("primary_color"),
+        "cover_image_id": doc.get("cover_image_id"), "music_url": doc.get("music_url"),
+        "sections": doc.get("sections") or {},
+        "gift": doc.get("gift") or {},
+        "created_at": doc.get("created_at"), "expires_at": doc.get("expires_at"),
+    }
+    if owner:
+        out["owner_user_id"] = doc.get("owner_user_id")
+    return out
+
+
+class InvitationIn(BaseModel):
+    event_type: str = "dugun"
+    title: Optional[str] = ""
+    person1: str
+    person2: Optional[str] = ""
+    event_date: str  # YYYY-MM-DD
+    event_time: Optional[str] = ""
+    venue_name: Optional[str] = ""
+    venue_address: Optional[str] = ""
+    map_url: Optional[str] = ""
+    message: Optional[str] = ""
+    theme: str = "romantic"
+    primary_color: Optional[str] = ""
+    cover_image_id: Optional[str] = ""
+    music_url: Optional[str] = ""
+    sections: Optional[dict] = None
+    gift: Optional[dict] = None
+
+
+class RsvpIn(BaseModel):
+    name: str
+    surname: str
+    attending: bool = True
+    guest_count: int = 1
+    note: Optional[str] = ""
+
+
+class MemoryIn(BaseModel):
+    name: str
+    message: str
+
+
+@api_router.post("/invitations/cover")
+async def invitation_cover_upload(file: UploadFile = File(...)):
+    ct = file.content_type or "image/jpeg"
+    if not ct.startswith("image"):
+        raise HTTPException(status_code=400, detail="Sadece görsel yüklenebilir")
+    cid = new_id()
+    ext = (file.filename or "jpg").split(".")[-1].lower()[:5]
+    path = f"{APP_NAME}/invitations/{cid}.{ext}"
+    data = await file.read()
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Görsel en fazla 8MB olabilir")
+    put_object(path, data, ct)
+    await db.invitation_covers.insert_one({"id": cid, "storage_path": path, "content_type": ct,
+                                           "created_at": now_iso()})
+    return {"id": cid, "url": f"/api/invitations/cover/{cid}"}
+
+
+@api_router.get("/invitations/cover/{cid}")
+async def invitation_cover_get(cid: str):
+    doc = await db.invitation_covers.find_one({"id": cid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Görsel bulunamadı")
+    data, ct = get_object(doc["storage_path"])
+    return StarletteResponse(content=data, media_type=doc.get("content_type", ct),
+                             headers={"Cache-Control": "public, max-age=86400"})
+
+
+@api_router.post("/invitations")
+async def create_invitation(payload: InvitationIn, user: dict = Depends(get_current_user)):
+    """Publish an invitation. Membership (a logged-in account) is required — this is the
+    last step of the wizard. Returns the public slug + link."""
+    now = now_iso()
+    iid = new_id()
+    base = _slugify(f"{payload.person1}-{payload.person2}" if payload.person2 else payload.person1)
+    slug = f"{base}-{uuid.uuid4().hex[:6]}"
+    default_sections = {"countdown": True, "map": True, "memories": True, "rsvp": True,
+                        "gift": bool((payload.gift or {}).get("iban")), "music": bool(payload.music_url)}
+    doc = {
+        "id": iid, "slug": slug, "owner_user_id": user.get("id"), "status": "published",
+        "event_type": payload.event_type, "title": payload.title,
+        "person1": payload.person1, "person2": payload.person2,
+        "event_date": payload.event_date, "event_time": payload.event_time,
+        "venue_name": payload.venue_name, "venue_address": payload.venue_address,
+        "map_url": payload.map_url, "message": payload.message,
+        "theme": payload.theme if payload.theme in INVITE_THEMES else "romantic",
+        "primary_color": payload.primary_color, "cover_image_id": payload.cover_image_id,
+        "music_url": payload.music_url,
+        "sections": {**default_sections, **(payload.sections or {})},
+        "gift": payload.gift or {},
+        "created_at": now, "published_at": now, "expires_at": _invite_expires_at(payload.event_date),
+    }
+    await db.invitations.insert_one(doc)
+    return {"id": iid, "slug": slug, "url": f"/davetiye/{slug}", "invitation": _invite_public(doc, owner=True)}
+
+
+@api_router.get("/invitations")
+async def my_invitations(user: dict = Depends(get_current_user)):
+    docs = await db.invitations.find({"owner_user_id": user.get("id")}, {"_id": 0}).sort("created_at", -1).to_list(length=500)
+    now = datetime.now(timezone.utc)
+    out = []
+    for d in docs:
+        rc = await db.invitation_rsvps.count_documents({"invitation_id": d["id"]})
+        yes = await db.invitation_rsvps.count_documents({"invitation_id": d["id"], "attending": True})
+        mem = await db.invitation_memories.count_documents({"invitation_id": d["id"]})
+        pub = _invite_public(d, owner=True)
+        try:
+            pub["expired"] = datetime.fromisoformat(d["expires_at"]) < now
+        except Exception:
+            pub["expired"] = False
+        pub["stats"] = {"rsvp_total": rc, "rsvp_yes": yes, "memories": mem}
+        out.append(pub)
+    return {"invitations": out}
+
+
+@api_router.get("/invitations/{iid}")
+async def get_invitation(iid: str, user: dict = Depends(get_current_user)):
+    d = await db.invitations.find_one({"id": iid, "owner_user_id": user.get("id")}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    return _invite_public(d, owner=True)
+
+
+@api_router.put("/invitations/{iid}")
+async def update_invitation(iid: str, payload: InvitationIn, user: dict = Depends(get_current_user)):
+    d = await db.invitations.find_one({"id": iid, "owner_user_id": user.get("id")})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    upd = payload.dict()
+    upd["theme"] = upd["theme"] if upd["theme"] in INVITE_THEMES else "romantic"
+    upd["sections"] = {**(d.get("sections") or {}), **(payload.sections or {})}
+    upd["expires_at"] = _invite_expires_at(payload.event_date)
+    upd["updated_at"] = now_iso()
+    await db.invitations.update_one({"id": iid}, {"$set": upd})
+    fresh = await db.invitations.find_one({"id": iid}, {"_id": 0})
+    return _invite_public(fresh, owner=True)
+
+
+@api_router.delete("/invitations/{iid}")
+async def delete_invitation(iid: str, user: dict = Depends(get_current_user)):
+    r = await db.invitations.delete_one({"id": iid, "owner_user_id": user.get("id")})
+    if not r.deleted_count:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    await db.invitation_rsvps.delete_many({"invitation_id": iid})
+    await db.invitation_memories.delete_many({"invitation_id": iid})
+    return {"ok": True}
+
+
+@api_router.get("/invitations/public/{slug}")
+async def public_invitation(slug: str):
+    d = await db.invitations.find_one({"slug": slug, "status": "published"}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    try:
+        if datetime.fromisoformat(d["expires_at"]) < datetime.now(timezone.utc):
+            raise HTTPException(status_code=410, detail="Bu davetiyenin süresi dolmuştur")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+    return _invite_public(d, owner=False)
+
+
+async def _get_active_invitation(slug: str) -> dict:
+    d = await db.invitations.find_one({"slug": slug, "status": "published"})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    try:
+        if datetime.fromisoformat(d["expires_at"]) < datetime.now(timezone.utc):
+            raise HTTPException(status_code=410, detail="Bu davetiyenin süresi dolmuştur")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+    return d
+
+
+@api_router.post("/invitations/public/{slug}/rsvp")
+async def submit_rsvp(slug: str, payload: RsvpIn):
+    if not payload.name.strip() or not payload.surname.strip():
+        raise HTTPException(status_code=400, detail="Ad ve soyad zorunludur")
+    d = await _get_active_invitation(slug)
+    rec = {
+        "id": new_id(), "invitation_id": d["id"], "name": payload.name.strip(),
+        "surname": payload.surname.strip(), "attending": bool(payload.attending),
+        "guest_count": max(1, int(payload.guest_count or 1)), "note": (payload.note or "").strip(),
+        "created_at": now_iso(),
+    }
+    await db.invitation_rsvps.insert_one(rec)
+    return {"ok": True}
+
+
+@api_router.post("/invitations/public/{slug}/memory")
+async def submit_memory(slug: str, payload: MemoryIn):
+    if not payload.name.strip() or not payload.message.strip():
+        raise HTTPException(status_code=400, detail="İsim ve mesaj zorunludur")
+    d = await _get_active_invitation(slug)
+    rec = {"id": new_id(), "invitation_id": d["id"], "name": payload.name.strip(),
+           "message": payload.message.strip()[:1000], "created_at": now_iso()}
+    await db.invitation_memories.insert_one(rec)
+    return {"ok": True}
+
+
+@api_router.get("/invitations/public/{slug}/memories")
+async def public_memories(slug: str):
+    d = await db.invitations.find_one({"slug": slug, "status": "published"}, {"id": 1, "_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    mems = await db.invitation_memories.find(
+        {"invitation_id": d["id"]}, {"_id": 0, "invitation_id": 0}
+    ).sort("created_at", -1).to_list(length=200)
+    return {"memories": mems}
+
+
+@api_router.get("/invitations/{iid}/report")
+async def invitation_report(iid: str, user: dict = Depends(get_current_user)):
+    d = await db.invitations.find_one({"id": iid, "owner_user_id": user.get("id")}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    rsvps = await db.invitation_rsvps.find({"invitation_id": iid}, {"_id": 0}).sort("created_at", -1).to_list(length=100000)
+    memories = await db.invitation_memories.find({"invitation_id": iid}, {"_id": 0}).sort("created_at", -1).to_list(length=100000)
+    yes = [r for r in rsvps if r.get("attending")]
+    no = [r for r in rsvps if not r.get("attending")]
+    heads = sum(int(r.get("guest_count") or 1) for r in yes)
+    return {
+        "invitation": _invite_public(d, owner=True),
+        "rsvps": rsvps, "memories": memories,
+        "stats": {"rsvp_total": len(rsvps), "attending": len(yes), "declined": len(no),
+                  "total_guests": heads, "memories": len(memories)},
+    }
+
+
+@api_router.get("/invitations/{iid}/report.csv")
+async def invitation_report_csv(iid: str, user: dict = Depends(get_current_user)):
+    import csv, io
+    from fastapi.responses import StreamingResponse
+    d = await db.invitations.find_one({"id": iid, "owner_user_id": user.get("id")}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    rsvps = await db.invitation_rsvps.find({"invitation_id": iid}, {"_id": 0}).sort("created_at", -1).to_list(length=100000)
+    buf = io.StringIO(); w = csv.writer(buf)
+    w.writerow(["Ad", "Soyad", "Katılım", "Kişi Sayısı", "Not", "Tarih"])
+    for r in rsvps:
+        w.writerow([r.get("name"), r.get("surname"), "Geliyor" if r.get("attending") else "Gelemiyor",
+                    r.get("guest_count"), r.get("note"), (r.get("created_at") or "")[:16]])
+    buf.seek(0)
+    return StreamingResponse(iter(["\ufeff" + buf.getvalue()]), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": f"attachment; filename=davetiye_{d.get('slug')}.csv"})
 
 
 # Register the router
