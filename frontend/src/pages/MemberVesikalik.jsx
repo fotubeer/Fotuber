@@ -85,7 +85,7 @@ export default function MemberVesikalik() {
     const mem = me.membership;
     return (
       <div className="relative">
-        <div className="fixed top-3 right-3 z-[60] flex items-center gap-2 rounded-full bg-white/90 backdrop-blur border border-slate-200 shadow px-3 py-1.5 text-xs" data-testid="member-bar">
+        <div className="fixed top-3 left-3 z-[60] flex items-center gap-2 rounded-full bg-white/90 backdrop-blur border border-slate-200 shadow px-3 py-1.5 text-xs" data-testid="member-bar">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
           <span className="font-semibold text-slate-700">{me.user.company_name || me.user.name}</span>
           <span className={`px-2 py-0.5 rounded-full ${mem.status === "trial" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`} data-testid="member-status">
