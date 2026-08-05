@@ -1,153 +1,152 @@
 {
-  "project_overview": {
-    "name": "Fotuber",
-    "domain": "fotuber.com.tr",
-    "type": "hybrid_fullstack",
-    "description": "Smart appointment and staff management system for a photography/video studio. Features a public marketing interface and a protected admin panel.",
-    "language": "Turkish"
-  },
-  "design_philosophy": {
-    "public_site": "Premium, deep, and creative. Archetype 5: Luxury. Emphasizes visual storytelling with a dark, moody aesthetic. Contrast and large typography are key.",
-    "admin_dashboard": "Archetype 4: Swiss & High-Contrast. Bright, functional, and data-dense. Distinct from the public site to signal a professional work environment."
-  },
+  "project_type": "Mobile-First Digital Invitation (Guest Page)",
   "typography": {
-    "strategy": "The 'Old Money Tech' variant adapted for luxury photography.",
-    "fonts": {
-      "headings": {
-        "family": "Cormorant Garamond, serif",
-        "weight": "Light or SemiBold",
-        "usage": "Hero titles, section headers, elegant large text.",
-        "import": "@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600&display=swap');"
+    "names_script": {
+      "font": "'Great Vibes', cursive",
+      "usage": "Couple names, signature moments",
+      "classes": "font-['Great_Vibes'] tracking-normal text-6xl md:text-7xl leading-tight"
+    },
+    "primary_serif": {
+      "font": "'Cormorant Garamond', serif",
+      "usage": "Headings, event titles, quotes",
+      "classes": "font-['Cormorant_Garamond'] tracking-wide text-3xl md:text-5xl"
+    },
+    "body_sans": {
+      "font": "'Montserrat', sans-serif",
+      "usage": "Form inputs, countdown numbers, small details",
+      "classes": "font-['Montserrat'] tracking-[0.2em] uppercase text-xs to text-sm"
+    }
+  },
+  "themes": {
+    "free": {
+      "romantik_gul": {
+        "name": "Romantik Gül",
+        "colors": { "bg": "#FFF0F5", "text": "#4A3B3C", "accent": "#D8A7B1", "motif": "rose_petals" }
       },
-      "body": {
-        "family": "Manrope, sans-serif",
-        "weight": "400, 500",
-        "usage": "Body text, small labels, and all Admin Dashboard text.",
-        "import": "@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&display=swap');"
+      "botanik_yesil": {
+        "name": "Botanik Yeşil",
+        "colors": { "bg": "#F3F7F4", "text": "#2C3E35", "accent": "#8AA393", "motif": "drifting_leaves" }
       },
-      "admin_headings": {
-        "family": "Outfit, sans-serif",
-        "weight": "600",
-        "usage": "Dashboard widgets and page titles.",
-        "import": "@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600&display=swap');"
+      "altin_zarafet": {
+        "name": "Altın Zarafet",
+        "colors": { "bg": "#FAFAFA", "text": "#3A362B", "accent": "#D4AF37", "motif": "gold_dust" }
+      },
+      "gokyuzu_mavi": {
+        "name": "Gökyüzü Mavi",
+        "colors": { "bg": "#F0F4F8", "text": "#2A3644", "accent": "#8DA3B5", "motif": "soft_clouds" }
       }
     },
-    "hierarchy": {
-      "h1": "text-5xl sm:text-6xl tracking-tight",
-      "h2": "text-3xl sm:text-4xl tracking-tight",
-      "h3": "text-xl sm:text-2xl",
-      "body": "text-base leading-relaxed",
-      "labels": "text-xs tracking-[0.2em] uppercase"
+    "premium": {
+      "noir_luks": {
+        "name": "Noir Lüks",
+        "colors": { "bg": "#0D0D0D", "text": "#F5F5F5", "accent": "#C5A059", "motif": "gold_shimmer_particles" },
+        "premium_features": ["foil_shimmer_text", "deep_shadows", "rich_glassmorphism"]
+      },
+      "kraliyet_moru": {
+        "name": "Kraliyet Moru",
+        "colors": { "bg": "#1A0F2E", "text": "#FDFBF7", "accent": "#B892FF", "motif": "stardust_bokeh" },
+        "premium_features": ["neon_ambient_glow", "velvet_texture_css"]
+      },
+      "okyanus_zumrut": {
+        "name": "Okyanus Zümrüt",
+        "colors": { "bg": "#041C24", "text": "#E8F0F2", "accent": "#45B69C", "motif": "water_caustics" },
+        "premium_features": ["fluid_svg_waves", "emerald_glass"]
+      },
+      "mermer_roz_altin": {
+        "name": "Mermer Roz-Altın",
+        "colors": { "bg": "#FAFAFA", "text": "#3A2A2D", "accent": "#E0A9A5", "motif": "marble_veins_animated" },
+        "premium_features": ["svg_marble_filter", "rose_gold_gradient_text"]
+      }
     }
   },
-  "colors": {
-    "public_site": {
-      "background": "#0a0a0a",
-      "surface": "#171717",
-      "primary": "#d4af37",
-      "primary_hover": "#b5952f",
-      "text_primary": "#ffffff",
-      "text_secondary": "#a3a3a3",
-      "border": "#262626"
+  "visual_enhancers": {
+    "motifs": {
+      "rose_petals": "Framer Motion animated SVG paths of petals falling and swaying softly.",
+      "drifting_leaves": "SVG leaves translating diagonally across the screen with varying rotation.",
+      "gold_dust": "Small div circles with accent color and blur, blinking opacity and drifting upwards.",
+      "soft_clouds": "Layered SVG paths with opacity translating slowly across the X-axis.",
+      "gold_shimmer_particles": "Denser gold_dust with a mix of scale and blurred glowing trails (drop-shadow).",
+      "stardust_bokeh": "Overlapping blurred circles with CSS radial gradients fading in and out.",
+      "water_caustics": "SVG radial gradients swaying horizontally to simulate underwater light.",
+      "marble_veins_animated": "SVG feTurbulence filter moving slowly via baseFrequency animation to simulate living marble."
     },
-    "admin_dashboard": {
-      "background": "#f8fafc",
-      "surface": "#ffffff",
-      "primary": "#0f172a",
-      "primary_hover": "#1e293b",
-      "accent": "#2563eb",
-      "text_primary": "#0f172a",
-      "text_secondary": "#64748b",
-      "border": "#e2e8f0",
-      "status_success": "#22c55e",
-      "status_pending": "#f59e0b",
-      "status_error": "#ef4444"
-    }
-  },
-  "layouts": {
-    "public_site": {
-      "hero": "Full height (min-h-screen) with background image, dark overlay (bg-black/40). Text left-aligned or centered with asymmetrical decorative elements.",
-      "services_grid": "Bento Grid Mode A (Tetris). Mix of tall, wide, and square cards. Generous gaps (gap-8).",
-      "booking_flow": "Step-by-step layout. Clear progress indicators. Centered narrow container for form inputs to maintain focus.",
-      "calendar": "Interactive grid. Booked slots MUST be clearly disabled (opacity-50, cursor-not-allowed, line-through or greyed out). Open slots highlight on hover."
-    },
-    "admin_dashboard": {
-      "structure": "Sidebar navigation (w-64) + Main content area.",
-      "dashboard_grid": "High Density Grid (Mode B). gap-6. Cards for revenue, pending bookings, today's schedule.",
-      "table": "Dense data table for staff and bookings. Sticky headers, hover rows."
-    }
-  },
-  "components": {
-    "buttons": {
-      "primary": "Pill-shaped (rounded-full) or subtle radius (rounded-lg). High contrast. Hover triggers subtle scale and brightness change.",
-      "whatsapp": "Fixed floating button bottom right. Bright green (#25D366)."
-    },
-    "surfaces": {
-      "public_cards": "Glassmorphism. backdrop-blur-xl bg-white/5 border border-white/10.",
-      "admin_cards": "Solid white, flat, 1px border (border-slate-200), no shadow default, subtle shadow on hover."
-    },
-    "calendar_slot": {
-      "available": "border border-primary text-primary hover:bg-primary hover:text-black transition-colors",
-      "booked": "bg-neutral-800 text-neutral-500 cursor-not-allowed border-none",
-      "admin_booked": "bg-slate-100 text-slate-400 cursor-not-allowed"
+    "premium_distinctions": {
+      "free": "Flat colors, subtle CSS motifs, standard framer-motion transitions, solid shapes.",
+      "premium": "Textured backgrounds (using CSS noise or SVG filters), animated metallic gradients (background-clip: text), layered glassmorphism cards (backdrop-blur-xl), interactive hover/touch particle generation."
     }
   },
   "motion": {
-    "page_transitions": "Fade and slight slide up (framer-motion).",
-    "hover_states": "Buttons scale up (1.02) and change brightness. Images in Bento grid scale up slowly on hover (group-hover).",
-    "calendar": "Staggered fade-in for available time slots."
-  },
-  "icons": {
-    "library": "lucide-react",
-    "usage": "Use stroke-width 1.5 for elegance in public site. Use stroke-width 2 for clarity in Admin."
-  },
-  "media": {
-    "images": {
-      "hero": {
-        "url": "https://images.pexels.com/photos/5762880/pexels-photo-5762880.jpeg",
-        "description": "Moody DSLR camera setup in studio"
-      },
-      "service_wedding": {
-        "url": "https://images.unsplash.com/photo-1596457221755-b96bc3a6df18?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzl8MHwxfHNlYXJjaHwxfHx3ZWRkaW5nJTIwY291cGxlJTIwcGhvdG9ncmFwaHl8ZW58MHx8fHwxNzg0NDExNzI5fDA&ixlib=rb-4.1.0&q=85",
-        "description": "Wedding couple photography"
-      },
-      "service_portrait": {
-        "url": "https://images.pexels.com/photos/23991042/pexels-photo-23991042.jpeg",
-        "description": "Elegant portrait model"
-      },
-      "service_product": {
-        "url": "https://images.unsplash.com/photo-1697301439938-46e2b8ff74da?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NjZ8MHwxfHNlYXJjaHwzfHxwcm9kdWN0JTIwcGhvdG9ncmFwaHklMjBzZXR1cHxlbnwwfHx8fDE3ODQ0MTE3Mjl8MA&ixlib=rb-4.1.0&q=85",
-        "description": "Product photography setup"
-      },
-      "service_family": {
-        "url": "https://images.pexels.com/photos/37409083/pexels-photo-37409083.jpeg",
-        "description": "Family portrait studio"
+    "entrance_sequence": {
+      "description": "Cinematic Digital Envelope Reveal",
+      "stages": [
+        "1. Loader: Monogram initials elegantly pulsing in the center.",
+        "2. Envelope Reveal: A full-screen CSS-drawn envelope (using borders to create flaps).",
+        "3. Flap Opening: The top triangle of the envelope rotates open (rotateX(180deg) with origin at top).",
+        "4. Card Extraction: The invitation content slides up from inside the envelope, scaling to full screen.",
+        "5. Envelope Fade: The envelope fades out, leaving the guest on the Hero section."
+      ],
+      "framer_variants": {
+        "envelopeFlap": {
+          "initial": { "rotateX": 0 },
+          "animate": { "rotateX": 180, "transition": { "duration": 1.2, "ease": [0.76, 0, 0.24, 1] } }
+        },
+        "invitationCard": {
+          "initial": { "y": 150, "scale": 0.9, "opacity": 0 },
+          "animate": { "y": 0, "scale": 1, "opacity": 1, "transition": { "delay": 0.8, "duration": 1.2, "ease": [0.76, 0, 0.24, 1] } }
+        }
+      }
+    },
+    "scroll_reveals": {
+      "framer_variants": {
+        "container": { "hidden": { "opacity": 0 }, "show": { "opacity": 1, "transition": { "staggerChildren": 0.2 } } },
+        "item": { "hidden": { "opacity": 0, "y": 30 }, "show": { "opacity": 1, "y": 0, "transition": { "duration": 1.0, "ease": [0.25, 1, 0.5, 1] } } }
       }
     }
   },
-  "specific_requirements": {
-    "contact_info": "Phone: 0(501) 000 25 23. Must be prominent in the 'Urgent Service' message and floating buttons.",
-    "urgent_message": "Next to blocked calendar slots, display: 'Bu saatte acil bir hizmete mi ihtiyacınız var?' with WhatsApp and Phone CTA.",
-    "deposit_workflow": "Client booking status defaults to 'Beklemede' (Pending). Displays custom message about deposit (kapora). Admin can change status to 'Onaylandı' (Approved) which blocks the slot on public calendar.",
-    "admin_features": "Revenue charts (use Recharts), deposit tracking, staff management list."
+  "layouts": {
+    "hero": {
+      "structure": "Full height (min-h-[90vh]) flex-col center. Top: 'Sizleri Bekliyoruz' (Serif, small). Center: Monogram / Names in Script (massive, overlapping elements). Bottom: Date (Sans, uppercase, tracked out).",
+      "styling": "Absolute positioned motif layer (z-0), Content layer (z-10). Use negative space generously."
+    },
+    "countdown": {
+      "structure": "4x1 grid of boxes on mobile.",
+      "styling": "Premium themes: Glassmorphism background (backdrop-blur-md, bg-white/10), 1px solid border of accent color. Free: Solid soft background. Number in Serif, Label in tiny Sans."
+    },
+    "details": {
+      "structure": "Card layout. Icon top, Title, Time, Location Name, Address, Map button.",
+      "styling": "Inner shadow or soft drop shadow. Rounded elegant corners (rounded-t-full arch shape is highly recommended for premium feel). Give generous padding (p-8 or p-10)."
+    },
+    "rsvp": {
+      "structure": "Stack of elegant inputs. Name, Attendance status, Count, Dietary/Message.",
+      "styling": "Inputs should have bottom border ONLY (border-b border-accent/50), no full box border, background transparent. It must feel like writing on physical premium paper."
+    },
+    "memory_wall": {
+      "structure": "Vertical list of small messages, slightly overlapping or offset.",
+      "styling": "Post-it or elegant card style. Include cursive font for the messages."
+    },
+    "gift_iban": {
+      "structure": "Accordions or minimal flip-cards to hide IBANs until clicked.",
+      "styling": "Minimal, using monospace for IBAN. Include a 'Copy' button with a subtle SVG icon. No heavy borders."
+    }
   },
   "instructions_to_main_agent": [
-    "Ensure all text is in Turkish as requested.",
-    "Implement Shadcn UI for the Admin dashboard heavily (Tables, Cards, Dialogs, Select, Calendar).",
-    "For the public site, rely on custom HTML/Tailwind for the layout to achieve the 'Luxury' archetype, but you can use Shadcn for forms/modals.",
-    "Create a toggle or distinct routing for Public Site (Dark) and Admin (Light). e.g., `/` is dark, `/admin` is light.",
-    "Use 'framer-motion' for scroll animations on the public site.",
-    "Add data-testid attributes to all interactive elements."
+    "Build the Digital Invitation Guest Page as a standalone mobile-first view (no site header/footer).",
+    "Implement pure CSS and framer-motion animations. Do not rely on external image assets for themes (except pure SVG paths for motifs).",
+    "Load 'Great Vibes', 'Cormorant Garamond', and 'Montserrat' fonts from Google Fonts in the CSS file.",
+    "Build a ThemeProvider context or use CSS variables to switch palettes based on the active theme.",
+    "Implement the Envelope Opening sequence as a standalone Framer Motion component that reveals the main content upon opening.",
+    "Ensure the RSVP inputs look like physical paper lines (bottom borders only). Avoid generic Shadcn default input borders.",
+    "Add an audio element for background music with a floating play/pause FAB (Floating Action Button) fixed at the bottom right corner.",
+    "Ensure all interactive elements MUST have a data-testid attribute for testing."
   ],
-  "universal_guidelines_for_main_agent": [
-    "You tend to converge toward generic, 'on distribution' outputs. Avoid this.",
-    "Do not use dark colors as gradients. Use solid colors or subtle textures.",
-    "Never use AI assistant emoji characters like 🤖🧠💭.",
-    "Use 2-3x more spacing than feels comfortable.",
-    "DO NOT center align the app container. No `.App { text-align: center; }`.",
-    "DO NOT apply universal transition (transition: all).",
-    "Use 'sonner' for toasts.",
-    "Prioritize pre-existing components in src/components/ui.",
-    "DO NOT use a fully transparent background for headers/navs if content scrolls under it. Use backdrop-blur with a semi-transparent color."
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "You tend to converge toward generic outputs. Avoid this: make creative, distinctive frontends that surprise and delight.",
+    "Never use generic centered layouts globally. Balance asymmetry to create visual tension.",
+    "Do not use transparent backgrounds for overlays where text becomes unreadable. Ensure contrast (APCA standards).",
+    "Every interaction needs micro-animations (hover, focus, transitions). Static is dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Use Phosphor icons or lucide-react for iconography.",
+    "Use sonner for elegant toast notifications (e.g., 'IBAN Kopyalandı', 'LCV Gönderildi').",
+    "Do NOT use placeholder text or generic AI emoji."
   ]
 }
