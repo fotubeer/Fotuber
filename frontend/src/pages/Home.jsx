@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowRight, Sparkles, Award, Camera, Video, Mic, MonitorPlay, Phone, MessageCircle, Zap, Gift } from "lucide-react";
+import { ArrowRight, Sparkles, Award, Camera, Video, Mic, MonitorPlay, Phone, MessageCircle, Zap, Gift, Heart, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, galleryFileUrl } from "@/lib/api";
 import { useSettings } from "@/context/SettingsContext";
@@ -173,6 +173,49 @@ const Home = () => {
                 <MessageCircle className="w-4 h-4" /> WhatsApp
               </Button>
             </a>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Digital Invitation CTA — premium, animated */}
+      <section className="relative py-24 overflow-hidden border-y border-[#e9c96e]/20" style={{ background: "radial-gradient(900px 500px at 50% -10%, #3b1258 0%, #1a0f2e 45%, #0b0510 100%)" }}>
+        {/* floating hearts */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden>
+          {[12, 32, 55, 74, 88].map((left, i) => (
+            <motion.div key={i} className="absolute" style={{ left: `${left}%`, bottom: -30 }}
+              initial={{ y: 0, opacity: 0 }}
+              animate={{ y: [-20, -420], opacity: [0, 0.5, 0], x: [0, i % 2 ? 30 : -30, 0] }}
+              transition={{ duration: 9 + i, repeat: Infinity, delay: i * 1.4, ease: "easeInOut" }}>
+              <Heart className="w-5 h-5" style={{ color: "#e9c96e" }} fill="#e9c96e" />
+            </motion.div>
+          ))}
+        </div>
+
+        <div className="relative max-w-4xl mx-auto px-6 text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-80px" }}
+            transition={{ duration: 0.8 }}
+          >
+            <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.35em] text-[#e9c96e] mb-6">
+              <Sparkles className="w-4 h-4" /> Yeni · Dijital Davetiye
+            </div>
+            <h2 className="font-serif text-4xl md:text-6xl text-white leading-tight mb-5">
+              Dijital <em className="text-[#e9c96e]">Davetiyeni</em> Oluştur
+            </h2>
+            <p className="text-neutral-300 max-w-2xl mx-auto mb-4 leading-relaxed">
+              Düğün, nişan, kına ve tüm özel günleriniz için <span className="text-white">animasyonlu, şık ve interaktif</span> davetiyeler.
+              LCV takibi, anı & dilek duvarı, geri sayım, sesli karşılama ve hediye IBAN'ı — hepsi tek bağlantıda.
+            </p>
+            <p className="text-sm text-neutral-500 mb-9">Ücretsiz oluşturmaya başla · Yayınlamak için üyelik yeterli</p>
+            <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.98 }} className="inline-block">
+              <Link to="/davetiye-olustur" data-testid="home-invitation-cta">
+                <Button className="rounded-full bg-[#e9c96e] hover:bg-[#d4af37] text-[#190826] h-14 px-10 text-base font-bold shadow-[0_0_45px_rgba(233,201,110,0.45)]">
+                  <Mail className="w-5 h-5 mr-2" /> Davetiyeni Oluştur <ArrowRight className="w-5 h-5 ml-2" />
+                </Button>
+              </Link>
+            </motion.div>
           </motion.div>
         </div>
       </section>
