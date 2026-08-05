@@ -5,7 +5,7 @@ import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, Messag
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { EVENT_TYPE_LABELS } from "@/lib/invitationThemes";
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -141,7 +141,8 @@ export default function MyInvitations() {
       <Dialog open={!!report} onOpenChange={(o) => !o && setReport(null)}>
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="report-dialog">
           {report && (<>
-            <DialogHeader><DialogTitle>{report.invitation.person2 ? `${report.invitation.person1} & ${report.invitation.person2}` : report.invitation.person1} — Rapor</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>{report.invitation.person2 ? `${report.invitation.person1} & ${report.invitation.person2}` : report.invitation.person1} — Rapor</DialogTitle>
+            <DialogDescription>Katılım yanıtları, kişi sayısı ve misafir anıları.</DialogDescription></DialogHeader>
             <div className="grid grid-cols-4 gap-2 text-center my-2">
               {[["Geliyor", report.stats.attending], ["Gelemiyor", report.stats.declined], ["Toplam Kişi", report.stats.total_guests], ["Anı", report.stats.memories]].map(([l, v]) => (
                 <div key={l} className="rounded-lg border border-slate-200 p-2"><div className="text-xl font-bold">{v}</div><div className="text-[10px] text-slate-500">{l}</div></div>
