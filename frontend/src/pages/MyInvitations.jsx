@@ -1,15 +1,26 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast, Toaster } from "sonner";
-import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, MessageCircleHeart, Calendar, Images, Eye, EyeOff, Presentation, QrCode } from "lucide-react";
+import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, MessageCircleHeart, Calendar, Images, Eye, EyeOff, Presentation, QrCode, MessageCircle, Copy, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { EVENT_TYPE_LABELS } from "@/lib/invitationThemes";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const api = (path, opts = {}) => fetch(`${API}/api${path}`, { credentials: "include", ...opts });
+
+const normalizePhone = (raw) => {
+  let d = String(raw).replace(/\D/g, "");
+  if (!d) return "";
+  if (d.startsWith("90")) return d;
+  if (d.startsWith("0")) d = d.slice(1);
+  if (d.length === 10) return "90" + d;
+  return d;
+};
 
 export default function MyInvitations() {
   const [loading, setLoading] = useState(true);
@@ -21,6 +32,9 @@ export default function MyInvitations() {
   const [photoMod, setPhotoMod] = useState(null);
   const [modPhotos, setModPhotos] = useState([]);
   const [modLoading, setModLoading] = useState(false);
+  const [waInvite, setWaInvite] = useState(null);
+  const [waMessage, setWaMessage] = useState("");
+  const [waNumbers, setWaNumbers] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -109,6 +123,14 @@ export default function MyInvitations() {
     } catch (e) { toast.error("Silinemedi"); }
   };
 
+  const openWhatsApp = (inv) => {
+    const link = `${window.location.origin}/davetiye/${inv.slug}`;
+    const names = inv.person2 ? `${inv.person1} & ${inv.person2}` : inv.person1;
+    setWaMessage(`Merhaba! ${names} olarak sizi özel günümüze davet ediyoruz 💐\nDavetiye, konum ve LCV için: ${link}`);
+    setWaNumbers("");
+    setWaInvite(inv);
+  };
+
   if (loading) return <div className="min-h-screen grid place-items-center bg-slate-950 text-white"><Loader2 className="w-6 h-6 animate-spin" /></div>;
 
   if (!me) return (
@@ -179,6 +201,9 @@ export default function MyInvitations() {
                     </Button>
                   </a>
                 )}
+                <Button variant="outline" size="sm" className="w-full mt-2 text-[#128C7E] border-[#25D366]/40 hover:bg-[#25D366]/10" onClick={() => openWhatsApp(inv)} data-testid={`inv-whatsapp-${inv.id}`}>
+                  <MessageCircle className="w-4 h-4 mr-1" /> WhatsApp ile Davet Gönder
+                </Button>
               </div>
             ))}
           </div>
@@ -259,6 +284,55 @@ export default function MyInvitations() {
               </div>
             )}
           </>)}
+        </DialogContent>
+      </Dialog>
+
+      {/* WhatsApp bulk invite */}
+      <Dialog open={!!waInvite} onOpenChange={(o) => !o && setWaInvite(null)}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="whatsapp-dialog">
+          {waInvite && (() => {
+            const link = `${window.location.origin}/davetiye/${waInvite.slug}`;
+            const nums = [...new Set(waNumbers.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean).map(normalizePhone).filter(Boolean))];
+            const enc = encodeURIComponent(waMessage);
+            const openAll = () => {
+              if (nums.length === 0) { toast.error("Önce numara ekleyin"); return; }
+              nums.forEach((n, i) => setTimeout(() => window.open(`https://wa.me/${n}?text=${enc}`, "_blank"), i * 700));
+              toast.message("WhatsApp sekmeleri açılıyor", { description: "Tarayıcı engellerse açılır pencerelere izin verin." });
+            };
+            const copyLink = async () => { try { await navigator.clipboard.writeText(link); toast.success("Bağlantı kopyalandı"); } catch (e) { toast.error("Kopyalanamadı"); } };
+            return (<>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-[#128C7E]"><MessageCircle className="w-5 h-5" /> WhatsApp ile Davet Gönder</DialogTitle>
+                <DialogDescription>Davetiye bağlantısını hazır mesajla gönderin. Numaraları ekleyip tek tek ya da sırayla açın.</DialogDescription>
+              </DialogHeader>
+              <div className="flex items-center gap-2 mb-3">
+                <Input readOnly value={link} className="text-xs" data-testid="wa-link" />
+                <Button variant="outline" size="sm" onClick={copyLink} data-testid="wa-copy"><Copy className="w-4 h-4" /></Button>
+              </div>
+              <Label className="text-xs">Mesaj</Label>
+              <Textarea rows={3} value={waMessage} onChange={(e) => setWaMessage(e.target.value)} className="mb-3" data-testid="wa-message" />
+              <Label className="text-xs">Telefon Numaraları (her satıra bir numara veya virgülle ayırın)</Label>
+              <Textarea rows={4} value={waNumbers} onChange={(e) => setWaNumbers(e.target.value)} placeholder={"0555 111 22 33\n0532 444 55 66"} className="mb-2 font-mono text-sm" data-testid="wa-numbers" />
+              <div className="text-xs text-slate-500 mb-3">{nums.length} geçerli numara</div>
+              <div className="flex flex-wrap gap-2 mb-4">
+                <Button onClick={openAll} className="bg-[#25D366] hover:bg-[#1fb457] text-white" data-testid="wa-send-all"><Send className="w-4 h-4 mr-2" /> Tümünü Sırayla Aç ({nums.length})</Button>
+                <a href={`https://wa.me/?text=${enc}`} target="_blank" rel="noreferrer"><Button variant="outline" data-testid="wa-share-general"><MessageCircle className="w-4 h-4 mr-2" /> Rehberden Seç</Button></a>
+              </div>
+              {nums.length > 0 && (
+                <div className="border-t pt-3 space-y-1.5 max-h-52 overflow-y-auto" data-testid="wa-list">
+                  {nums.map((n, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm">
+                      <span className="font-mono text-slate-700">+{n}</span>
+                      <a href={`https://wa.me/${n}?text=${enc}`} target="_blank" rel="noreferrer">
+                        <Button size="sm" variant="ghost" className="text-[#128C7E] h-8" data-testid={`wa-send-${i}`}><Send className="w-3.5 h-3.5 mr-1" /> Gönder</Button>
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-[11px] text-slate-400 mt-3">Not: Her kişiye hazır mesaj tek dokunuşla açılır; "Gönder"e WhatsApp içinde siz basarsınız.</p>
+            </>);
+          })()}
         </DialogContent>
       </Dialog>
     </div>
