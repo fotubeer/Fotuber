@@ -10,6 +10,29 @@ const HISTORY_KEY = "fotuber_ai_history_v1";
 
 const genSessionId = () => `sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
+// Turn internal path tokens inside assistant text into clickable Links
+const INTERNAL_LINKS = {
+  "/altin-saat": "Altın Saat Aracı",
+  "/randevu": "Randevu Al",
+  "/davetiye-olustur": "Davetiye Oluştur",
+};
+const renderAssistantContent = (text) => {
+  const parts = String(text || "").split(/(\/altin-saat|\/davetiye-olustur|\/randevu)/g);
+  return parts.map((p, i) =>
+    INTERNAL_LINKS[p] ? (
+      <Link
+        key={i}
+        to={p}
+        className="inline-flex items-center gap-1 font-semibold text-[#d4af37] underline decoration-[#d4af37]/50 underline-offset-2 hover:decoration-[#d4af37]"
+      >
+        {INTERNAL_LINKS[p]} <ExternalLink className="w-3 h-3" />
+      </Link>
+    ) : (
+      <span key={i}>{p}</span>
+    )
+  );
+};
+
 const CameraBot = ({ animated = true }) => (
   <motion.svg
     viewBox="0 0 100 100"
@@ -149,6 +172,19 @@ const FotuberAI = () => {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
   }, [open, messages]);
+
+  // Cross-navigation: other pages (e.g. Golden Hour) can open + prefill the assistant
+  useEffect(() => {
+    const handler = (e) => {
+      const d = e.detail || {};
+      if (d.city) setCity(d.city);
+      if (d.date) setEventDate(d.date);
+      setOpen(true);
+      setBubbleVisible(false);
+    };
+    window.addEventListener("fotuber-ai-open", handler);
+    return () => window.removeEventListener("fotuber-ai-open", handler);
+  }, []);
 
   if (!enabled) return null;
 
@@ -360,7 +396,7 @@ const FotuberAI = () => {
                         <Camera className="w-2.5 h-2.5" /> Fotuber Asistan
                       </div>
                     )}
-                    <div className="whitespace-pre-wrap">{m.content}</div>
+                    <div className="whitespace-pre-wrap">{m.role === "assistant" ? renderAssistantContent(m.content) : m.content}</div>
                   </div>
                 </div>
               ))}

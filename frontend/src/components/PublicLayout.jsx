@@ -8,12 +8,14 @@ import { Button } from "@/components/ui/button";
 import { API_BASE } from "@/lib/api";
 import { instagramUrl, youtubeUrl, tiktokUrl, facebookUrl } from "@/lib/social";
 import FloatingContact from "@/components/FloatingContact";
+import FotuberAI from "@/components/FotuberAI";
 
 const navItems = [
   { to: "/", label: "Ana Sayfa" },
   { to: "/hizmetler", label: "Hizmetler" },
   { to: "/fotuber-medya", label: "Fotuber Medya" },
   { to: "/galeri", label: "Galeri" },
+  { to: "/altin-saat", label: "Altın Saat", accent: true },
   { to: "/baskiya-hazir-davetiye", label: "Baskı Davetiye", accent: true },
   { to: "/indirim-kodu", label: "İndirim Kodu", accent: true },
   { to: "/hakkimizda", label: "Hakkımızda" },
@@ -281,6 +283,7 @@ export const PublicLayout = ({ children }) => {
       </footer>
 
       <FloatingContact />
+      <FotuberAI />
     </div>
   );
 };

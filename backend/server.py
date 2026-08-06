@@ -1621,6 +1621,15 @@ YASAKLAR (TEKRAR):
 """
 
 
+GOLDEN_HOUR_DIRECTIVE = """
+
+ALTIN SAAT ARACI — ÇAPRAZ YÖNLENDİRME:
+- Işık, gün batımı, altın saat, mavi saat, dış mekan çekim saati, ışığa göre kıyafet rengi ya da manzara/mekan konuları geçtiğinde, Fotuber'in ÜCRETSİZ "Altın Saat & Gün Batımı" aracını öner ve TAM bu bağlantıyı ver: /altin-saat
+- Örnek ifade: "Seçtiğiniz şehir ve tarihe göre altın saati anında görmek için Altın Saat aracımıza göz atabilirsiniz: /altin-saat"
+- Bağlantıyı olduğu gibi (/altin-saat) yaz; başka/uydurma URL verme.
+"""
+
+
 class AiChatIn(BaseModel):
     session_id: str
     message: str
@@ -1713,7 +1722,7 @@ async def ai_chat(payload: AiChatIn):
 
     provider = settings.get("ai_provider") or "anthropic"
     model = settings.get("ai_model") or "claude-sonnet-4-6"
-    base_prompt = settings.get("ai_system_prompt") or DEFAULT_AI_SYSTEM_PROMPT
+    base_prompt = (settings.get("ai_system_prompt") or DEFAULT_AI_SYSTEM_PROMPT) + GOLDEN_HOUR_DIRECTIVE
 
     # Optional weather context injection
     weather_ctx = ""

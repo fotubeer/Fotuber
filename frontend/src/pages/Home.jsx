@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowRight, Sparkles, Award, Camera, Video, Mic, MonitorPlay, Phone, MessageCircle, Zap, Gift, Heart, Mail } from "lucide-react";
+import { ArrowRight, Sparkles, Award, Camera, Video, Mic, MonitorPlay, Phone, MessageCircle, Zap, Gift, Heart, Mail, Sun, Sunset, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api, galleryFileUrl } from "@/lib/api";
 import { useSettings } from "@/context/SettingsContext";
 import { SEO, buildLocalBusinessLd } from "@/components/SEO";
 import IntroSplash from "@/components/IntroSplash";
 import InstagramSlideshow from "@/components/InstagramSlideshow";
-import FotuberAI from "@/components/FotuberAI";
 
 const DEFAULT_HERO = "https://images.pexels.com/photos/5762880/pexels-photo-5762880.jpeg";
 
@@ -44,7 +43,6 @@ const Home = () => {
   return (
     <div>
       <IntroSplash />
-      <FotuberAI />
       <SEO path="/" jsonLd={buildLocalBusinessLd(settings)} />
       {/* Hero */}
       <section className="relative min-h-[92vh] overflow-hidden">
@@ -219,6 +217,70 @@ const Home = () => {
           </motion.div>
         </div>
       </section>
+
+      {/* Golden Hour promo — prominent standalone tool */}
+      <section className="relative py-24 border-b border-neutral-900 overflow-hidden" data-testid="home-goldenhour-section">
+        <div className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(120% 90% at 85% -10%, rgba(230,162,74,0.18), transparent 55%), radial-gradient(90% 80% at 5% 120%, rgba(69,90,158,0.18), transparent 55%)" }} />
+        <div className="relative max-w-6xl mx-auto px-6 grid lg:grid-cols-2 gap-12 items-center">
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-80px" }}
+            transition={{ duration: 0.8 }}
+          >
+            <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.35em] text-[#e6a24a] mb-6">
+              <Sun className="w-4 h-4" /> Ücretsiz Işık Aracı
+            </div>
+            <h2 className="font-serif text-4xl md:text-6xl text-white leading-tight mb-5">
+              Altın Saat & <em className="text-[#e6a24a]">Gün Batımı</em>
+            </h2>
+            <p className="text-neutral-300 max-w-xl mb-4 leading-relaxed">
+              Şehir ve tarih seçin; <span className="text-white">altın saat, mavi saat, gün batımı</span> ve o günün
+              hava durumunu anında görün. Önerilen çekim mekanları, kıyafet için asistan ve tek tıkla randevu — hepsi burada.
+            </p>
+            <p className="text-sm text-neutral-500 mb-9">Kayıt gerekmez · Tamamen ücretsiz</p>
+            <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.98 }} className="inline-block">
+              <Link to="/altin-saat" data-testid="home-goldenhour-cta">
+                <Button className="rounded-full bg-[#e6a24a] hover:bg-[#f0b45f] text-neutral-950 h-14 px-10 text-base font-bold shadow-[0_0_45px_rgba(230,162,74,0.45)]">
+                  <Sun className="w-5 h-5 mr-2" /> Işık Zamanını Hesapla <ArrowRight className="w-5 h-5 ml-2" />
+                </Button>
+              </Link>
+            </motion.div>
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true, margin: "-80px" }}
+            transition={{ duration: 0.8, delay: 0.1 }}
+            className="relative rounded-3xl border border-[#e6a24a]/25 bg-neutral-900/40 p-6 overflow-hidden"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-xs uppercase tracking-[0.25em] text-neutral-500">Bugünün Işığı</div>
+              <Camera className="w-4 h-4 text-[#e6a24a]" />
+            </div>
+            <div className="space-y-3">
+              {[
+                { I: Sun, t: "Akşam Altın Saat", d: "En iyi düğün ışığı", c: "#e6a24a", tip: true },
+                { I: Sunset, t: "Gün Batımı", d: "Sinematik ufuk", c: "#d9603f", tip: false },
+                { I: Moon, t: "Mavi Saat", d: "Yumuşak gökyüzü tonları", c: "#455a9e", tip: false },
+              ].map((r, i) => {
+                const Ic = r.I;
+                return (
+                  <div key={i} className={`flex items-center gap-3 rounded-2xl border p-3 ${r.tip ? "border-[#e6a24a]/50 bg-[#e6a24a]/5" : "border-neutral-800 bg-neutral-950/50"}`}>
+                    <span className="w-10 h-10 rounded-xl grid place-items-center" style={{ background: `${r.c}22`, color: r.c }}><Ic className="w-5 h-5" /></span>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-white">{r.t}</div>
+                      <div className="text-xs text-neutral-500">{r.d}</div>
+                    </div>
+                    {r.tip && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#e6a24a] text-neutral-950">ÖNERİLEN</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
 
       {/* Instagram Slideshow — aesthetic mid-section, admin-managed */}
       <InstagramSlideshow />

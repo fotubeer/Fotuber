@@ -330,3 +330,16 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - **LCV Panosu**: GuestManager taraf kartları (guest-stat-gelin/damat) artık Geliyor/Gelmiyor/**Belki**/Bekliyor + toplam kişi gösterir.
 - **Hatırlatma**: GuestManager'da **Bekleyenlere Hatırlat** (guest-remind-pending) + **Bekliyor** filtresi (guest-filter-pending). LCV vermeyen (numaralı) misafirlere sıralı WhatsApp hatırlatma (reminder-worded mesaj) açar.
 - **Doğrulama**: iteration_28 (frontend %100, backend %100, retest gerekmez) — reveal-open-btn DOM'da mevcut & çalışıyor, animasyon+mute+skip, 3'lü RSVP kaydı, 4 imza sihirbaz+önizleme, LCV panosu Belki, hatırlatma butonu, header regresyon. Backend RSVP 3-state ayrıca curl ile doğrulandı.
+
+## Session W (Jun 2026) — Altın Saat Modülü + AI Çapraz Navigasyon (self-tested: screenshot + curl)
+- **GoldenHour.jsx zenginleştirildi** (`/altin-saat`, ücretsiz, kayıtsız): mevcut suncalc kartlarına ek olarak
+  - **Open-Meteo hava durumu** (frontend'den doğrudan, anahtarsız): seçilen şehir/koordinat + tarih için sıcaklık (max/min), WMO koduna göre Türkçe durum + ikon, yağış olasılığı/mm, UV indeksi. Europe/Istanbul tz. ~16 gün dışındaki tarihlerde nazik "tahmin mevcut değil" mesajı.
+  - **Önerilen çekim mekanları**: 10 büyük şehir için elle hazırlanmış liste (SPOTS) + tüm şehirler/konum için jenerik fallback (GENERIC_SPOTS). Konum (geolocation) seçiliyken jenerik gösterilir.
+  - **Satış hunisi CTA'ları**: "Asistana Sor" (window `fotuber-ai-open` event ile AI panelini açar, şehir+tarih otomatik dolar, mesajı kullanıcı yazar), "Randevu Al" (/randevu), "Davetiye Oluştur" (/davetiye-olustur) + orijinal marka logolu **WhatsApp** (yeşil, hazır mesajlı wa.me) ve **Instagram** (gradient) butonları (settings.whatsapp / settings.instagram varsa).
+- **AI çapraz navigasyon (çift yönlü)**:
+  - Altın Saat → AI: `window.dispatchEvent(CustomEvent("fotuber-ai-open", {detail:{city,date,goldenTime}}))`. FotuberAI bu event'i dinler, paneli açar, şehir+tarih alanlarını doldurur.
+  - AI → Altın Saat: `GOLDEN_HOUR_DIRECTIVE` (server.py) `base_prompt`e HER ZAMAN eklenir (admin özel prompt'u ezmeden) → asistan ışık/gün batımı/kıyafet/mekan konularında `/altin-saat` linkini önerir. FotuberAI `renderAssistantContent` ile `/altin-saat`, `/randevu`, `/davetiye-olustur` path'lerini tıklanabilir Link'e çevirir. Curl ile doğrulandı (yanıtta `/altin-saat` mevcut).
+- **FotuberAI artık global**: Home yerine `PublicLayout`e taşındı → tüm public sayfalarda (Altın Saat dahil) erişilebilir. Home'dan import+render kaldırıldı (çift render önlendi).
+- **Ana sayfa Altın Saat tanıtımı**: Home'a büyük, öne çıkan "Altın Saat & Gün Batımı" bölümü (altın gradyan + örnek ışık kartları + `home-goldenhour-cta` → /altin-saat). Davetiye CTA ile Instagram slayt arasına yerleştirildi.
+- **Nav**: PublicLayout navItems'e "Altın Saat" (accent) eklendi (footer linki zaten vardı).
+- **Doğrulama**: screenshot (sayfa+hava+kartlar+CTA render, "Asistana Sor" → panel açıldı city="İstanbul") + curl (Open-Meteo hava, AI chat yanıtında /altin-saat). Ödeme akışına dokunulmadı (PayTR canlı).
