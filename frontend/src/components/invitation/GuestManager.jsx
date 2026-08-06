@@ -50,6 +50,7 @@ const StatusBadge = ({ s }) => {
   const map = {
     yes: ["Geliyor", "bg-emerald-100 text-emerald-700", Check],
     no: ["Gelemiyor", "bg-rose-100 text-rose-700", X],
+    maybe: ["Belki", "bg-indigo-100 text-indigo-700", Clock],
     pending: ["Bekliyor", "bg-amber-100 text-amber-700", Clock],
   };
   const [label, cls, Icon] = map[s] || map.pending;
@@ -161,14 +162,24 @@ export default function GuestManager({ inv }) {
     finally { setBusy(false); }
   };
 
-  const sendWhatsApp = (g) => {
+  const sendWhatsApp = (g, reminder = false) => {
     const num = waNumber(g.phone);
     const link = `${window.location.origin}/davetiye/${inv.slug}?g=${g.guest_token}`;
     const names = inv.person2 ? `${inv.person1} & ${inv.person2}` : inv.person1;
-    const msg = encodeURIComponent(`Merhaba ${g.name || ""}! ${names} olarak sizi özel günümüze davet ediyoruz 💐\nDavetiye, konum ve LCV için: ${link}`);
+    const msg = encodeURIComponent(reminder
+      ? `Merhaba ${g.name || ""} 🌸 ${names} davetimize henüz LCV (katılım) yanıtınızı alamadık. Nazik bir hatırlatma: ${link}`
+      : `Merhaba ${g.name || ""}! ${names} olarak sizi özel günümüze davet ediyoruz 💐\nDavetiye, konum ve LCV için: ${link}`);
     const url = num ? `https://wa.me/${num}?text=${msg}` : `https://wa.me/?text=${msg}`;
     window.open(url, "_blank");
     api(`/invitations/${inv.id}/guests/${g.id}/sent`, { method: "POST" }).then(() => load());
+  };
+
+  // Bulk reminder: open WhatsApp for each guest who hasn't answered yet (pending).
+  const remindPending = () => {
+    const pending = guests.filter((g) => g.rsvp_status === "pending" && waNumber(g.phone));
+    if (pending.length === 0) { toast.message("LCV bekleyen (numaralı) misafir yok 🎉"); return; }
+    toast.message(`${pending.length} kişiye hatırlatma açılıyor…`, { description: "Tarayıcı çok sekme engelleyebilir; gerekirse listeden tek tek gönderin." });
+    pending.forEach((g, i) => setTimeout(() => sendWhatsApp(g, true), i * 800));
   };
 
   const removeGuest = async (gid) => {
@@ -179,18 +190,18 @@ export default function GuestManager({ inv }) {
   };
 
   const importUrl = qrToken ? `${window.location.origin}/davetiye/import/${qrToken}` : "";
-  const shown = guests.filter((g) => filter === "all" || g.side === filter);
+  const shown = guests.filter((g) => filter === "all" ? true : filter === "pending" ? g.rsvp_status === "pending" : g.side === filter);
 
   const SideStat = ({ sideKey, label }) => {
-    const s = summary?.[sideKey] || { total: 0, yes: 0, no: 0, pending: 0 };
+    const s = summary?.[sideKey] || { total: 0, yes: 0, no: 0, maybe: 0, pending: 0 };
     return (
       <div className={`rounded-xl border p-3 ${sideKey === "gelin" ? "border-rose-200 bg-rose-50/50" : sideKey === "damat" ? "border-blue-200 bg-blue-50/50" : "border-slate-200"}`} data-testid={`guest-stat-${sideKey}`}>
-        <div className="text-xs font-semibold text-slate-700 mb-1">{label}</div>
-        <div className="flex items-center gap-3 text-xs">
-          <span className="text-slate-500">Toplam <b className="text-slate-800">{s.total}</b></span>
-          <span className="text-emerald-600">Geliyor <b>{s.yes}</b></span>
-          <span className="text-rose-500">Gelmiyor <b>{s.no}</b></span>
-          <span className="text-amber-600">Bekliyor <b>{s.pending}</b></span>
+        <div className="text-xs font-semibold text-slate-700 mb-1.5">{label} · {s.total} kişi</div>
+        <div className="grid grid-cols-4 gap-1 text-center">
+          <div className="rounded-lg bg-emerald-50 py-1"><div className="text-sm font-bold text-emerald-600">{s.yes}</div><div className="text-[9px] text-emerald-700">Geliyor</div></div>
+          <div className="rounded-lg bg-rose-50 py-1"><div className="text-sm font-bold text-rose-500">{s.no}</div><div className="text-[9px] text-rose-600">Gelmiyor</div></div>
+          <div className="rounded-lg bg-indigo-50 py-1"><div className="text-sm font-bold text-indigo-500">{s.maybe || 0}</div><div className="text-[9px] text-indigo-600">Belki</div></div>
+          <div className="rounded-lg bg-amber-50 py-1"><div className="text-sm font-bold text-amber-600">{s.pending}</div><div className="text-[9px] text-amber-700">Bekliyor</div></div>
         </div>
       </div>
     );
@@ -272,19 +283,22 @@ export default function GuestManager({ inv }) {
       </div>
 
       {/* Filter */}
-      <div className="flex items-center gap-2 mb-2">
-        {[["all", "Tümü"], ["gelin", "Gelin"], ["damat", "Damat"]].map(([k, l]) => (
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        {[["all", "Tümü"], ["gelin", "Gelin"], ["damat", "Damat"], ["pending", "Bekliyor"]].map(([k, l]) => (
           <button key={k} onClick={() => setFilter(k)} data-testid={`guest-filter-${k}`}
             className={`px-3 py-1 rounded-full text-xs font-medium ${filter === k ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}>{l}</button>
         ))}
-        <span className="text-xs text-slate-400 ml-auto">{shown.length} kişi</span>
+        <Button size="sm" variant="outline" onClick={remindPending} data-testid="guest-remind-pending"
+          className="ml-auto text-[#128C7E] border-[#25D366]/40 hover:bg-[#25D366]/10 h-7 text-xs">
+          <Send className="w-3.5 h-3.5 mr-1" /> Bekleyenlere Hatırlat
+        </Button>
       </div>
 
       {/* List */}
       {loading ? (
         <div className="py-8 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
       ) : shown.length === 0 ? (
-        <div className="py-8 text-center text-slate-400 text-sm flex flex-col items-center gap-2"><Users className="w-6 h-6" /> Henüz misafir eklenmedi.</div>
+        <div className="py-8 text-center text-slate-400 text-sm flex flex-col items-center gap-2"><Users className="w-6 h-6" /> Bu görünümde misafir yok.</div>
       ) : (
         <div className="space-y-1.5 max-h-[40vh] overflow-y-auto pr-1" data-testid="guest-list">
           {shown.map((g) => (

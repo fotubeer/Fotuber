@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
-import InvitationReveal, { eventStyleOptions, REVEAL_STYLES } from "@/components/invitation/InvitationReveal";
+import InvitationReveal, { SIGNATURE_STYLES } from "@/components/invitation/InvitationReveal";
 import VoiceRecorder from "@/components/invitation/VoiceRecorder";
 import { INVITATION_THEMES, EVENT_TYPE_LABELS, getTheme, printColors } from "@/lib/invitationThemes";
 import { getMessagesFor } from "@/lib/invitationMessages";
@@ -314,18 +314,22 @@ export default function InvitationCreate() {
             </div>
 
             <div className="rounded-xl border border-slate-200 p-4">
-              <div className="font-medium text-sm mb-1">Açılış Animasyonu</div>
-              <p className="text-[11px] text-slate-500 mb-3">Misafir davetiyeye dokununca oynayacak açılışı seçin. Etkinlik türüne göre öneriler:</p>
-              <div className="grid grid-cols-3 gap-2" data-testid="reveal-style-grid">
-                {eventStyleOptions(data.event_type).map((key) => {
-                  const s = REVEAL_STYLES[key]; if (!s) return null;
+              <div className="font-medium text-sm mb-1">Açılış Deneyimi</div>
+              <p className="text-[11px] text-slate-500 mb-3">Misafir "Davetiye Aç" deyince oynayacak sinematik açılışı seçin. Her biri kendi hareketi, rengi ve sesiyle gelir.</p>
+              <div className="grid sm:grid-cols-2 gap-2.5" data-testid="reveal-style-grid">
+                {SIGNATURE_STYLES.map((s) => {
                   const Icon = s.Icon;
-                  const active = (data.reveal_style || eventStyleOptions(data.event_type)[0]) === key;
+                  const active = (data.reveal_style || "envelope") === s.key;
                   return (
-                    <button key={key} type="button" onClick={() => set("reveal_style", key)} data-testid={`reveal-style-${key}`}
-                      className={`flex flex-col items-center gap-1.5 py-3 px-1 rounded-lg border text-center transition ${active ? "border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                      <Icon className="w-5 h-5" />
-                      <span className="text-[11px] leading-tight font-medium">{s.label}</span>
+                    <button key={s.key} type="button" onClick={() => set("reveal_style", s.key)} data-testid={`reveal-style-${s.key}`}
+                      className={`flex items-start gap-3 p-3 rounded-xl border text-left transition ${active ? "border-indigo-500 ring-2 ring-indigo-200 bg-indigo-50/40" : "border-slate-200 hover:bg-slate-50"}`}>
+                      <span className="w-11 h-11 rounded-lg grid place-items-center shrink-0 text-white" style={{ background: `linear-gradient(135deg, ${s.swatch[0]}, ${s.swatch[1]})` }}>
+                        <Icon className="w-5 h-5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-slate-800">{s.label}</span>
+                        <span className="block text-[11px] text-slate-500 leading-tight mt-0.5">{s.desc}</span>
+                      </span>
                     </button>
                   );
                 })}

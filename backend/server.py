@@ -4832,6 +4832,7 @@ class RsvpIn(BaseModel):
     guest_count: int = 1
     note: Optional[str] = ""
     guest_token: Optional[str] = ""
+    rsvp_choice: Optional[str] = ""  # yes | no | maybe
 
 
 class MemoryIn(BaseModel):
@@ -5231,6 +5232,10 @@ async def submit_rsvp(slug: str, payload: RsvpIn):
         raise HTTPException(status_code=400, detail="Ad ve soyad zorunludur")
     d = await _get_active_invitation(slug)
     token = uuid.uuid4().hex[:12]
+    choice = (payload.rsvp_choice or "").strip().lower()
+    if choice not in ("yes", "no", "maybe"):
+        choice = "yes" if payload.attending else "no"
+    attending = choice == "yes"
     # Link to a pre-added guest (personalized link) → auto side + status tracking.
     guest = None
     side = ""
@@ -5240,8 +5245,8 @@ async def submit_rsvp(slug: str, payload: RsvpIn):
             side = guest.get("side") or ""
     rec = {
         "id": new_id(), "invitation_id": d["id"], "name": payload.name.strip(),
-        "surname": payload.surname.strip(), "attending": bool(payload.attending),
-        "guest_count": max(1, int(payload.guest_count or 1)), "note": (payload.note or "").strip(),
+        "surname": payload.surname.strip(), "attending": attending, "rsvp_choice": choice,
+        "guest_count": max(1, int(payload.guest_count or 1)) if attending else 0, "note": (payload.note or "").strip(),
         "side": side, "guest_id": guest.get("id") if guest else None,
         "checkin_token": token, "checked_in": False, "checked_in_at": None,
         "created_at": now_iso(),
@@ -5250,8 +5255,8 @@ async def submit_rsvp(slug: str, payload: RsvpIn):
     if guest:
         await db.invitation_guests.update_one(
             {"id": guest["id"]},
-            {"$set": {"rsvp_status": "yes" if payload.attending else "no",
-                      "guest_count": max(1, int(payload.guest_count or 1)) if payload.attending else 0,
+            {"$set": {"rsvp_status": choice,
+                      "guest_count": max(1, int(payload.guest_count or 1)) if attending else 0,
                       "rsvp_at": now_iso()}},
         )
     resp = {"ok": True}
@@ -5289,20 +5294,22 @@ async def invitation_report(iid: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
     rsvps = await db.invitation_rsvps.find({"invitation_id": iid}, {"_id": 0}).sort("created_at", -1).to_list(length=100000)
     memories = await db.invitation_memories.find({"invitation_id": iid}, {"_id": 0}).sort("created_at", -1).to_list(length=100000)
-    yes = [r for r in rsvps if r.get("attending")]
-    no = [r for r in rsvps if not r.get("attending")]
+    yes = [r for r in rsvps if r.get("rsvp_choice") == "yes" or (r.get("rsvp_choice") in (None, "") and r.get("attending"))]
+    maybe = [r for r in rsvps if r.get("rsvp_choice") == "maybe"]
+    no = [r for r in rsvps if r not in yes and r not in maybe]
     heads = sum(int(r.get("guest_count") or 1) for r in yes)
     checked = sum(1 for r in rsvps if r.get("checked_in"))
     def _side(sd):
         sy = [r for r in yes if (r.get("side") or "") == sd]
         sn = [r for r in no if (r.get("side") or "") == sd]
-        return {"attending": len(sy), "declined": len(sn),
+        sm = [r for r in maybe if (r.get("side") or "") == sd]
+        return {"attending": len(sy), "declined": len(sn), "maybe": len(sm),
                 "guests": sum(int(r.get("guest_count") or 1) for r in sy)}
     guest_count = await db.invitation_guests.count_documents({"invitation_id": iid})
     return {
         "invitation": _invite_public(d, owner=True),
         "rsvps": rsvps, "memories": memories,
-        "stats": {"rsvp_total": len(rsvps), "attending": len(yes), "declined": len(no),
+        "stats": {"rsvp_total": len(rsvps), "attending": len(yes), "declined": len(no), "maybe": len(maybe),
                   "total_guests": heads, "memories": len(memories), "checked_in": checked,
                   "guest_list_total": guest_count,
                   "by_side": {"gelin": _side("gelin"), "damat": _side("damat")}},
@@ -5419,9 +5426,9 @@ async def list_guests(iid: str, user: dict = Depends(get_current_user)):
     summary = {}
     for side in ("gelin", "damat", ""):
         summary[side or "belirsiz"] = {"total": _c(side), "yes": _c(side, "yes"),
-                                       "no": _c(side, "no"), "pending": _c(side, "pending")}
+                                       "no": _c(side, "no"), "maybe": _c(side, "maybe"), "pending": _c(side, "pending")}
     summary["all"] = {"total": len(items), "yes": _c(None, "yes"),
-                      "no": _c(None, "no"), "pending": _c(None, "pending")}
+                      "no": _c(None, "no"), "maybe": _c(None, "maybe"), "pending": _c(None, "pending")}
     return {"guests": items, "summary": summary}
 
 

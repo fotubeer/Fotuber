@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast, Toaster } from "sonner";
-import { Loader2, Send, MessageCircleHeart, Check, X, Volume2, VolumeX } from "lucide-react";
+import { Loader2, Send, MessageCircleHeart, Check, X, HelpCircle, Volume2, VolumeX } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
@@ -24,7 +24,7 @@ export default function InvitationView() {
   const [inv, setInv] = useState(null);
   const [error, setError] = useState(null);
   const [memories, setMemories] = useState([]);
-  const [rsvp, setRsvp] = useState({ name: "", surname: "", attending: true, guest_count: 1, note: "" });
+  const [rsvp, setRsvp] = useState({ name: "", surname: "", choice: "yes", guest_count: 1, note: "" });
   const [mem, setMem] = useState({ name: "", message: "" });
   const [rsvpDone, setRsvpDone] = useState(false);
   const [checkinToken, setCheckinToken] = useState(null);
@@ -72,7 +72,8 @@ export default function InvitationView() {
     setBusy(true);
     try {
       const r = await fetch(`${API}/api/invitations/public/${slug}/rsvp`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...rsvp, guest_token: guestToken }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: rsvp.name, surname: rsvp.surname, note: rsvp.note, guest_count: rsvp.guest_count, rsvp_choice: rsvp.choice, attending: rsvp.choice === "yes", guest_token: guestToken }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.detail || "Gönderilemedi");
@@ -169,17 +170,21 @@ export default function InvitationView() {
                     <input placeholder="Soyad *" value={rsvp.surname} onChange={(e) => setRsvp({ ...rsvp, surname: e.target.value })}
                       className="py-2 text-sm outline-none placeholder:opacity-50" style={inputStyle} data-testid="rsvp-surname" />
                   </div>
-                  <div className="flex gap-3">
-                    <button onClick={() => setRsvp({ ...rsvp, attending: true })}
-                      className="flex-1 py-2.5 rounded-full text-sm font-medium flex items-center justify-center gap-1 transition"
-                      style={{ background: rsvp.attending ? t.accent : "transparent", color: rsvp.attending ? (t.dark ? "#0b0b0b" : "#fff") : t.text, border: `1px solid ${t.border}` }}
-                      data-testid="rsvp-yes"><Check className="w-4 h-4" /> Geliyorum</button>
-                    <button onClick={() => setRsvp({ ...rsvp, attending: false })}
-                      className="flex-1 py-2.5 rounded-full text-sm font-medium flex items-center justify-center gap-1 transition"
-                      style={{ background: !rsvp.attending ? t.accent : "transparent", color: !rsvp.attending ? (t.dark ? "#0b0b0b" : "#fff") : t.text, border: `1px solid ${t.border}` }}
-                      data-testid="rsvp-no"><X className="w-4 h-4" /> Gelemiyorum</button>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button onClick={() => setRsvp({ ...rsvp, choice: "yes" })}
+                      className="py-2.5 rounded-full text-xs font-semibold flex flex-col items-center justify-center gap-1 transition"
+                      style={{ background: rsvp.choice === "yes" ? t.accent : "transparent", color: rsvp.choice === "yes" ? (t.dark ? "#0b0b0b" : "#fff") : t.text, border: `1px solid ${t.border}` }}
+                      data-testid="rsvp-yes"><Check className="w-4 h-4" /> Katılacağım</button>
+                    <button onClick={() => setRsvp({ ...rsvp, choice: "no" })}
+                      className="py-2.5 rounded-full text-xs font-semibold flex flex-col items-center justify-center gap-1 transition"
+                      style={{ background: rsvp.choice === "no" ? t.accent : "transparent", color: rsvp.choice === "no" ? (t.dark ? "#0b0b0b" : "#fff") : t.text, border: `1px solid ${t.border}` }}
+                      data-testid="rsvp-no"><X className="w-4 h-4" /> Katılmayacağım</button>
+                    <button onClick={() => setRsvp({ ...rsvp, choice: "maybe" })}
+                      className="py-2.5 rounded-full text-xs font-semibold flex flex-col items-center justify-center gap-1 transition"
+                      style={{ background: rsvp.choice === "maybe" ? t.accent : "transparent", color: rsvp.choice === "maybe" ? (t.dark ? "#0b0b0b" : "#fff") : t.text, border: `1px solid ${t.border}` }}
+                      data-testid="rsvp-maybe"><HelpCircle className="w-4 h-4" /> Emin Değilim</button>
                   </div>
-                  {rsvp.attending && (
+                  {rsvp.choice === "yes" && (
                     <div>
                       <label className="text-xs" style={{ color: t.sub }}>Kaç kişi geleceksiniz?</label>
                       <input type="number" min={1} value={rsvp.guest_count}

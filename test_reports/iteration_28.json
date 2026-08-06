@@ -1,0 +1,19 @@
+{
+  "summary": "End-to-end testing of the 4-signature reveal + 3-state RSVP + LCV Panosu + reminder release. All acceptance criteria PASS at 1920x1080 in the preview environment. (1) /davetiye/test-reveal-ac0fbc renders fullscreen [data-testid=invitation-reveal] with the envelope Idle scene AND a visible 'Davetiye Aç' [data-testid=reveal-open-btn] (text confirmed 'Davetiye Aç'). Clicking it starts the animation, reveals reveal-mute + reveal-skip (top-left, visible). Clicking Atla dismisses the reveal and the pink invitation body ('Test & Reveal', countdown, tören detayları, RSVP form) is shown. No JS pageerrors; only some 401s on unrelated auth-check calls (harmless). (2) RSVP: rsvp-yes/no/maybe/name/surname/count/submit all present. Filled name+surname, chose 'Emin Değilim', submitted -> success text 'Yanıtınız kaydedildi. Teşekkür ederiz!' visible. (3) Wizard /davetiye-olustur exposes reveal-style-grid with all 4 cards reveal-style-{envelope,garden,ballroom,minimal}. Selecting minimal + clicking preview-reveal-btn opens a fullscreen preview with a fresh invitation-reveal + Davetiye Aç button + preview-close/Tekrar Oynat; preview-close removes the reveal. (4) LCV Panosu (login expired@fotuber.com.tr on /davetiyelerim -> inv-guests-<id>): guest-manager dialog shows guest-stat-gelin '5 kişi | 0 Geliyor · 0 Gelmiyor · 0 Belki · 5 Bekliyor' and guest-stat-damat '4 kişi | 0 Geliyor · 0 Gelmiyor · 0 Belki · 4 Bekliyor' — Belki column now present per side as required. (5) 'Bekleyenlere Hatırlat' [data-testid=guest-remind-pending] and 'Bekliyor' filter [data-testid=guest-filter-pending] both visible & clickable in the filter row without JS errors. (6) Regression /hizmetler: single-line header nav (measured height 21px), all 3 CTAs cta-davetiye/cta-vesikalik-panel/cta-book-appointment + Personel Girişi render on one row.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "InvitationReveal.jsx setTimeout duration DUR is hard-coded per style; if audio track drift changes durations later, consider driving 'finish' from the last motion transition instead of a fixed timeout.",
+    "revealSound.js runs a WebAudio graph on start — ensure AudioContext is closed in the .stop() path to free browser audio slots (currently only oscillators are stopped)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (curl-verified by main agent + sanity via UI)", "frontend": "100%"},
+  "test_credentials": "Member: expired@fotuber.com.tr / Test1234 (inline login form on /davetiyelerim). Published slug: test-reveal-ac0fbc.",
+  "seed_data_creation": "Submitted one 'maybe' RSVP as TEST_Ali TEST_Veli against test-reveal-ac0fbc (owner can clean if desired).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "reveal-open-btn IS in the DOM at /davetiye/<slug> and is visible + clickable — the parent-level absolute+pointer-events-auto pattern works. Testids in use: invitation-reveal, reveal-open-btn, reveal-mute, reveal-skip. Wizard: reveal-style-grid, reveal-style-{envelope|garden|ballroom|minimal}, preview-reveal-btn, preview-close. GuestManager LCV stats: guest-stat-gelin/damat now contain 4 buckets (Geliyor/Gelmiyor/Belki/Bekliyor). Reminder: guest-remind-pending; pending filter: guest-filter-pending. Login page is /giris (or use inline form on /davetiyelerim). Header CTAs unchanged: cta-davetiye/cta-vesikalik-panel/cta-book-appointment.",
+  "rca of the issue": "N/A — no bugs. Prior concern about reveal-open-btn missing in DOM was NOT reproducible; the button exists, is visible, and starts the animation on click."
+}
