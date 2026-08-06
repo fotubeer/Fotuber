@@ -1,152 +1,49 @@
 {
-  "project_type": "Mobile-First Digital Invitation (Guest Page)",
+  "theme": "dark_luxury",
   "typography": {
-    "names_script": {
-      "font": "'Great Vibes', cursive",
-      "usage": "Couple names, signature moments",
-      "classes": "font-['Great_Vibes'] tracking-normal text-6xl md:text-7xl leading-tight"
-    },
-    "primary_serif": {
-      "font": "'Cormorant Garamond', serif",
-      "usage": "Headings, event titles, quotes",
-      "classes": "font-['Cormorant_Garamond'] tracking-wide text-3xl md:text-5xl"
-    },
-    "body_sans": {
-      "font": "'Montserrat', sans-serif",
-      "usage": "Form inputs, countdown numbers, small details",
-      "classes": "font-['Montserrat'] tracking-[0.2em] uppercase text-xs to text-sm"
-    }
+    "brand_name": "font-serif text-2xl xl:text-3xl tracking-tight text-white",
+    "tagline": "text-[9px] xl:text-[10px] tracking-[0.3em] xl:tracking-[0.4em] text-[#d4af37] uppercase",
+    "nav_items_standard": "text-[11.5px] xl:text-[13px] 2xl:text-sm tracking-tight lg:tracking-normal font-medium whitespace-nowrap text-neutral-300 hover:text-white relative",
+    "nav_items_accent": "text-[11.5px] xl:text-[13px] 2xl:text-sm tracking-tight lg:tracking-normal font-medium whitespace-nowrap text-[#d4af37] hover:text-[#e8ca58] drop-shadow-[0_0_8px_rgba(212,175,55,0.3)] relative"
   },
-  "themes": {
-    "free": {
-      "romantik_gul": {
-        "name": "Romantik Gül",
-        "colors": { "bg": "#FFF0F5", "text": "#4A3B3C", "accent": "#D8A7B1", "motif": "rose_petals" }
-      },
-      "botanik_yesil": {
-        "name": "Botanik Yeşil",
-        "colors": { "bg": "#F3F7F4", "text": "#2C3E35", "accent": "#8AA393", "motif": "drifting_leaves" }
-      },
-      "altin_zarafet": {
-        "name": "Altın Zarafet",
-        "colors": { "bg": "#FAFAFA", "text": "#3A362B", "accent": "#D4AF37", "motif": "gold_dust" }
-      },
-      "gokyuzu_mavi": {
-        "name": "Gökyüzü Mavi",
-        "colors": { "bg": "#F0F4F8", "text": "#2A3644", "accent": "#8DA3B5", "motif": "soft_clouds" }
-      }
-    },
-    "premium": {
-      "noir_luks": {
-        "name": "Noir Lüks",
-        "colors": { "bg": "#0D0D0D", "text": "#F5F5F5", "accent": "#C5A059", "motif": "gold_shimmer_particles" },
-        "premium_features": ["foil_shimmer_text", "deep_shadows", "rich_glassmorphism"]
-      },
-      "kraliyet_moru": {
-        "name": "Kraliyet Moru",
-        "colors": { "bg": "#1A0F2E", "text": "#FDFBF7", "accent": "#B892FF", "motif": "stardust_bokeh" },
-        "premium_features": ["neon_ambient_glow", "velvet_texture_css"]
-      },
-      "okyanus_zumrut": {
-        "name": "Okyanus Zümrüt",
-        "colors": { "bg": "#041C24", "text": "#E8F0F2", "accent": "#45B69C", "motif": "water_caustics" },
-        "premium_features": ["fluid_svg_waves", "emerald_glass"]
-      },
-      "mermer_roz_altin": {
-        "name": "Mermer Roz-Altın",
-        "colors": { "bg": "#FAFAFA", "text": "#3A2A2D", "accent": "#E0A9A5", "motif": "marble_veins_animated" },
-        "premium_features": ["svg_marble_filter", "rose_gold_gradient_text"]
-      }
-    }
-  },
-  "visual_enhancers": {
-    "motifs": {
-      "rose_petals": "Framer Motion animated SVG paths of petals falling and swaying softly.",
-      "drifting_leaves": "SVG leaves translating diagonally across the screen with varying rotation.",
-      "gold_dust": "Small div circles with accent color and blur, blinking opacity and drifting upwards.",
-      "soft_clouds": "Layered SVG paths with opacity translating slowly across the X-axis.",
-      "gold_shimmer_particles": "Denser gold_dust with a mix of scale and blurred glowing trails (drop-shadow).",
-      "stardust_bokeh": "Overlapping blurred circles with CSS radial gradients fading in and out.",
-      "water_caustics": "SVG radial gradients swaying horizontally to simulate underwater light.",
-      "marble_veins_animated": "SVG feTurbulence filter moving slowly via baseFrequency animation to simulate living marble."
-    },
-    "premium_distinctions": {
-      "free": "Flat colors, subtle CSS motifs, standard framer-motion transitions, solid shapes.",
-      "premium": "Textured backgrounds (using CSS noise or SVG filters), animated metallic gradients (background-clip: text), layered glassmorphism cards (backdrop-blur-xl), interactive hover/touch particle generation."
-    }
-  },
-  "motion": {
-    "entrance_sequence": {
-      "description": "Cinematic Digital Envelope Reveal",
-      "stages": [
-        "1. Loader: Monogram initials elegantly pulsing in the center.",
-        "2. Envelope Reveal: A full-screen CSS-drawn envelope (using borders to create flaps).",
-        "3. Flap Opening: The top triangle of the envelope rotates open (rotateX(180deg) with origin at top).",
-        "4. Card Extraction: The invitation content slides up from inside the envelope, scaling to full screen.",
-        "5. Envelope Fade: The envelope fades out, leaving the guest on the Hero section."
-      ],
-      "framer_variants": {
-        "envelopeFlap": {
-          "initial": { "rotateX": 0 },
-          "animate": { "rotateX": 180, "transition": { "duration": 1.2, "ease": [0.76, 0, 0.24, 1] } }
-        },
-        "invitationCard": {
-          "initial": { "y": 150, "scale": 0.9, "opacity": 0 },
-          "animate": { "y": 0, "scale": 1, "opacity": 1, "transition": { "delay": 0.8, "duration": 1.2, "ease": [0.76, 0, 0.24, 1] } }
-        }
-      }
-    },
-    "scroll_reveals": {
-      "framer_variants": {
-        "container": { "hidden": { "opacity": 0 }, "show": { "opacity": 1, "transition": { "staggerChildren": 0.2 } } },
-        "item": { "hidden": { "opacity": 0, "y": 30 }, "show": { "opacity": 1, "y": 0, "transition": { "duration": 1.0, "ease": [0.25, 1, 0.5, 1] } } }
-      }
-    }
+  "colors": {
+    "background_header": "bg-[#050505]/85",
+    "border_header": "border-white/5",
+    "accent_gold": "#d4af37",
+    "accent_gold_glow": "drop-shadow-[0_0_8px_rgba(212,175,55,0.4)]",
+    "cta_emerald": "bg-emerald-600 hover:bg-emerald-500 text-white"
   },
   "layouts": {
-    "hero": {
-      "structure": "Full height (min-h-[90vh]) flex-col center. Top: 'Sizleri Bekliyoruz' (Serif, small). Center: Monogram / Names in Script (massive, overlapping elements). Bottom: Date (Sans, uppercase, tracked out).",
-      "styling": "Absolute positioned motif layer (z-0), Content layer (z-10). Use negative space generously."
-    },
-    "countdown": {
-      "structure": "4x1 grid of boxes on mobile.",
-      "styling": "Premium themes: Glassmorphism background (backdrop-blur-md, bg-white/10), 1px solid border of accent color. Free: Solid soft background. Number in Serif, Label in tiny Sans."
-    },
-    "details": {
-      "structure": "Card layout. Icon top, Title, Time, Location Name, Address, Map button.",
-      "styling": "Inner shadow or soft drop shadow. Rounded elegant corners (rounded-t-full arch shape is highly recommended for premium feel). Give generous padding (p-8 or p-10)."
-    },
-    "rsvp": {
-      "structure": "Stack of elegant inputs. Name, Attendance status, Count, Dietary/Message.",
-      "styling": "Inputs should have bottom border ONLY (border-b border-accent/50), no full box border, background transparent. It must feel like writing on physical premium paper."
-    },
-    "memory_wall": {
-      "structure": "Vertical list of small messages, slightly overlapping or offset.",
-      "styling": "Post-it or elegant card style. Include cursive font for the messages."
-    },
-    "gift_iban": {
-      "structure": "Accordions or minimal flip-cards to hide IBANs until clicked.",
-      "styling": "Minimal, using monospace for IBAN. Include a 'Copy' button with a subtle SVG icon. No heavy borders."
-    }
+    "header_container": "sticky top-0 z-50 w-full bg-[#050505]/85 backdrop-blur-2xl border-b border-white/5 transition-colors duration-300",
+    "header_inner": "max-w-[1920px] mx-auto flex items-center justify-between px-4 lg:px-6 xl:px-10 py-3 xl:py-4",
+    "logo_section": "flex items-center gap-3 w-auto min-w-max",
+    "nav_section": "hidden lg:flex items-center justify-center flex-1 mx-2 lg:gap-2 xl:gap-5 2xl:gap-7",
+    "cta_section": "hidden lg:flex items-center gap-3 w-auto min-w-max"
   },
+  "visual_enhancers": {
+    "hover_underline": "after:content-[''] after:absolute after:w-full after:scale-x-0 after:h-[1px] after:-bottom-1.5 after:left-0 after:bg-[#d4af37] after:origin-center hover:after:scale-x-100 after:transition-transform after:duration-300 after:ease-out",
+    "cta_button_shadow": "shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_25px_rgba(16,185,129,0.4)] transition-shadow duration-300"
+  },
+  "component_path": "/app/frontend/src/components/PublicLayout.jsx",
   "instructions_to_main_agent": [
-    "Build the Digital Invitation Guest Page as a standalone mobile-first view (no site header/footer).",
-    "Implement pure CSS and framer-motion animations. Do not rely on external image assets for themes (except pure SVG paths for motifs).",
-    "Load 'Great Vibes', 'Cormorant Garamond', and 'Montserrat' fonts from Google Fonts in the CSS file.",
-    "Build a ThemeProvider context or use CSS variables to switch palettes based on the active theme.",
-    "Implement the Envelope Opening sequence as a standalone Framer Motion component that reveals the main content upon opening.",
-    "Ensure the RSVP inputs look like physical paper lines (bottom borders only). Avoid generic Shadcn default input borders.",
-    "Add an audio element for background music with a floating play/pause FAB (Floating Action Button) fixed at the bottom right corner.",
-    "Ensure all interactive elements MUST have a data-testid attribute for testing."
+    "Open /app/frontend/src/components/PublicLayout.jsx for editing.",
+    "Update the `<header>` tag classes to `sticky top-0 z-50 w-full bg-[#050505]/85 backdrop-blur-2xl border-b border-white/5 transition-colors duration-300` to implement the dark luxury crystal glass aesthetic.",
+    "Change the inner header wrapper `div` classes from `max-w-7xl mx-auto flex items-center justify-between px-6 py-4` to `max-w-[1920px] mx-auto flex items-center justify-between px-4 lg:px-6 xl:px-10 py-3 xl:py-4`. This edge-to-edge layout prevents cramping and places the logo on the far left.",
+    "Enhance the Logo & Brand Area: Apply `font-serif text-2xl xl:text-3xl tracking-tight text-white` to the brand text. Make the tagline `text-[9px] xl:text-[10px] tracking-[0.3em] xl:tracking-[0.4em] text-[#d4af37] uppercase`. Ensure the logo image uses `w-10 h-10 xl:w-12 xl:h-12 border-[#d4af37]`.",
+    "Solve the 10 Nav Items Wrapping Issue: Update the `<nav>` container classes to `hidden lg:flex items-center justify-center flex-1 mx-2 lg:gap-2.5 xl:gap-5 2xl:gap-7`. This fluid spacing ensures all items fit on one line for screens >=1024px.",
+    "Refine NavLinks (Hover & Font Size): Remove the custom `link-underline` class. For ALL NavLink elements, apply `relative whitespace-nowrap text-[11.5px] xl:text-[13px] 2xl:text-[14px] font-medium tracking-tight lg:tracking-normal transition-colors`. Also apply the new hover underline animation: `after:content-[''] after:absolute after:w-full after:scale-x-0 after:h-[1px] after:-bottom-1.5 after:left-0 after:bg-[#d4af37] after:origin-center hover:after:scale-x-100 after:transition-transform after:duration-300 after:ease-out`.",
+    "Accent vs Standard Links: If `n.accent` is true, apply `text-[#d4af37] hover:text-[#e8ca58] drop-shadow-[0_0_8px_rgba(212,175,55,0.3)]`. If false, apply `text-neutral-300 hover:text-white`.",
+    "Right CTA Section: Ensure the button wrapper is `hidden lg:flex items-center gap-2 xl:gap-3 w-auto min-w-max`. Upgrade the 'Randevu Al' emerald button to `bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-full px-5 xl:px-6 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] transition-all duration-300`.",
+    "Mobile Enhancements: Update the mobile menu dropdown background to `bg-[#050505]/95 backdrop-blur-3xl border-t border-white/5`."
   ],
-  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
-    "You tend to converge toward generic outputs. Avoid this: make creative, distinctive frontends that surprise and delight.",
-    "Never use generic centered layouts globally. Balance asymmetry to create visual tension.",
-    "Do not use transparent backgrounds for overlays where text becomes unreadable. Ensure contrast (APCA standards).",
-    "Every interaction needs micro-animations (hover, focus, transitions). Static is dead.",
-    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
-    "Use Phosphor icons or lucide-react for iconography.",
-    "Use sonner for elegant toast notifications (e.g., 'IBAN Kopyalandı', 'LCV Gönderildi').",
-    "Do NOT use placeholder text or generic AI emoji."
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Prioritize using pre-existing components from src/components/ui when applicable.",
+    "Create new components that match the style and conventions of existing components when needed.",
+    "You MUST NOT apply universal transition (e.g., transition: all). Always add transitions for specific properties to avoid breaking transforms.",
+    "You MUST NOT center align the app container in App.css.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur).",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "NEVER use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯 for icons.",
+    "All interactive and key informational elements MUST include a data-testid attribute."
   ]
 }
