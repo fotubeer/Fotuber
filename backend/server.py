@@ -3958,7 +3958,8 @@ async def _send_reset_email(user: dict, link: str):
         return
     try:
         subject, html, text = email_service.password_reset(user.get("name") or "", link)
-        await email_service.send_email(user["email"], subject, html, text)
+        key = f"reset:{user.get('id')}:{datetime.now(timezone.utc).timestamp()}"
+        await _email_send_once(key, user["email"], subject, html, text)
     except Exception as e:
         logger.warning(f"reset email send failed: {e}")
 
