@@ -202,6 +202,9 @@ export default function InvitationCreate() {
             </a>
           </div>
           <button onClick={() => navigate("/davetiyelerim")} className="mt-5 text-sm text-indigo-400" data-testid="go-my-invitations">Davetiyelerim →</button>
+          <p className="mt-3 text-[11px] text-slate-500 leading-relaxed">
+            İpucu: Bu davetiyeyi ve LCV yanıtlarını daha sonra <b className="text-slate-300">herhangi bir cihazdan</b> kayıt olduğunuz <b className="text-slate-300">e-posta ve şifrenizle</b> menüdeki <b className="text-slate-300">“Davetiye → Davetiyelerim”</b> bölümünden takip edebilirsiniz.
+          </p>
         </div>
       </div>
     );

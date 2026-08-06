@@ -357,8 +357,16 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - **Mini harita** (`gh-map`): seçili konum için anahtarsız OpenStreetMap embed (marker'lı) + "Yol Tarifi" (Google Maps) linki (`gh-map-directions`, `gh-map-frame`). Arama/şehir/konum değişince harita + hava + haftalık takvim birlikte güncellenir.
 - Doğrulama: screenshot — "Kadıköy" araması 12 ilçe sonucu; seçim sonrası harita marker + hava (Babadağ/Denizli 36°/24° UV8) güncellendi.
 
-## Session W-3 (PLANLANAN) — FAZ 2: Sektör Radarı (admin-only AI trend ajanı)
-- Admin panelinde günlük internet taraması yapan ajan. Kullanıcı notu: "GitHub'da 60k+ yıldızlı, anahtar istemeyen bir CLI aracı" ile yapılsın (araştırılacak — muhtemelen duckduckgo-search/ddgs veya SearXNG gibi anahtarsız arama + Emergent LLM ile Türkçe özet/çeviri).
-- Odak: TÜM sektör — düğün/nişan/kına, stüdyo/vesikalık, doğum günü, kurumsal, ÜRÜN çekimi, sosyal medya/reels trendleri. Sektörel olumlu/olumsuz haberler dahil.
-- Haber dili: TR kaynaklar Türkçe; yabancı kaynaklar Türkçeye çevrilmiş. "Yurtdışında popüler ama TR'de az yapılan fırsat" tarzı öneriler.
-- Günlük otomatik üretim + admin "Şimdi Yenile" butonu. Mongo `trend_reports` cache. Yeni admin sayfası + sidebar girişi.
+## Session W-3 (Jun 2026) — FAZ 2: Sektör Radarı + Davetiye Erişim Düzeltmeleri (self-tested)
+### Sektör Radarı (Agent Reach) — admin/yetkili personel, anahtarsız
+- **Backend** (`trend_radar.py` + `server.py`): Anahtarsız canlı tarama — Google News RSS (`feedparser`, TR+yabancı) + DuckDuckGo (`ddgs`). Emergent LLM (**gemini-2.5-flash**, hız için — claude 58s→gemini ~5s) ile 3 bölümlü Türkçe JSON: **news** (başlık/özet/tarih/kaynak/url/why_important/sentiment[positive|negative|opportunity]), **social** (platform/idea/audience/how_to_apply), **packages** (name/target_customer/contents/sales_message/why_now/impact[high|medium]). Yabancı kaynaklar Türkçeye çevrilir.
+- Uçlar: `GET /api/admin/trend-radar` (cache + generating/error), `POST /api/admin/trend-radar/refresh` (arka plan görevi — ingress 60s timeout'unu aşmamak için; `db.meta/trend_status` durum). Günlük döngü `_trend_radar_loop` (6 saatte bir, İstanbul günü başına idempotent, restart'ta stale reset, 150s wait_for). Cache: `db.trend_reports` (id=YYYY-MM-DD).
+- **Yetki**: `require_trend_access` (admin daima; staff yalnızca `can_trend_radar`). `strip_user`+`StaffUserIn`+create/patch staff'e `can_trend_radar`. Curl: yetkisiz staff 403, yetkili 200, admin 200.
+- **Frontend**: `components/admin/TrendRadarPanel.jsx` — premium pano (3 sütun, sentiment rozetleri kırmızı "Dikkat", "Tümünü Gör", son güncelleme + "Şimdi Yenile" + generating/boş/hata durumları). Admin **Dashboard** (Genel Bakış) stat kartlarının altında + yetkili personel için **StaffDaily**'de (`canRadar` gate). AdminUsers (`/admin/kullanicilar`) dialogunda "Sektör Radarı Görüntüleme" yetki kutusu + "Radar" rozeti. Screenshot ile doğrulandı.
+
+### Davetiye erişim/UX düzeltmeleri (`PublicLayout.jsx`, `MyInvitations.jsx`, `InvitationCreate.jsx`)
+- **Kök neden**: davetiye sahibi `member` rolüyle giriyor; header taşınca "Çıkış" ekran dışına kayıyordu → kullanıcı çıkış/admin girişi yapamadığını sandı.
+- **Overflow fix**: nav `flex-1 min-w-0 overflow-hidden`, sağ küme `shrink-0` → Çıkış/auth her genişlikte görünür.
+- **Davetiye açılır menü**: DropdownMenu → "Davetiye Oluştur" + "Davetiyelerim (LCV Takip)". Mobil menüye de eklendi. Screenshot doğrulandı.
+- **Üye çıkışı**: `/davetiyelerim` panosuna "Çıkış Yap" (`/auth/logout`) + e-posta; header'da member ad "(Üye)" + net "Çıkış"; member iken Personel Girişi görünür kalır. Post-publish "herhangi bir cihazdan e-posta/şifreyle takip" notu.
+- **Bonus**: `Staff.jsx` pre-existing crash düzeltildi (`useEffect(load,[])` async cleanup).

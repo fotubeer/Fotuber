@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Menu, X, Camera, Phone, LogOut, User, Instagram, Youtube, Facebook, Music2, ShieldCheck, LayoutDashboard, Heart, IdCard } from "lucide-react";
+import { Menu, X, Camera, Phone, LogOut, User, Instagram, Youtube, Facebook, Music2, ShieldCheck, LayoutDashboard, Heart, IdCard, ChevronDown, BarChart3 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { API_BASE } from "@/lib/api";
 import { instagramUrl, youtubeUrl, tiktokUrl, facebookUrl } from "@/lib/social";
 import FloatingContact from "@/components/FloatingContact";
@@ -58,14 +59,14 @@ export const PublicLayout = ({ children }) => {
             </div>
           </Link>
 
-          <nav className="hidden lg:flex items-center justify-center flex-1 mx-2 lg:gap-2.5 xl:gap-5 2xl:gap-7">
+          <nav className="hidden lg:flex items-center justify-center flex-1 mx-2 min-w-0 overflow-hidden lg:gap-2.5 xl:gap-5 2xl:gap-7">
             {navItems.map((n) => (
               <NavLink
                 key={n.to}
                 to={n.to}
                 data-testid={`nav-${n.to.replace('/', '') || 'home'}`}
                 className={({ isActive }) =>
-                  `relative whitespace-nowrap text-[11.5px] xl:text-[13px] 2xl:text-[14px] font-medium tracking-tight lg:tracking-normal transition-colors after:content-[''] after:absolute after:w-full after:scale-x-0 after:h-[1px] after:-bottom-1.5 after:left-0 after:bg-[#d4af37] after:origin-center hover:after:scale-x-100 after:transition-transform after:duration-300 after:ease-out ${
+                  `relative whitespace-nowrap shrink-0 text-[11.5px] xl:text-[13px] 2xl:text-[14px] font-medium tracking-tight lg:tracking-normal transition-colors after:content-[''] after:absolute after:w-full after:scale-x-0 after:h-[1px] after:-bottom-1.5 after:left-0 after:bg-[#d4af37] after:origin-center hover:after:scale-x-100 after:transition-transform after:duration-300 after:ease-out ${
                     isActive
                       ? "text-[#d4af37] after:scale-x-100"
                       : (n.accent ? "text-[#d4af37] hover:text-[#e8ca58] drop-shadow-[0_0_8px_rgba(212,175,55,0.3)]" : "text-neutral-300 hover:text-white")
@@ -77,16 +78,28 @@ export const PublicLayout = ({ children }) => {
             ))}
           </nav>
 
-          <div className="hidden lg:flex items-center gap-2 xl:gap-3 w-auto min-w-max">
-            <Link to="/davetiye-olustur">
-              <motion.div data-testid="cta-davetiye"
-                className="rounded-full bg-gradient-to-r from-rose-500 to-pink-500 text-white font-semibold px-4 xl:px-5 h-9 xl:h-10 flex items-center gap-1.5 text-xs xl:text-sm shadow-[0_0_18px_rgba(244,63,94,0.4)] cursor-pointer whitespace-nowrap"
-                animate={{ y: [0, -4, 0], scale: [1, 1.05, 1] }}
-                transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
-                whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
-                <Heart className="w-4 h-4" fill="currentColor" /> Davetiye
-              </motion.div>
-            </Link>
+          <div className="hidden lg:flex items-center gap-2 xl:gap-3 shrink-0 min-w-max">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <motion.button
+                  data-testid="cta-davetiye"
+                  type="button"
+                  className="rounded-full bg-gradient-to-r from-rose-500 to-pink-500 text-white font-semibold px-4 xl:px-5 h-9 xl:h-10 flex items-center gap-1.5 text-xs xl:text-sm shadow-[0_0_18px_rgba(244,63,94,0.4)] cursor-pointer whitespace-nowrap"
+                  whileHover={{ scale: 1.06 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Heart className="w-4 h-4" fill="currentColor" /> Davetiye <ChevronDown className="w-3.5 h-3.5 opacity-80" />
+                </motion.button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuItem onClick={() => navigate("/davetiye-olustur")} data-testid="menu-create-invitation" className="gap-2 cursor-pointer">
+                  <Heart className="w-4 h-4 text-rose-500" fill="currentColor" /> Davetiye Oluştur
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/davetiyelerim")} data-testid="menu-my-invitations" className="gap-2 cursor-pointer">
+                  <BarChart3 className="w-4 h-4 text-indigo-500" /> Davetiyelerim (LCV Takip)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Link to="/vesikalik">
               <Button data-testid="cta-vesikalik-panel" className="rounded-full bg-blue-600 hover:bg-blue-500 text-white font-semibold px-4 xl:px-5 gap-1.5 whitespace-nowrap shadow-[0_0_15px_rgba(37,99,235,0.3)] hover:shadow-[0_0_28px_rgba(37,99,235,0.5)] transition-shadow duration-300">
                 <IdCard className="w-4 h-4" /> Vesikalık Paneli
@@ -108,24 +121,25 @@ export const PublicLayout = ({ children }) => {
               </Link>
             )}
             {user ? (
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-neutral-400" data-testid="navbar-user-name">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-neutral-400 whitespace-nowrap" data-testid="navbar-user-name">
                   <User className="w-3.5 h-3.5 inline mr-1" strokeWidth={1.5} />
-                  {user.name}
+                  {user.name}{user.role === "member" ? " (Üye)" : ""}
                 </span>
                 <Button
                   data-testid="navbar-logout-btn"
                   variant="ghost"
                   onClick={async () => { await logout(); navigate("/"); }}
-                  className="text-neutral-400 hover:text-white h-9 px-3"
+                  className="text-neutral-300 hover:text-white h-9 px-3 gap-1.5 whitespace-nowrap"
                   title="Çıkış Yap"
                 >
-                  <LogOut className="w-4 h-4" />
+                  <LogOut className="w-4 h-4" /> Çıkış
                 </Button>
               </div>
-            ) : (
+            ) : null}
+            {(!user || user.role === "member") && (
               <Link to="/personel-girisi">
-                <Button data-testid="staff-login-nav-btn" variant="outline" className="rounded-full border-neutral-700 bg-transparent text-neutral-300 hover:bg-neutral-800 hover:text-white gap-2">
+                <Button data-testid="staff-login-nav-btn" variant="outline" className="rounded-full border-neutral-700 bg-transparent text-neutral-300 hover:bg-neutral-800 hover:text-white gap-2 whitespace-nowrap">
                   <ShieldCheck className="w-4 h-4" /> Personel Girişi
                 </Button>
               </Link>
@@ -140,7 +154,7 @@ export const PublicLayout = ({ children }) => {
                   <LayoutDashboard className="w-4 h-4" />
                 </span>
               </Link>
-            ) : !user ? (
+            ) : (!user || user.role === "member") ? (
               <Link to="/personel-girisi" data-testid="mobile-staff-login-btn" title="Personel Girişi">
                 <span className="w-9 h-9 rounded-full border border-[#d4af37] text-[#d4af37] flex items-center justify-center">
                   <ShieldCheck className="w-4 h-4" />
@@ -174,6 +188,11 @@ export const PublicLayout = ({ children }) => {
                   <Heart className="w-4 h-4" fill="currentColor" /> Davetiye Oluştur
                 </Button>
               </Link>
+              <Link to="/davetiyelerim" onClick={() => setOpen(false)}>
+                <Button data-testid="m-cta-my-invitations" variant="outline" className="w-full rounded-full border-indigo-400/40 bg-transparent text-indigo-300 hover:bg-indigo-500/10 font-semibold gap-1.5">
+                  <BarChart3 className="w-4 h-4" /> Davetiyelerim (LCV Takip)
+                </Button>
+              </Link>
               <Link to="/vesikalik" onClick={() => setOpen(false)}>
                 <Button data-testid="m-cta-vesikalik-panel" className="w-full rounded-full bg-blue-600 hover:bg-blue-500 text-white font-semibold gap-1.5">
                   <IdCard className="w-4 h-4" /> Vesikalık Paneli
@@ -186,13 +205,15 @@ export const PublicLayout = ({ children }) => {
                   </Button>
                 </Link>
               )}
-              {user ? (
+              {user && (
                 <Button
+                  data-testid="m-logout-btn"
                   variant="ghost"
                   onClick={async () => { setOpen(false); await logout(); navigate("/"); }}
-                  className="text-neutral-400"
-                >Çıkış Yap</Button>
-              ) : (
+                  className="text-neutral-300 gap-2"
+                ><LogOut className="w-4 h-4" /> Çıkış Yap{user.role === "member" ? " (Üye)" : ""}</Button>
+              )}
+              {(!user || user.role === "member") && (
                 <Link to="/personel-girisi" onClick={() => setOpen(false)}>
                   <Button variant="outline" className="w-full rounded-full border-neutral-700 bg-transparent text-neutral-200 gap-2">
                     <ShieldCheck className="w-4 h-4" /> Personel Girişi

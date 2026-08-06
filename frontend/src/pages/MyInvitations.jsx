@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast, Toaster } from "sonner";
-import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, MessageCircleHeart, Calendar, Images, Eye, EyeOff, Presentation, QrCode, MessageCircle, Copy, Send, Clock, Check } from "lucide-react";
+import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, MessageCircleHeart, Calendar, Images, Eye, EyeOff, Presentation, QrCode, MessageCircle, Copy, Send, Clock, Check, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -64,6 +64,12 @@ export default function MyInvitations() {
       setLoading(true); await load();
     } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
+  };
+
+  const logout = async () => {
+    try { await api("/auth/logout", { method: "POST" }); } catch (_) {}
+    setMe(null); setItems([]); setAuth({ email: "", password: "" });
+    toast.success("Çıkış yapıldı");
   };
 
   const openReport = async (id) => {
@@ -203,9 +209,14 @@ export default function MyInvitations() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-3xl font-bold text-slate-900">Davetiyelerim</h1>
-            <p className="text-sm text-slate-500">Yanıtları (LCV) ve anıları buradan takip edin.</p>
+            <p className="text-sm text-slate-500">Yanıtları (LCV) ve anıları buradan takip edin.{me?.user?.email ? ` · ${me.user.email}` : ""}</p>
           </div>
-          <Link to="/davetiye-olustur"><Button className="bg-indigo-600 hover:bg-indigo-700" data-testid="new-invitation-btn"><Plus className="w-4 h-4 mr-1" /> Yeni</Button></Link>
+          <div className="flex items-center gap-2">
+            <Link to="/davetiye-olustur"><Button className="bg-indigo-600 hover:bg-indigo-700" data-testid="new-invitation-btn"><Plus className="w-4 h-4 mr-1" /> Yeni</Button></Link>
+            <Button variant="outline" onClick={logout} data-testid="member-logout-btn" className="border-slate-300 text-slate-700 hover:bg-slate-100">
+              <LogOut className="w-4 h-4 mr-1" /> Çıkış Yap
+            </Button>
+          </div>
         </div>
 
         {items.length === 0 ? (
