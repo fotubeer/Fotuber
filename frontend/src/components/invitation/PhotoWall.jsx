@@ -51,7 +51,7 @@ export default function PhotoWall({ slug, t }) {
         <Images className="w-5 h-5" /> Canlı Foto Duvarı
       </h3>
       <p className="text-xs mb-4 text-center" style={{ color: t.sub, fontFamily: "'Montserrat', sans-serif" }}>
-        Etkinlikten çektiğiniz fotoğrafları paylaşın, duvarda canlı görünsün.
+        Etkinlikten çektiğiniz fotoğraf ve videoları paylaşın, duvarda canlı görünsün.
       </p>
       <div className="space-y-3">
         <input placeholder="Adınız (isteğe bağlı)" value={name} onChange={(e) => setName(e.target.value)}
@@ -59,8 +59,8 @@ export default function PhotoWall({ slug, t }) {
           style={{ background: "transparent", borderBottom: `1px solid ${t.accent}66`, color: t.text }} data-testid="photowall-name" />
         <label className="flex items-center justify-center gap-2 py-3 rounded-full cursor-pointer text-sm font-medium"
           style={{ background: t.accent, color: t.dark ? "#0b0b0b" : "#fff" }} data-testid="photowall-upload-label">
-          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />} Fotoğraf Yükle
-          <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden"
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />} Fotoğraf / Video Yükle
+          <input ref={inputRef} type="file" accept="image/*,video/*" className="hidden"
             onChange={(e) => upload(e.target.files?.[0])} data-testid="photowall-upload" />
         </label>
       </div>
@@ -68,8 +68,10 @@ export default function PhotoWall({ slug, t }) {
         <div className="mt-5 grid grid-cols-3 gap-2" data-testid="photowall-gallery">
           {photos.map((p) => (
             <motion.div key={p.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-              className="aspect-square overflow-hidden rounded-lg" style={{ border: `1px solid ${t.border}` }}>
-              <img src={`${API}/api/invitations/photo/${p.id}`} alt={p.uploader_name || "Anı"} className="w-full h-full object-cover" loading="lazy" />
+              className="aspect-square overflow-hidden rounded-lg relative" style={{ border: `1px solid ${t.border}` }}>
+              {p.kind === "video"
+                ? <video src={`${API}/api/invitations/photo/${p.id}`} className="w-full h-full object-cover" muted playsInline controls />
+                : <img src={`${API}/api/invitations/photo/${p.id}`} alt={p.uploader_name || "Anı"} className="w-full h-full object-cover" loading="lazy" />}
             </motion.div>
           ))}
         </div>

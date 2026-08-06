@@ -4140,6 +4140,18 @@ async def _grant_paid_order(order: dict):
                       "paid_callback_id": order.get("callback_id")}},
         )
         await _track_feature(uid, "davetiye_premium")
+    elif order.get("kind") == "invitation_extend":
+        iid = order.get("invitation_id")
+        inv = await db.invitations.find_one({"id": iid, "owner_user_id": uid})
+        if inv:
+            new_exp = _invite_expires_at(inv.get("event_date"), extended=True)
+            await db.invitations.update_one(
+                {"id": iid, "owner_user_id": uid},
+                {"$set": {"extended": True, "expires_at": new_exp,
+                          "extend_paid_price": order.get("price"),
+                          "extend_callback_id": order.get("callback_id")}},
+            )
+        await _track_feature(uid, "davetiye_uzatma")
     else:
         current = _ai_credits_of(user)
         await db.users.update_one({"id": uid}, {"$set": {"ai_credits": current + int(order.get("credits", 0))}})
@@ -4198,6 +4210,16 @@ async def paytr_create(payload: PaytrCreateIn, request: Request, user: dict = De
             raise HTTPException(status_code=400, detail="Bu davetiye ücretsiz, ödeme gerekmez")
         price = float(pr["price"])
         title = "Fotuber Premium Dijital Davetiye" + (" + Foto Duvari" if pr["photowall"] else "")
+        credits = 0
+        invitation_id = inv["id"]
+    elif kind == "invitation_extend":
+        inv = await db.invitations.find_one({"id": payload.invitation_id or "", "owner_user_id": user.get("id")})
+        if not inv:
+            raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+        if inv.get("extended"):
+            raise HTTPException(status_code=400, detail="Bu davetiyenin süresi zaten uzatılmış")
+        price = float(INVITE_EXTEND_PRICE)
+        title = "Fotuber Davetiye Sure Uzatma 15 gun"
         credits = 0
         invitation_id = inv["id"]
     else:
@@ -4602,6 +4624,12 @@ async def _send_payment_receipt(order: dict):
                 f"<p>Davetiyelerinizi <a href='{_portal_url()}/davetiyelerim'>Davetiyelerim</a> sayfasından yönetebilirsiniz.</p>"
                 f"<p style='color:#8a6a6f;font-size:12px'>Referans: {ref}</p><p>Sevgiyle,<br/>Fotuber</p></div>")
         text = f"Merhaba, {amount} tutarindaki odemeniz alindi. Premium davetiyeniz yayinda. Ref: {ref} — Fotuber"
+    elif order.get("kind") == "invitation_extend":
+        subject = "Fotuber · Davetiye Süre Uzatma Ödemeniz Alındı"
+        html = (f"<div style='font-family:Georgia,serif;color:#3a2a2d'><p>Merhaba {user.get('name') or ''},</p>"
+                f"<p><b>{amount}</b> tutarındaki ödemeniz alınmıştır. Davetiye bağlantınız etkinlikten 15 gün sonrasına kadar uzatıldı. 🎉</p>"
+                f"<p style='color:#8a6a6f;font-size:12px'>Referans: {ref}</p><p>Sevgiyle,<br/>Fotuber</p></div>")
+        text = f"Merhaba, {amount} tutarindaki sure uzatma odemeniz alindi. Ref: {ref} — Fotuber"
     else:
         subject, html, text = email_service.receipt_credits(user.get("name"), int(order.get("credits") or 0), amount, ref)
     await _email_send_once(f"receipt:{ref}", user["email"], subject, html, text)
@@ -4701,26 +4729,29 @@ import invitation_pdf
 INVITE_THEMES = ["romantic", "botanic", "gold", "sky", "noir", "royal", "ocean", "marble"]
 INVITE_PREMIUM_THEMES = {"noir", "royal", "ocean", "marble"}
 INVITE_EVENT_TYPES = ["dugun", "nisan", "kina", "sunnet", "dogumgunu", "nikah", "diger"]
-INVITE_PREMIUM_PRICE = float(os.environ.get("INVITE_PREMIUM_PRICE", "200"))
-INVITE_PHOTOWALL_PRICE = float(os.environ.get("INVITE_PHOTOWALL_PRICE", "750"))
+INVITE_PREMIUM_PRICE = float(os.environ.get("INVITE_PREMIUM_PRICE", "250"))
+INVITE_PHOTOWALL_PRICE = float(os.environ.get("INVITE_PHOTOWALL_PRICE", "500"))
+INVITE_EXTEND_PRICE = float(os.environ.get("INVITE_EXTEND_PRICE", "99"))
+INVITE_PHOTOWALL_MAX_GB = float(os.environ.get("INVITE_PHOTOWALL_MAX_GB", "75"))
+INVITE_PHOTOWALL_MAX_BYTES = int(INVITE_PHOTOWALL_MAX_GB * 1024 * 1024 * 1024)
 
 
 def _invitation_pricing(theme: str, sections: dict) -> dict:
     """Server-authoritative pricing. Print PDF is free. Premium DIGITAL invitations
-    require a one-time PayTR payment: premium theme = INVITE_PREMIUM_PRICE, adding the
-    QR live photo wall = INVITE_PHOTOWALL_PRICE (total)."""
+    require a one-time PayTR payment (additive): premium theme = INVITE_PREMIUM_PRICE,
+    plus the QR live photo+video wall = INVITE_PHOTOWALL_PRICE (added on top)."""
     photowall = bool((sections or {}).get("photowall"))
     premium_theme = theme in INVITE_PREMIUM_THEMES
-    needs_payment = premium_theme or photowall
+    price = 0.0
+    if premium_theme:
+        price += INVITE_PREMIUM_PRICE
     if photowall:
-        price = INVITE_PHOTOWALL_PRICE
-    elif premium_theme:
-        price = INVITE_PREMIUM_PRICE
-    else:
-        price = 0.0
+        price += INVITE_PHOTOWALL_PRICE
+    needs_payment = price > 0
     return {"needs_payment": needs_payment, "price": price,
             "premium_theme": premium_theme, "photowall": photowall,
             "premium_price": INVITE_PREMIUM_PRICE, "photowall_price": INVITE_PHOTOWALL_PRICE,
+            "extend_price": INVITE_EXTEND_PRICE, "photowall_max_gb": INVITE_PHOTOWALL_MAX_GB,
             "currency": "TRY"}
 
 
@@ -4731,14 +4762,17 @@ def _slugify(text: str) -> str:
     return s[:40] or "davetiye"
 
 
-def _invite_expires_at(event_date: str) -> str:
+def _invite_expires_at(event_date: str, extended: bool = False) -> str:
     try:
         d = datetime.fromisoformat(event_date)
         if d.tzinfo is None:
             d = d.replace(tzinfo=timezone.utc)
     except Exception:
         d = datetime.now(timezone.utc) + timedelta(days=90)
-    return (d + timedelta(days=15, hours=23)).isoformat()
+    if extended:
+        return (d + timedelta(days=15, hours=23, minutes=59)).isoformat()
+    # Free default: valid through the end of the event day only.
+    return (d + timedelta(hours=23, minutes=59)).isoformat()
 
 
 def _invite_public(doc: dict, owner: bool = False) -> dict:
@@ -4756,6 +4790,8 @@ def _invite_public(doc: dict, owner: bool = False) -> dict:
         "sections": doc.get("sections") or {},
         "gift": doc.get("gift") or {},
         "is_premium": bool(doc.get("is_premium")),
+        "reveal_style": doc.get("reveal_style") or "",
+        "extended": bool(doc.get("extended")),
         "created_at": doc.get("created_at"), "expires_at": doc.get("expires_at"),
     }
     if owner:
@@ -4781,6 +4817,7 @@ class InvitationIn(BaseModel):
     cover_image_id: Optional[str] = ""
     music_url: Optional[str] = ""
     greeting_audio_id: Optional[str] = ""
+    reveal_style: Optional[str] = ""
     checkin_enabled: bool = False
     sections: Optional[dict] = None
     gift: Optional[dict] = None
@@ -4902,23 +4939,34 @@ async def invitation_print_options():
 async def upload_guest_photo(slug: str, file: UploadFile = File(...), uploader_name: str = Form("")):
     d = await _get_active_invitation(slug)
     ct = file.content_type or "image/jpeg"
-    if not ct.startswith("image"):
-        raise HTTPException(status_code=400, detail="Sadece görsel yüklenebilir")
+    is_video = ct.startswith("video")
+    if not (ct.startswith("image") or is_video):
+        raise HTTPException(status_code=400, detail="Sadece fotoğraf veya video yüklenebilir")
     data = await file.read()
-    if len(data) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Görsel en fazla 10MB olabilir")
+    max_one = (200 if is_video else 25) * 1024 * 1024
+    if len(data) > max_one:
+        raise HTTPException(status_code=400, detail=("Video en fazla 200MB olabilir" if is_video else "Görsel en fazla 25MB olabilir"))
     count = await db.invitation_photos.count_documents({"invitation_id": d["id"]})
-    if count >= 1000:
-        raise HTTPException(status_code=400, detail="Fotoğraf yükleme sınırına ulaşıldı")
+    if count >= 3000:
+        raise HTTPException(status_code=400, detail="Yükleme sınırına ulaşıldı")
+    # Enforce total storage limit (75 GB) per invitation photo/video wall.
+    agg = await db.invitation_photos.aggregate([
+        {"$match": {"invitation_id": d["id"]}},
+        {"$group": {"_id": None, "total": {"$sum": "$size"}}},
+    ]).to_list(1)
+    used = int((agg[0]["total"] if agg else 0) or 0)
+    if used + len(data) > INVITE_PHOTOWALL_MAX_BYTES:
+        raise HTTPException(status_code=400, detail=f"Foto duvarı depolama sınırına ({int(INVITE_PHOTOWALL_MAX_GB)} GB) ulaşıldı")
     pid = new_id()
-    ext = (file.filename or "jpg").split(".")[-1].lower()[:5]
+    ext = (file.filename or ("mp4" if is_video else "jpg")).split(".")[-1].lower()[:5]
     path = f"{APP_NAME}/invitations/photos/{pid}.{ext}"
     put_object(path, data, ct)
     await db.invitation_photos.insert_one({
         "id": pid, "invitation_id": d["id"], "storage_path": path, "content_type": ct,
+        "kind": "video" if is_video else "image", "size": len(data),
         "uploader_name": (uploader_name or "").strip()[:60], "created_at": now_iso(),
     })
-    return {"ok": True, "id": pid}
+    return {"ok": True, "id": pid, "kind": "video" if is_video else "image"}
 
 
 @api_router.get("/invitations/public/{slug}/photos")
@@ -4930,7 +4978,7 @@ async def list_guest_photos(slug: str, since: Optional[str] = None):
     if since:
         q["created_at"] = {"$gt": since}
     photos = await db.invitation_photos.find(q, {"_id": 0, "storage_path": 0}).sort("created_at", -1).to_list(length=1000)
-    return {"photos": [{"id": p["id"], "uploader_name": p.get("uploader_name", ""), "created_at": p.get("created_at")} for p in photos]}
+    return {"photos": [{"id": p["id"], "uploader_name": p.get("uploader_name", ""), "kind": p.get("kind", "image"), "created_at": p.get("created_at")} for p in photos]}
 
 
 @api_router.get("/invitations/{iid}/photos/manage")
@@ -4940,8 +4988,12 @@ async def manage_guest_photos(iid: str, user: dict = Depends(get_current_user)):
     if not d:
         raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
     photos = await db.invitation_photos.find({"invitation_id": iid}, {"_id": 0, "storage_path": 0}).sort("created_at", -1).to_list(length=1000)
+    total = sum(int(p.get("size", 0) or 0) for p in photos)
     return {"photos": [{"id": p["id"], "uploader_name": p.get("uploader_name", ""),
-                        "created_at": p.get("created_at"), "hidden": bool(p.get("hidden"))} for p in photos]}
+                        "kind": p.get("kind", "image"), "size": int(p.get("size", 0) or 0),
+                        "created_at": p.get("created_at"), "hidden": bool(p.get("hidden"))} for p in photos],
+            "storage_used": total, "storage_limit": INVITE_PHOTOWALL_MAX_BYTES,
+            "storage_limit_gb": INVITE_PHOTOWALL_MAX_GB}
 
 
 class PhotoModerateIn(BaseModel):
@@ -4986,6 +5038,33 @@ async def get_guest_photo(pid: str):
     data, ct = get_object(doc["storage_path"])
     return StarletteResponse(content=data, media_type=doc.get("content_type", ct),
                              headers={"Cache-Control": "public, max-age=86400"})
+
+
+@api_router.get("/invitations/{iid}/photos/download")
+async def download_invitation_media(iid: str, user: dict = Depends(get_current_user)):
+    """Owner-only: download ALL guest photos & videos of a photo wall as a single ZIP."""
+    d = await db.invitations.find_one({"id": iid, "owner_user_id": user.get("id")}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    docs = await db.invitation_photos.find({"invitation_id": iid}).sort("created_at", 1).to_list(5000)
+    if not docs:
+        raise HTTPException(status_code=404, detail="İndirilecek medya yok")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+        for i, up in enumerate(docs, 1):
+            try:
+                data, _ct = get_object(up["storage_path"])
+                who = (up.get("uploader_name") or "misafir").replace("/", "_")[:30]
+                ext = (up.get("storage_path") or "").split(".")[-1][:5] or ("mp4" if up.get("kind") == "video" else "jpg")
+                folder = "videolar" if up.get("kind") == "video" else "fotograflar"
+                zf.writestr(f"{folder}/{i:04d}_{who}.{ext}", data)
+            except Exception:
+                continue
+    buf.seek(0)
+    raw = f"{d.get('person1') or 'davetiye'}_{d.get('event_date') or ''}_foto-video.zip".replace(" ", "_")
+    ascii_name = raw.encode("ascii", "ignore").decode("ascii") or "davetiye_medya.zip"
+    return Response(content=buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{ascii_name}"'})
 
 
 # ---- Optional QR door check-in ----
@@ -5042,6 +5121,7 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
         "primary_color": payload.primary_color, "cover_image_id": payload.cover_image_id,
         "music_url": payload.music_url, "greeting_audio_id": payload.greeting_audio_id,
         "checkin_enabled": bool(payload.checkin_enabled),
+        "reveal_style": payload.reveal_style or "",
         "sections": sections,
         "gift": payload.gift or {},
         "is_premium": pricing["needs_payment"], "price": pricing["price"],
@@ -5095,7 +5175,8 @@ async def update_invitation(iid: str, payload: InvitationIn, user: dict = Depend
     upd["is_premium"] = new_pricing["needs_payment"]
     upd["price"] = new_pricing["price"]
     upd["status"] = "published" if (not new_pricing["needs_payment"] or already_paid) else "unpaid"
-    upd["expires_at"] = _invite_expires_at(payload.event_date)
+    upd["extended"] = bool(d.get("extended"))
+    upd["expires_at"] = _invite_expires_at(payload.event_date, extended=bool(d.get("extended")))
     upd["updated_at"] = now_iso()
     await db.invitations.update_one({"id": iid}, {"$set": upd})
     fresh = await db.invitations.find_one({"id": iid}, {"_id": 0})

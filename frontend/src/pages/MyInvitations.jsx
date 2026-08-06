@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast, Toaster } from "sonner";
-import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, MessageCircleHeart, Calendar, Images, Eye, EyeOff, Presentation, QrCode, MessageCircle, Copy, Send } from "lucide-react";
+import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, MessageCircleHeart, Calendar, Images, Eye, EyeOff, Presentation, QrCode, MessageCircle, Copy, Send, Clock, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,7 +31,9 @@ export default function MyInvitations() {
   const [busy, setBusy] = useState(false);
   const [photoMod, setPhotoMod] = useState(null);
   const [modPhotos, setModPhotos] = useState([]);
+  const [modStorage, setModStorage] = useState(null);
   const [modLoading, setModLoading] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [waInvite, setWaInvite] = useState(null);
   const [waMessage, setWaMessage] = useState("");
   const [waNumbers, setWaNumbers] = useState("");
@@ -92,14 +94,55 @@ export default function MyInvitations() {
   };
 
   const openPhotoWall = async (inv) => {
-    setPhotoMod(inv); setModLoading(true); setModPhotos([]);
+    setPhotoMod(inv); setModLoading(true); setModPhotos([]); setModStorage(null);
     try {
       const r = await api(`/invitations/${inv.id}/photos/manage`);
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Yüklenemedi");
       setModPhotos(d.photos || []);
+      setModStorage({ used: d.storage_used || 0, limit: d.storage_limit || 0, gb: d.storage_limit_gb });
     } catch (e) { toast.error(e.message); }
     finally { setModLoading(false); }
+  };
+
+  const extendInvitation = async (inv) => {
+    if (inv.extended) { toast.message("Bu davetiyenin süresi zaten uzatılmış"); return; }
+    setPaying(true);
+    try {
+      const r = await api("/payments/paytr/create", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "invitation_extend", invitation_id: inv.id, origin_url: window.location.origin }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || "Ödeme başlatılamadı");
+      window.open(d.link, "_blank");
+      toast.message("Ödeme sayfası açıldı", { description: "Ödeme tamamlanınca süre otomatik uzatılır." });
+      const iv = setInterval(async () => {
+        try {
+          const sr = await api(`/payments/status/${d.callback_id}`);
+          const sd = await sr.json().catch(() => ({}));
+          if (sd.status === "paid") {
+            clearInterval(iv); setPaying(false);
+            toast.success("Süre uzatıldı! Bağlantı etkinlikten 15 gün sonrasına kadar geçerli 🎉");
+            load();
+          }
+        } catch (e) { /* keep polling */ }
+      }, 3000);
+      setTimeout(() => { clearInterval(iv); setPaying(false); }, 300000);
+    } catch (e) { toast.error(e.message); setPaying(false); }
+  };
+
+  const downloadMedia = async (inv) => {
+    toast.message("Medya paketi hazırlanıyor…");
+    try {
+      const r = await api(`/invitations/${inv.id}/photos/download`);
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "İndirilemedi"); }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = `davetiye_${inv.slug}_foto-video.zip`; a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Foto/video paketi indirildi");
+    } catch (e) { toast.error(e.message); }
   };
 
   const toggleHide = async (pid, hidden) => {
@@ -189,11 +232,14 @@ export default function MyInvitations() {
                   <Button variant="outline" size="sm" onClick={() => downloadCsv(inv.id, inv.slug)} data-testid={`inv-csv-${inv.id}`}><Download className="w-4 h-4 mr-1" /> CSV</Button>
                   <Button variant="outline" size="sm" className="text-rose-600 hover:bg-rose-50" onClick={() => remove(inv.id)} data-testid={`inv-delete-${inv.id}`}><Trash2 className="w-4 h-4 mr-1" /> Sil</Button>
                 </div>
-                {inv.sections?.photowall && (
+                {inv.sections?.photowall && (<>
                   <Button variant="outline" size="sm" className="w-full mt-2 text-indigo-600 border-indigo-200 hover:bg-indigo-50" onClick={() => openPhotoWall(inv)} data-testid={`inv-photowall-${inv.id}`}>
-                    <Images className="w-4 h-4 mr-1" /> Foto Duvarı Yönetimi
+                    <Images className="w-4 h-4 mr-1" /> Foto/Video Duvarı Yönetimi
                   </Button>
-                )}
+                  <Button variant="outline" size="sm" className="w-full mt-2 text-slate-700 border-slate-300 hover:bg-slate-50" onClick={() => downloadMedia(inv)} data-testid={`inv-download-media-${inv.id}`}>
+                    <Download className="w-4 h-4 mr-1" /> Foto/Videoları İndir (ZIP)
+                  </Button>
+                </>)}
                 {inv.checkin_enabled && (
                   <a href={`/davetiye/${inv.id}/kapi`} target="_blank" rel="noreferrer" className="block">
                     <Button variant="outline" size="sm" className="w-full mt-2 text-emerald-600 border-emerald-200 hover:bg-emerald-50" data-testid={`inv-checkin-${inv.id}`}>
@@ -204,6 +250,13 @@ export default function MyInvitations() {
                 <Button variant="outline" size="sm" className="w-full mt-2 text-[#128C7E] border-[#25D366]/40 hover:bg-[#25D366]/10" onClick={() => openWhatsApp(inv)} data-testid={`inv-whatsapp-${inv.id}`}>
                   <MessageCircle className="w-4 h-4 mr-1" /> WhatsApp ile Davet Gönder
                 </Button>
+                {!inv.extended ? (
+                  <Button variant="outline" size="sm" className="w-full mt-2 text-amber-700 border-amber-300 hover:bg-amber-50" onClick={() => extendInvitation(inv)} disabled={paying} data-testid={`inv-extend-${inv.id}`}>
+                    <Clock className="w-4 h-4 mr-1" /> Süreyi Uzat · 99₺ (+15 gün)
+                  </Button>
+                ) : (
+                  <div className="w-full mt-2 text-center text-[11px] text-emerald-600 flex items-center justify-center gap-1" data-testid={`inv-extended-${inv.id}`}><Check className="w-3.5 h-3.5" /> Süre uzatıldı (etkinlik + 15 gün)</div>
+                )}
               </div>
             ))}
           </div>
@@ -260,6 +313,17 @@ export default function MyInvitations() {
                 <Presentation className="w-4 h-4 mr-2" /> Tam Ekran Slayt Aç (projeksiyon için)
               </Button>
             </a>
+            {modStorage && modStorage.limit > 0 && (
+              <div className="mb-3" data-testid="photowall-storage">
+                <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+                  <span>Depolama</span>
+                  <span>{(modStorage.used / 1073741824).toFixed(2)} / {modStorage.gb || Math.round(modStorage.limit / 1073741824)} GB</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                  <div className="h-full bg-indigo-500" style={{ width: `${Math.min(100, (modStorage.used / modStorage.limit) * 100)}%` }} />
+                </div>
+              </div>
+            )}
             {modLoading ? (
               <div className="py-10 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>
             ) : modPhotos.length === 0 ? (
@@ -268,7 +332,10 @@ export default function MyInvitations() {
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                 {modPhotos.map((p) => (
                   <div key={p.id} className={`relative rounded-lg overflow-hidden border ${p.hidden ? "border-rose-300 opacity-60" : "border-slate-200"}`} data-testid={`mod-photo-${p.id}`}>
-                    <img src={`${API}/api/invitations/photo/${p.id}`} alt={p.uploader_name || "Anı"} className="w-full aspect-square object-cover" loading="lazy" />
+                    {p.kind === "video"
+                      ? <video src={`${API}/api/invitations/photo/${p.id}`} className="w-full aspect-square object-cover" muted playsInline controls />
+                      : <img src={`${API}/api/invitations/photo/${p.id}`} alt={p.uploader_name || "Anı"} className="w-full aspect-square object-cover" loading="lazy" />}
+                    {p.kind === "video" && <div className="absolute top-1 left-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded">Video</div>}
                     {p.hidden && <div className="absolute top-1 left-1 bg-rose-600 text-white text-[9px] px-1.5 py-0.5 rounded">Gizli</div>}
                     {p.uploader_name && <div className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] px-1 py-0.5 truncate">{p.uploader_name}</div>}
                     <div className="absolute top-1 right-1 flex gap-1">

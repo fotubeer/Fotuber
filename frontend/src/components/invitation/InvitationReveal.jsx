@@ -103,8 +103,8 @@ const Flourish = ({ type, accent, boost }) => {
   );
 };
 
-export default function InvitationReveal({ t, themeKey, eventType, names, initials = "♥", onDone }) {
-  const cfg = CFG[eventType] || CFG.diger;
+export default function InvitationReveal({ t, themeKey, eventType, styleKey, names, initials = "♥", onDone }) {
+  const cfg = resolveStyle(eventType, styleKey);
   const [open, setOpen] = useState(false);
   const [gone, setGone] = useState(false);
   const accent = t.accent;

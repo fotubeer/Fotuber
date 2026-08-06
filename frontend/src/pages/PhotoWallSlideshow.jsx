@@ -25,7 +25,7 @@ export default function PhotoWallSlideshow() {
   const load = useCallback(async () => {
     try {
       const r = await fetch(`${API}/api/invitations/public/${slug}/photos`);
-      if (r.ok) { const d = await r.json(); setPhotos((d.photos || []).slice().reverse()); }
+      if (r.ok) { const d = await r.json(); setPhotos((d.photos || []).filter((p) => p.kind !== "video").slice().reverse()); }
     } catch (e) { /* ignore */ }
   }, [slug]);
 

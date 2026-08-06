@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
-import InvitationReveal from "@/components/invitation/InvitationReveal";
+import InvitationReveal, { eventStyleOptions, REVEAL_STYLES } from "@/components/invitation/InvitationReveal";
 import VoiceRecorder from "@/components/invitation/VoiceRecorder";
 import { INVITATION_THEMES, EVENT_TYPE_LABELS, getTheme, printColors } from "@/lib/invitationThemes";
 import { getMessagesFor } from "@/lib/invitationMessages";
@@ -24,7 +24,7 @@ export default function InvitationCreate() {
   const [data, setData] = useState({
     event_type: "dugun", person1: "", person2: "", event_date: "", event_time: "",
     venue_name: "", venue_address: "", map_url: "", message: "", theme: "romantic",
-    primary_color: "", cover_image_id: "", music_url: "",
+    primary_color: "", cover_image_id: "", music_url: "", reveal_style: "",
     gift: { full_name: "", bank_name: "", iban: "", note: "" },
     sections: { countdown: true, map: true, memories: true, rsvp: true, gift: true, music: false },
   });
@@ -64,7 +64,7 @@ export default function InvitationCreate() {
   const canPublish = data.person1.trim() && data.event_date;
   const isPremiumTheme = INVITATION_THEMES[data.theme]?.premium;
   const hasPhotowall = !!data.sections.photowall;
-  const invPrice = hasPhotowall ? 750 : (isPremiumTheme ? 200 : 0);
+  const invPrice = (isPremiumTheme ? 250 : 0) + (hasPhotowall ? 500 : 0);
   const shareUrl = useMemo(() => (published ? `${window.location.origin}/davetiye/${published.slug}` : ""), [published]);
 
   const uploadCover = async (file) => {
@@ -221,7 +221,7 @@ export default function InvitationCreate() {
           <div className="space-y-5">
             <div>
               <Label>Etkinlik Türü</Label>
-              <Select value={data.event_type} onValueChange={(v) => set("event_type", v)}>
+              <Select value={data.event_type} onValueChange={(v) => setData((d) => ({ ...d, event_type: v, reveal_style: "" }))}>
                 <SelectTrigger data-testid="event-type"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(EVENT_TYPE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
@@ -292,10 +292,10 @@ export default function InvitationCreate() {
             <div className="rounded-xl border border-slate-200 p-4 space-y-3">
               <div className="font-medium text-sm">Özellikler</div>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-slate-700"><Images className="w-4 h-4 text-indigo-600" /> Etkinlik Anı Duvarı <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950">PREMIUM</span></div>
+                <div className="flex items-center gap-2 text-sm text-slate-700"><Images className="w-4 h-4 text-indigo-600" /> Foto & Video Duvarı <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950">+500₺</span></div>
                 <Switch checked={data.sections.photowall} onCheckedChange={(v) => setSection("photowall", v)} data-testid="toggle-photowall" />
               </div>
-              <p className="text-[11px] text-slate-500 -mt-1">QR kod ile misafirler etkinlik anında fotoğraf yükler, canlı akar.</p>
+              <p className="text-[11px] text-slate-500 -mt-1">QR ile misafirler fotoğraf ve video yükler (75 GB'a kadar), canlı akar. Sahibi tümünü ZIP indirebilir.</p>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm text-slate-700"><QrCode className="w-4 h-4 text-indigo-600" /> QR ile Kapıda Giriş</div>
                 <Switch checked={data.checkin_enabled} onCheckedChange={(v) => set("checkin_enabled", v)} data-testid="toggle-checkin" />
@@ -313,6 +313,25 @@ export default function InvitationCreate() {
               </div>
             </div>
 
+            <div className="rounded-xl border border-slate-200 p-4">
+              <div className="font-medium text-sm mb-1">Açılış Animasyonu</div>
+              <p className="text-[11px] text-slate-500 mb-3">Misafir davetiyeye dokununca oynayacak açılışı seçin. Etkinlik türüne göre öneriler:</p>
+              <div className="grid grid-cols-3 gap-2" data-testid="reveal-style-grid">
+                {eventStyleOptions(data.event_type).map((key) => {
+                  const s = REVEAL_STYLES[key]; if (!s) return null;
+                  const Icon = s.Icon;
+                  const active = (data.reveal_style || eventStyleOptions(data.event_type)[0]) === key;
+                  return (
+                    <button key={key} type="button" onClick={() => set("reveal_style", key)} data-testid={`reveal-style-${key}`}
+                      className={`flex flex-col items-center gap-1.5 py-3 px-1 rounded-lg border text-center transition ${active ? "border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-300" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                      <Icon className="w-5 h-5" />
+                      <span className="text-[11px] leading-tight font-medium">{s.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <button onClick={() => { setPreviewKey((k) => k + 1); setPreviewReveal(true); }} type="button" data-testid="preview-reveal-btn"
               className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-indigo-200 text-indigo-700 text-sm font-medium hover:bg-indigo-50">
               <Eye className="w-4 h-4" /> Açılış Animasyonunu Önizle
@@ -322,7 +341,7 @@ export default function InvitationCreate() {
             {invPrice > 0 && (
               <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 flex items-start gap-2" data-testid="premium-price-note">
                 <Lock className="w-4 h-4 mt-0.5 shrink-0" />
-                <span>Premium davetiye: <b>{invPrice}₺</b> {hasPhotowall ? "(canlı foto duvarı dahil)" : "(premium şablon)"} — yayınlarken PayTR ile tek seferlik ödenir.</span>
+                <span>Toplam: <b>{invPrice}₺</b>{isPremiumTheme && " · premium şablon 250₺"}{hasPhotowall && " · foto/video duvarı 500₺"} — yayınlarken PayTR ile tek seferlik ödenir.</span>
               </div>
             )}
 
@@ -457,7 +476,7 @@ export default function InvitationCreate() {
       {previewReveal && (
         <div className="fixed inset-0 z-[80]" data-testid="reveal-preview-modal">
           <InvitationReveal key={previewKey}
-            t={getTheme(data.theme, data.primary_color)} themeKey={data.theme} eventType={data.event_type}
+            t={getTheme(data.theme, data.primary_color)} themeKey={data.theme} eventType={data.event_type} styleKey={data.reveal_style}
             names={data.person2 ? `${data.person1 || "İsim"} & ${data.person2}` : (data.person1 || "İsimler")}
             initials={`${(data.person1 || "").trim()[0] || ""}${(data.person2 || "").trim()[0] || ""}`.toUpperCase() || "♥"}
             onDone={() => {}} />
