@@ -19,6 +19,8 @@ const SIZES = [
   { key: "dl", label: "DL (99×210mm)" },
 ];
 
+const SIZE_RATIO = { a5: "148 / 210", a6: "105 / 148", "10x15": "100 / 150", dl: "99 / 210" };
+
 const SYMBOLS = [
   { key: "heart", label: "Kalp", Icon: Heart },
   { key: "rings", label: "Yüzük", Icon: CircleDot },
@@ -184,8 +186,9 @@ export default function PrintInvitation() {
         </div>
 
         {/* Live preview */}
-        <div className="hidden lg:flex sticky top-0 h-screen items-center justify-center bg-slate-200 p-8">
-          <div className="w-full max-w-sm aspect-[148/210] rounded-lg shadow-2xl relative overflow-hidden" style={{ background: f.bg_color }} data-testid="print-preview">
+        <div className="hidden lg:flex flex-col sticky top-0 h-screen items-center justify-center bg-slate-200 p-8">
+          <div className="rounded-lg shadow-2xl relative overflow-hidden" data-testid="print-preview"
+            style={{ background: f.bg_color, height: "min(76vh, 620px)", aspectRatio: SIZE_RATIO[f.size] || "148 / 210", transition: "aspect-ratio 0.3s ease" }}>
             <div className="absolute inset-4 border" style={{ borderColor: f.accent_color }} />
             <div className="absolute inset-5 border" style={{ borderColor: `${f.accent_color}66` }} />
             <div className="relative h-full flex flex-col items-center justify-center text-center px-8 py-10">
@@ -204,6 +207,7 @@ export default function PrintInvitation() {
               <div className="mt-auto pt-4"><SymbolMark kind={f.symbol} color={f.accent_color} size={20} /></div>
             </div>
           </div>
+          <div className="mt-4 text-xs text-slate-500 tracking-wide" data-testid="print-preview-size">Önizleme oranı: {SIZES.find((s) => s.key === f.size)?.label}</div>
         </div>
       </div>
     </div>

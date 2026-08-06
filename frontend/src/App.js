@@ -15,6 +15,7 @@ import InvitationCreate from "@/pages/InvitationCreate";
 import InvitationView from "@/pages/InvitationView";
 import MyInvitations from "@/pages/MyInvitations";
 import PrintInvitation from "@/pages/PrintInvitation";
+import PhotoWallSlideshow from "@/pages/PhotoWallSlideshow";
 
 import Home from "@/pages/Home";
 import Services from "@/pages/Services";
@@ -99,6 +100,7 @@ function App() {
               <Route path="/davetiye-olustur" element={<InvitationCreate />} />
               <Route path="/baskiya-hazir-davetiye" element={<PrintInvitation />} />
               <Route path="/davetiye/:slug" element={<InvitationView />} />
+              <Route path="/davetiye/:slug/duvar" element={<PhotoWallSlideshow />} />
               <Route path="/davetiyelerim" element={<MyInvitations />} />
 
               <Route

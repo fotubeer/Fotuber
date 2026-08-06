@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast, Toaster } from "sonner";
-import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, MessageCircleHeart, Calendar } from "lucide-react";
+import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, MessageCircleHeart, Calendar, Images, Eye, EyeOff, Presentation } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,9 @@ export default function MyInvitations() {
   const [report, setReport] = useState(null);
   const [auth, setAuth] = useState({ email: "", password: "" });
   const [busy, setBusy] = useState(false);
+  const [photoMod, setPhotoMod] = useState(null);
+  const [modPhotos, setModPhotos] = useState([]);
+  const [modLoading, setModLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -70,6 +73,38 @@ export default function MyInvitations() {
       const r = await api(`/invitations/${id}`, { method: "DELETE" });
       if (!r.ok) throw new Error();
       setItems((x) => x.filter((i) => i.id !== id));
+      toast.success("Silindi");
+    } catch (e) { toast.error("Silinemedi"); }
+  };
+
+  const openPhotoWall = async (inv) => {
+    setPhotoMod(inv); setModLoading(true); setModPhotos([]);
+    try {
+      const r = await api(`/invitations/${inv.id}/photos/manage`);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Yüklenemedi");
+      setModPhotos(d.photos || []);
+    } catch (e) { toast.error(e.message); }
+    finally { setModLoading(false); }
+  };
+
+  const toggleHide = async (pid, hidden) => {
+    try {
+      const r = await api(`/invitations/${photoMod.id}/photos/${pid}/moderate`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hidden }),
+      });
+      if (!r.ok) throw new Error();
+      setModPhotos((x) => x.map((p) => (p.id === pid ? { ...p, hidden } : p)));
+      toast.success(hidden ? "Fotoğraf gizlendi" : "Fotoğraf tekrar gösteriliyor");
+    } catch (e) { toast.error("İşlem başarısız"); }
+  };
+
+  const delPhoto = async (pid) => {
+    if (!window.confirm("Bu fotoğraf kalıcı olarak silinsin mi?")) return;
+    try {
+      const r = await api(`/invitations/${photoMod.id}/photos/${pid}`, { method: "DELETE" });
+      if (!r.ok) throw new Error();
+      setModPhotos((x) => x.filter((p) => p.id !== pid));
       toast.success("Silindi");
     } catch (e) { toast.error("Silinemedi"); }
   };
@@ -132,6 +167,11 @@ export default function MyInvitations() {
                   <Button variant="outline" size="sm" onClick={() => downloadCsv(inv.id, inv.slug)} data-testid={`inv-csv-${inv.id}`}><Download className="w-4 h-4 mr-1" /> CSV</Button>
                   <Button variant="outline" size="sm" className="text-rose-600 hover:bg-rose-50" onClick={() => remove(inv.id)} data-testid={`inv-delete-${inv.id}`}><Trash2 className="w-4 h-4 mr-1" /> Sil</Button>
                 </div>
+                {inv.sections?.photowall && (
+                  <Button variant="outline" size="sm" className="w-full mt-2 text-indigo-600 border-indigo-200 hover:bg-indigo-50" onClick={() => openPhotoWall(inv)} data-testid={`inv-photowall-${inv.id}`}>
+                    <Images className="w-4 h-4 mr-1" /> Foto Duvarı Yönetimi
+                  </Button>
+                )}
               </div>
             ))}
           </div>
@@ -171,6 +211,46 @@ export default function MyInvitations() {
                 </div>
               )}
             </div>
+          </>)}
+        </DialogContent>
+      </Dialog>
+
+      {/* Photo wall moderation */}
+      <Dialog open={!!photoMod} onOpenChange={(o) => !o && setPhotoMod(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto" data-testid="photowall-dialog">
+          {photoMod && (<>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><Images className="w-5 h-5" /> Foto Duvarı — {photoMod.person2 ? `${photoMod.person1} & ${photoMod.person2}` : photoMod.person1}</DialogTitle>
+              <DialogDescription>Uygunsuz fotoğrafları gizleyin veya silin. Gizlenenler davetiyede ve slaytta görünmez.</DialogDescription>
+            </DialogHeader>
+            <a href={`/davetiye/${photoMod.slug}/duvar`} target="_blank" rel="noreferrer">
+              <Button className="w-full bg-slate-900 hover:bg-slate-800 mb-3" data-testid="photowall-slideshow-link">
+                <Presentation className="w-4 h-4 mr-2" /> Tam Ekran Slayt Aç (projeksiyon için)
+              </Button>
+            </a>
+            {modLoading ? (
+              <div className="py-10 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>
+            ) : modPhotos.length === 0 ? (
+              <div className="py-10 text-center text-slate-400 text-sm">Henüz misafir fotoğrafı yok.</div>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {modPhotos.map((p) => (
+                  <div key={p.id} className={`relative rounded-lg overflow-hidden border ${p.hidden ? "border-rose-300 opacity-60" : "border-slate-200"}`} data-testid={`mod-photo-${p.id}`}>
+                    <img src={`${API}/api/invitations/photo/${p.id}`} alt={p.uploader_name || "Anı"} className="w-full aspect-square object-cover" loading="lazy" />
+                    {p.hidden && <div className="absolute top-1 left-1 bg-rose-600 text-white text-[9px] px-1.5 py-0.5 rounded">Gizli</div>}
+                    {p.uploader_name && <div className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] px-1 py-0.5 truncate">{p.uploader_name}</div>}
+                    <div className="absolute top-1 right-1 flex gap-1">
+                      <button onClick={() => toggleHide(p.id, !p.hidden)} title={p.hidden ? "Göster" : "Gizle"} className="w-6 h-6 rounded bg-white/90 grid place-items-center hover:bg-white" data-testid={`mod-hide-${p.id}`}>
+                        {p.hidden ? <Eye className="w-3.5 h-3.5 text-emerald-600" /> : <EyeOff className="w-3.5 h-3.5 text-slate-700" />}
+                      </button>
+                      <button onClick={() => delPhoto(p.id)} title="Sil" className="w-6 h-6 rounded bg-white/90 grid place-items-center hover:bg-white" data-testid={`mod-del-${p.id}`}>
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </>)}
         </DialogContent>
       </Dialog>

@@ -4925,11 +4925,56 @@ async def list_guest_photos(slug: str, since: Optional[str] = None):
     d = await db.invitations.find_one({"slug": slug, "status": "published"}, {"id": 1, "_id": 0})
     if not d:
         raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
-    q = {"invitation_id": d["id"]}
+    q = {"invitation_id": d["id"], "hidden": {"$ne": True}}
     if since:
         q["created_at"] = {"$gt": since}
     photos = await db.invitation_photos.find(q, {"_id": 0, "storage_path": 0}).sort("created_at", -1).to_list(length=1000)
     return {"photos": [{"id": p["id"], "uploader_name": p.get("uploader_name", ""), "created_at": p.get("created_at")} for p in photos]}
+
+
+@api_router.get("/invitations/{iid}/photos/manage")
+async def manage_guest_photos(iid: str, user: dict = Depends(get_current_user)):
+    """Owner-only: list ALL photos (including hidden) for moderation."""
+    d = await db.invitations.find_one({"id": iid, "owner_user_id": user.get("id")}, {"id": 1, "_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    photos = await db.invitation_photos.find({"invitation_id": iid}, {"_id": 0, "storage_path": 0}).sort("created_at", -1).to_list(length=1000)
+    return {"photos": [{"id": p["id"], "uploader_name": p.get("uploader_name", ""),
+                        "created_at": p.get("created_at"), "hidden": bool(p.get("hidden"))} for p in photos]}
+
+
+class PhotoModerateIn(BaseModel):
+    hidden: bool = True
+
+
+@api_router.post("/invitations/{iid}/photos/{pid}/moderate")
+async def moderate_guest_photo(iid: str, pid: str, payload: PhotoModerateIn, user: dict = Depends(get_current_user)):
+    """Owner-only: hide or unhide a guest photo."""
+    d = await db.invitations.find_one({"id": iid, "owner_user_id": user.get("id")}, {"id": 1, "_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    r = await db.invitation_photos.update_one({"id": pid, "invitation_id": iid}, {"$set": {"hidden": bool(payload.hidden)}})
+    if not r.matched_count:
+        raise HTTPException(status_code=404, detail="Fotoğraf bulunamadı")
+    return {"ok": True, "hidden": bool(payload.hidden)}
+
+
+@api_router.delete("/invitations/{iid}/photos/{pid}")
+async def delete_guest_photo(iid: str, pid: str, user: dict = Depends(get_current_user)):
+    """Owner-only: permanently delete a guest photo."""
+    d = await db.invitations.find_one({"id": iid, "owner_user_id": user.get("id")}, {"id": 1, "_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    doc = await db.invitation_photos.find_one({"id": pid, "invitation_id": iid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Fotoğraf bulunamadı")
+    if doc.get("storage_path"):
+        try:
+            delete_object(doc["storage_path"])
+        except Exception:
+            pass
+    await db.invitation_photos.delete_one({"id": pid})
+    return {"ok": True}
 
 
 @api_router.get("/invitations/photo/{pid}")
