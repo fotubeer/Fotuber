@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast, Toaster } from "sonner";
-import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, MessageCircleHeart, Calendar, Images, Eye, EyeOff, Presentation, QrCode, MessageCircle, Copy, Send, Clock, Check, LogOut } from "lucide-react";
+import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, MessageCircleHeart, Calendar, Images, Eye, EyeOff, Presentation, QrCode, MessageCircle, Copy, Send, Clock, Check, LogOut, Mail, Lock, ArrowRight, Sparkles, Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,6 +39,7 @@ export default function MyInvitations() {
   const [guestInv, setGuestInv] = useState(null);
   const [waMessage, setWaMessage] = useState("");
   const [waNumbers, setWaNumbers] = useState("");
+  const [showPw, setShowPw] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -185,19 +186,99 @@ export default function MyInvitations() {
   if (loading) return <div className="min-h-screen grid place-items-center bg-slate-950 text-white"><Loader2 className="w-6 h-6 animate-spin" /></div>;
 
   if (!me) return (
-    <div className="min-h-screen grid place-items-center bg-slate-950 text-white px-4">
+    <div className="min-h-screen flex bg-[#0b0b12] text-white">
       <Toaster position="top-center" richColors />
-      <div className="max-w-sm w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center">
-        <h1 className="text-xl font-bold mb-1">Davetiyelerim</h1>
-        <p className="text-sm text-slate-400 mb-4">Davetiyelerinizi görmek için giriş yapın.</p>
-        <div className="space-y-2 text-left">
-          <Input type="email" placeholder="E-posta" value={auth.email} onChange={(e) => setAuth({ ...auth, email: e.target.value })} data-testid="myinv-email" />
-          <Input type="password" placeholder="Şifre" value={auth.password} onChange={(e) => setAuth({ ...auth, password: e.target.value })} data-testid="myinv-password" />
+
+      {/* Left — branded visual */}
+      <div className="hidden lg:flex lg:w-[52%] relative overflow-hidden">
+        <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('https://static.prod-images.emergentagent.com/jobs/fc76a8ea-b91a-4ba1-bc47-0822af835ee4/images/bd6419db0e99de2e831e2a38bd305898d23335a98e04fd9dd756e8b96ba6f1fa.jpeg')" }} />
+        <div className="absolute inset-0 bg-gradient-to-tr from-[#0b0b12] via-[#0b0b12]/80 to-transparent" />
+        <div className="absolute inset-0" style={{ background: "radial-gradient(90% 70% at 20% 100%, rgba(99,102,241,0.35), transparent 60%)" }} />
+        <div className="relative z-10 flex flex-col justify-between p-12 w-full">
+          <div className="flex items-center gap-2">
+            <span className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur grid place-items-center border border-white/15"><Heart className="w-5 h-5 text-rose-300" fill="currentColor" /></span>
+            <span className="text-xl font-serif tracking-wide">fotuber</span>
+          </div>
+          <div>
+            <h2 className="font-serif text-4xl xl:text-5xl leading-tight mb-4">Davetiyenizi<br /><em className="text-indigo-300">canlı</em> yönetin</h2>
+            <p className="text-white/70 max-w-md mb-8">Her cihazdan giriş yapın; yanıtları anlık görün, misafirlerinizi yönetin ve anıları tek panelden toplayın.</p>
+            <div className="space-y-3">
+              {[
+                { I: BarChart3, t: "LCV'yi canlı takip edin", d: "Gelen–gelmeyen–belki, anlık sayılar" },
+                { I: Users, t: "Misafir yönetimi", d: "Gelin/damat tarafı, roller, WhatsApp davet" },
+                { I: Images, t: "Anı & Foto Duvarı", d: "Misafir fotoğraflarını tek yerde toplayın" },
+              ].map((f, i) => {
+                const Ic = f.I;
+                return (
+                  <div key={i} className="flex items-center gap-3">
+                    <span className="w-9 h-9 rounded-lg bg-white/10 border border-white/10 grid place-items-center shrink-0"><Ic className="w-4 h-4 text-indigo-200" /></span>
+                    <div><div className="text-sm font-medium">{f.t}</div><div className="text-xs text-white/50">{f.d}</div></div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="text-xs text-white/40">© {new Date().getFullYear()} Fotuber Görsel Sanat</div>
         </div>
-        <Button onClick={login} disabled={busy} className="w-full mt-3 bg-indigo-600 hover:bg-indigo-700" data-testid="myinv-login">
-          {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null} Giriş Yap
-        </Button>
-        <Link to="/davetiye-olustur" className="block mt-4 text-sm text-indigo-400" data-testid="myinv-create-link">+ Yeni Davetiye Oluştur</Link>
+      </div>
+
+      {/* Right — auth card */}
+      <div className="flex-1 flex items-center justify-center px-5 py-10">
+        <div className="w-full max-w-sm">
+          <div className="lg:hidden flex items-center gap-2 justify-center mb-6">
+            <span className="w-9 h-9 rounded-xl bg-white/10 grid place-items-center border border-white/15"><Heart className="w-4 h-4 text-rose-300" fill="currentColor" /></span>
+            <span className="text-lg font-serif">fotuber</span>
+          </div>
+          <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.25em] text-indigo-300 mb-2"><Sparkles className="w-3.5 h-3.5" /> Davetiye Paneli</div>
+          <h1 className="text-2xl font-bold mb-1">Panelinize giriş yapın</h1>
+          <p className="text-sm text-white/50 mb-6">Davetiyenizi oluştururken kullandığınız <b className="text-white/70">e-posta ve şifre</b> ile.</p>
+
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-white/50 mb-1 block">E-posta</label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Input type="email" placeholder="ornek@eposta.com" value={auth.email}
+                  onChange={(e) => setAuth({ ...auth, email: e.target.value })}
+                  onKeyDown={(e) => e.key === "Enter" && login()}
+                  data-testid="myinv-email"
+                  className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-white/30 h-11" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-white/50 mb-1 block">Şifre</label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Input type={showPw ? "text" : "password"} placeholder="••••••••" value={auth.password}
+                  onChange={(e) => setAuth({ ...auth, password: e.target.value })}
+                  onKeyDown={(e) => e.key === "Enter" && login()}
+                  data-testid="myinv-password"
+                  className="pl-9 pr-10 bg-white/5 border-white/10 text-white placeholder:text-white/30 h-11" />
+                <button type="button" onClick={() => setShowPw((v) => !v)} data-testid="myinv-toggle-pw"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70">
+                  {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <Button onClick={login} disabled={busy} data-testid="myinv-login"
+            className="w-full mt-5 h-11 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 font-semibold gap-2">
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Giriş Yap <ArrowRight className="w-4 h-4" />
+          </Button>
+
+          <div className="flex items-center gap-3 my-6">
+            <div className="h-px bg-white/10 flex-1" /><span className="text-xs text-white/30">veya</span><div className="h-px bg-white/10 flex-1" />
+          </div>
+
+          <Link to="/davetiye-olustur" data-testid="myinv-create-link">
+            <Button variant="outline" className="w-full h-11 border-white/15 bg-transparent text-white hover:bg-white/5 gap-2">
+              <Plus className="w-4 h-4" /> Yeni Davetiye Oluştur
+            </Button>
+          </Link>
+          <p className="text-center text-xs text-white/40 mt-4">Henüz hesabınız yoksa, davetiye oluştururken hesabınız otomatik açılır.</p>
+          <Link to="/" className="block text-center text-xs text-white/40 hover:text-white/70 mt-4">← Ana sayfaya dön</Link>
+        </div>
       </div>
     </div>
   );
