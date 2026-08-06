@@ -1257,7 +1257,7 @@ async def reports_summary(admin: dict = Depends(require_admin)):
     today_count = await db.appointments.count_documents({"date": today, "status": "approved"})
 
     # sum revenues (approved paid amounts)
-    approved_docs = await db.appointments.find({"status": "approved"}, {"_id": 0}).to_list(1000)
+    approved_docs = await db.appointments.find({"status": "approved"}, {"_id": 0, "paid_amount": 1, "deposit_amount": 1, "date": 1}).to_list(1000)
     total_revenue = sum(a.get("paid_amount", 0) or 0 for a in approved_docs)
     total_deposits = sum(a.get("deposit_amount", 0) or 0 for a in approved_docs)
 

@@ -343,3 +343,17 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - **Ana sayfa Altın Saat tanıtımı**: Home'a büyük, öne çıkan "Altın Saat & Gün Batımı" bölümü (altın gradyan + örnek ışık kartları + `home-goldenhour-cta` → /altin-saat). Davetiye CTA ile Instagram slayt arasına yerleştirildi.
 - **Nav**: PublicLayout navItems'e "Altın Saat" (accent) eklendi (footer linki zaten vardı).
 - **Doğrulama**: screenshot (sayfa+hava+kartlar+CTA render, "Asistana Sor" → panel açıldı city="İstanbul") + curl (Open-Meteo hava, AI chat yanıtında /altin-saat). Ödeme akışına dokunulmadı (PayTR canlı).
+
+## Session W-2 (Jun 2026) — FAZ 1: Haftalık Işık Takvimi + Kapak Görselleri + Deploy Hazırlığı (self-tested)
+- **Haftanın Işık Takvimi** (`GoldenHour.jsx`): seçili tarihten itibaren 7 gün için şehir bazlı altın saat / gün batımı / mavi saat kartları (suncalc, Europe/Istanbul). Bir güne tıklayınca `dateStr` güncellenir → üstteki detay o güne döner. `gh-week`, `gh-week-{i}` testid.
+- **Kapak Görselleri** (Gemini nano-banana ile üretildi, `static.prod-images.emergentagent.com` CDN'de): hero arka planı (altın saat çift silüeti) + haftalık takvim banner'ı (buğday tarlası). `COVERS` sabiti içinde 3 URL. Hero'ya koyu overlay + gradient bindirildi (metin okunaklı).
+- **Deploy hazırlığı (deployment_agent)**: 2 pre-existing performans blocker'ı giderildi (Altın Saat ile ilgisiz):
+  - N+1 sorgu: `_enrich_appointment(a, service_map=None)` opsiyonel map alır; `_build_service_map(items)` tek `$in` sorgusuyla servisleri toplu çeker. `list_appointments` + `my_appointments` bunu kullanır. Curl ile doğrulandı.
+  - `reports/summary` approved sorgusuna projection (paid_amount/deposit_amount/date) eklendi. Curl ile doğrulandı (keys + total_revenue).
+- **CANLIYA ALMA**: Kod deploy-hazır. Kullanıcı Emergent "Deploy / Re-publish" ile yayına alır.
+
+## Session W-3 (PLANLANAN) — FAZ 2: Sektör Radarı (admin-only AI trend ajanı)
+- Admin panelinde günlük internet taraması yapan ajan. Kullanıcı notu: "GitHub'da 60k+ yıldızlı, anahtar istemeyen bir CLI aracı" ile yapılsın (araştırılacak — muhtemelen duckduckgo-search/ddgs veya SearXNG gibi anahtarsız arama + Emergent LLM ile Türkçe özet/çeviri).
+- Odak: TÜM sektör — düğün/nişan/kına, stüdyo/vesikalık, doğum günü, kurumsal, ÜRÜN çekimi, sosyal medya/reels trendleri. Sektörel olumlu/olumsuz haberler dahil.
+- Haber dili: TR kaynaklar Türkçe; yabancı kaynaklar Türkçeye çevrilmiş. "Yurtdışında popüler ama TR'de az yapılan fırsat" tarzı öneriler.
+- Günlük otomatik üretim + admin "Şimdi Yenile" butonu. Mongo `trend_reports` cache. Yeni admin sayfası + sidebar girişi.
