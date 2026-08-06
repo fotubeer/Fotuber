@@ -41,31 +41,33 @@ export const PublicLayout = ({ children }) => {
 
   return (
     <div className="theme-public bg-background text-foreground min-h-screen font-body flex flex-col">
-      <header className="sticky top-0 z-40 bg-neutral-950/70 backdrop-blur-xl border-b border-neutral-900">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-4">
-          <Link to="/" data-testid="logo-home" className="flex items-center gap-2">
+      <header className="sticky top-0 z-50 w-full bg-[#050505]/85 backdrop-blur-2xl border-b border-white/5 transition-colors duration-300">
+        <div className="max-w-[1920px] mx-auto flex items-center justify-between px-4 lg:px-6 xl:px-10 py-3 xl:py-4">
+          <Link to="/" data-testid="logo-home" className="flex items-center gap-3 min-w-max">
             {logoUrl ? (
-              <img src={logoUrl} alt={brand} className="w-10 h-10 rounded-full object-cover border border-[#d4af37]" />
+              <img src={logoUrl} alt={brand} className="w-10 h-10 xl:w-12 xl:h-12 rounded-full object-cover border border-[#d4af37]" />
             ) : (
-              <span className="w-9 h-9 rounded-full border border-[#d4af37] flex items-center justify-center">
-                <Camera className="w-4 h-4 text-[#d4af37]" strokeWidth={1.5} />
+              <span className="w-10 h-10 xl:w-12 xl:h-12 rounded-full border border-[#d4af37] flex items-center justify-center">
+                <Camera className="w-4 h-4 xl:w-5 xl:h-5 text-[#d4af37]" strokeWidth={1.5} />
               </span>
             )}
             <div className="leading-none">
-              <div className="font-serif text-2xl tracking-tight text-white">{brand}</div>
-              <div className="text-[10px] tracking-[0.3em] text-neutral-500 uppercase">{tagline}</div>
+              <div className="font-serif text-2xl xl:text-3xl tracking-tight text-white">{brand}</div>
+              <div className="text-[9px] xl:text-[10px] tracking-[0.3em] xl:tracking-[0.4em] text-[#d4af37] uppercase mt-1">{tagline}</div>
             </div>
           </Link>
 
-          <nav className="hidden lg:flex items-center gap-8">
+          <nav className="hidden lg:flex items-center justify-center flex-1 mx-2 lg:gap-2.5 xl:gap-5 2xl:gap-7">
             {navItems.map((n) => (
               <NavLink
                 key={n.to}
                 to={n.to}
                 data-testid={`nav-${n.to.replace('/', '') || 'home'}`}
                 className={({ isActive }) =>
-                  `text-sm tracking-wide link-underline ${
-                    isActive ? "text-[#d4af37]" : (n.accent ? "text-[#d4af37]/80 hover:text-[#d4af37]" : "text-neutral-300 hover:text-white")
+                  `relative whitespace-nowrap text-[11.5px] xl:text-[13px] 2xl:text-[14px] font-medium tracking-tight lg:tracking-normal transition-colors after:content-[''] after:absolute after:w-full after:scale-x-0 after:h-[1px] after:-bottom-1.5 after:left-0 after:bg-[#d4af37] after:origin-center hover:after:scale-x-100 after:transition-transform after:duration-300 after:ease-out ${
+                    isActive
+                      ? "text-[#d4af37] after:scale-x-100"
+                      : (n.accent ? "text-[#d4af37] hover:text-[#e8ca58] drop-shadow-[0_0_8px_rgba(212,175,55,0.3)]" : "text-neutral-300 hover:text-white")
                   }`
                 }
               >
@@ -74,9 +76,9 @@ export const PublicLayout = ({ children }) => {
             ))}
           </nav>
 
-          <div className="hidden lg:flex items-center gap-3">
+          <div className="hidden lg:flex items-center gap-2 xl:gap-3 w-auto min-w-max">
             <Link to="/randevu">
-              <Button data-testid="cta-book-appointment" className="rounded-full bg-emerald-500 hover:bg-emerald-600 text-black font-semibold px-6 shadow-[0_0_25px_rgba(16,185,129,0.45)] hover:shadow-[0_0_45px_rgba(16,185,129,0.7)] transition-all">
+              <Button data-testid="cta-book-appointment" className="rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-5 xl:px-6 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] transition-shadow duration-300">
                 Randevu Al
               </Button>
             </Link>
@@ -142,7 +144,7 @@ export const PublicLayout = ({ children }) => {
         </div>
 
         {open && (
-          <div className="lg:hidden border-t border-neutral-900 bg-neutral-950/95">
+          <div className="lg:hidden border-t border-white/5 bg-[#050505]/95 backdrop-blur-3xl">
             <div className="px-6 py-4 flex flex-col gap-3">
               {navItems.map((n) => (
                 <NavLink key={n.to} to={n.to} onClick={() => setOpen(false)} className="text-sm text-neutral-300 py-1">

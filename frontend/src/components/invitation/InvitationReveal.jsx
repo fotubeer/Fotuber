@@ -4,6 +4,13 @@ import { Hand, DoorOpen, Sparkles, PartyPopper, Heart, Flame, Flower2 } from "lu
 import { PRINT_BG, EVENT_TYPE_LABELS } from "@/lib/invitationThemes";
 
 const EASE = [0.76, 0, 0.24, 1];
+const CINE = [0.22, 1, 0.36, 1];
+// Cinematic-flow entrance: staggered blur-to-focus + slide-up (reel style), shared by ALL reveal styles.
+const COVER_IN = { hidden: {}, show: { transition: { staggerChildren: 0.16, delayChildren: 0.12 } } };
+const CINE_ITEM = {
+  hidden: { opacity: 0, y: 32, filter: "blur(14px)" },
+  show: { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.9, ease: CINE } },
+};
 
 // Reveal STYLE registry — each is a selectable opening animation.
 export const REVEAL_STYLES = {
@@ -185,13 +192,16 @@ export default function InvitationReveal({ t, themeKey, eventType, styleKey, nam
           <AnimatePresence>
             {!open && (
               <motion.div className="absolute inset-0 z-40 flex flex-col items-center justify-center text-center px-8"
-                exit={{ opacity: 0, scale: 1.15 }} transition={{ duration: 0.5 }}>
-                <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.7 }}>
-                  <div className="uppercase tracking-[0.4em] text-[11px] mb-4" style={{ color: accent, fontFamily: "'Montserrat', sans-serif" }}>{cfg.label}</div>
-                  <div className="leading-none mb-2" style={{ fontFamily: t.script, color: accent, fontSize: "clamp(2.6rem, 11vw, 4.5rem)" }}>{names}</div>
-                  <div className="text-sm mb-8" style={{ color: t.sub, fontFamily: t.heading }}>{cfg.hint}</div>
+                exit={{ opacity: 0, scale: 1.18, filter: "blur(22px)" }} transition={{ duration: 0.65, ease: CINE }}>
+                <motion.div variants={COVER_IN} initial="hidden" animate="show">
+                  <motion.div variants={CINE_ITEM} className="uppercase tracking-[0.4em] text-[11px] mb-4" style={{ color: accent, fontFamily: "'Montserrat', sans-serif" }}>{cfg.label}</motion.div>
+                  <motion.div variants={CINE_ITEM} className="leading-none mb-2" style={{ fontFamily: t.script, color: accent, fontSize: "clamp(2.6rem, 11vw, 4.5rem)" }}>
+                    <motion.span className="inline-block" animate={{ scale: [1, 1.035, 1] }} transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}>{names}</motion.span>
+                  </motion.div>
+                  <motion.div variants={CINE_ITEM} className="text-sm mb-8" style={{ color: t.sub, fontFamily: t.heading }}>{cfg.hint}</motion.div>
 
                   {/* Pulsing medallion OR henna hand + candles */}
+                  <motion.div variants={CINE_ITEM}>
                   {cfg.kind === "henna" ? (
                     <div className="mb-8" data-testid="reveal-henna">
                       <HennaHand accent={accent} dark={t.dark} initials={initials} />
@@ -208,7 +218,9 @@ export default function InvitationReveal({ t, themeKey, eventType, styleKey, nam
                       {initials}
                     </motion.div>
                   )}
+                  </motion.div>
 
+                  <motion.div variants={CINE_ITEM}>
                   <motion.button onClick={(e) => { e.stopPropagation(); trigger(); }} data-testid="reveal-open-btn"
                     className="inline-flex items-center gap-2 rounded-full px-8 h-14 text-base font-semibold"
                     style={{ background: accent, color: t.dark ? "#0b0b0b" : "#fff", boxShadow: `0 10px 40px -10px ${accent}` }}
@@ -216,7 +228,8 @@ export default function InvitationReveal({ t, themeKey, eventType, styleKey, nam
                     animate={{ y: [0, -6, 0] }} transition={{ y: { duration: 1.6, repeat: Infinity, ease: "easeInOut" } }}>
                     <cfg.Icon className="w-5 h-5" /> {cfg.cta}
                   </motion.button>
-                  <div className="text-[11px] mt-4 opacity-70" style={{ color: t.sub }}>açmak için dokunun</div>
+                  </motion.div>
+                  <motion.div variants={CINE_ITEM} className="text-[11px] mt-4 opacity-70" style={{ color: t.sub }}>açmak için dokunun</motion.div>
                 </motion.div>
               </motion.div>
             )}
