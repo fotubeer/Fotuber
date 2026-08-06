@@ -59,6 +59,15 @@ const GENERIC_SPOTS = [
   "Doğa alanı, orman veya çayır (altın saat için ideal)",
 ];
 
+// AI-generated golden/blue hour cover imagery
+const COVERS = {
+  hero: "https://static.prod-images.emergentagent.com/jobs/fc76a8ea-b91a-4ba1-bc47-0822af835ee4/images/bd6419db0e99de2e831e2a38bd305898d23335a98e04fd9dd756e8b96ba6f1fa.jpeg",
+  blue: "https://static.prod-images.emergentagent.com/jobs/fc76a8ea-b91a-4ba1-bc47-0822af835ee4/images/fb9ab914e1d72b53d1e6c4531d667c8e978254968188a30409caae8905968462.jpeg",
+  field: "https://static.prod-images.emergentagent.com/jobs/fc76a8ea-b91a-4ba1-bc47-0822af835ee4/images/69bc1389e304757509e743124ee74362676918a96fe8119851a2793551dc67eb.jpeg",
+};
+const WEEKDAYS = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"];
+const MONTHS = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+
 // WMO weather code → Turkish label + icon
 const wmo = (c) => {
   if (c == null) return { t: "—", I: Cloud, color: "#9ca3af" };
@@ -198,6 +207,27 @@ export default function GoldenHour() {
   const goldenWindow = `${fmt(t.goldenHour, tz)}–${fmt(t.sunset, tz)}`;
   const prettyDate = new Date(date).toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
 
+  // Weekly light calendar — next 7 days from the selected date
+  const week = useMemo(() => {
+    const base = new Date(dateStr + "T12:00:00");
+    const out = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(base);
+      d.setDate(base.getDate() + i);
+      const tt = SunCalc.getTimes(d, place.lat, place.lng);
+      out.push({
+        date: d,
+        wd: WEEKDAYS[d.getDay()],
+        dm: `${d.getDate()} ${MONTHS[d.getMonth()]}`,
+        golden: `${fmt(tt.goldenHour, tz)}–${fmt(tt.sunset, tz)}`,
+        sunset: fmt(tt.sunset, tz),
+        blue: `${fmt(tt.sunset, tz)}–${fmt(tt.dusk, tz)}`,
+        isSel: i === 0,
+      });
+    }
+    return out;
+  }, [dateStr, place, tz]);
+
   // Cross-navigation → open Fotuber AI Assistant with city + date prefilled (user writes the question)
   const askAssistant = () => {
     window.dispatchEvent(new CustomEvent("fotuber-ai-open", {
@@ -219,11 +249,13 @@ export default function GoldenHour() {
     <div className="min-h-screen bg-neutral-950 text-white" data-testid="golden-hour-page">
       {/* Hero */}
       <div className="relative overflow-hidden border-b border-neutral-900">
+        <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${COVERS.hero})` }} />
+        <div className="absolute inset-0 bg-neutral-950/72" />
         <div className="absolute inset-0" style={{ background: "radial-gradient(120% 90% at 80% -10%, #e6a24a33, transparent 55%), radial-gradient(90% 80% at 10% 120%, #455a9e33, transparent 55%)" }} />
-        <div className="relative max-w-5xl mx-auto px-6 py-16 text-center">
-          <div className="inline-flex items-center gap-2 text-[#e6a24a] text-xs tracking-[0.35em] uppercase mb-3"><Camera className="w-4 h-4" /> Fotuber Işık Aracı · Ücretsiz</div>
-          <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl">Altın Saat & Gün Batımı</h1>
-          <p className="text-neutral-400 mt-4 max-w-2xl mx-auto">Çekiminizi mükemmel ışıkta planlayın. Şehir ve tarih seçin; altın saat, mavi saat, gün batımı ve o günün hava durumunu anında görün.</p>
+        <div className="relative max-w-5xl mx-auto px-6 py-20 sm:py-24 text-center">
+          <div className="inline-flex items-center gap-2 text-[#e6c06a] text-xs tracking-[0.35em] uppercase mb-3 drop-shadow"><Camera className="w-4 h-4" /> Fotuber Işık Aracı · Ücretsiz</div>
+          <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl drop-shadow-[0_2px_20px_rgba(0,0,0,0.6)]">Altın Saat & Gün Batımı</h1>
+          <p className="text-neutral-200 mt-4 max-w-2xl mx-auto drop-shadow">Çekiminizi mükemmel ışıkta planlayın. Şehir ve tarih seçin; altın saat, mavi saat, gün batımı ve o günün hava durumunu anında görün.</p>
         </div>
       </div>
 
@@ -299,6 +331,35 @@ export default function GoldenHour() {
               </div>
             );
           })}
+        </div>
+
+        {/* Weekly light calendar */}
+        <div className="mt-8 rounded-2xl border border-neutral-800 overflow-hidden" data-testid="gh-week">
+          <div className="relative h-28 sm:h-32">
+            <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${COVERS.field})` }} />
+            <div className="absolute inset-0 bg-gradient-to-r from-neutral-950/90 via-neutral-950/60 to-neutral-950/30" />
+            <div className="relative h-full flex flex-col justify-center px-5">
+              <div className="inline-flex items-center gap-2 text-[#e6c06a] text-[10px] tracking-[0.3em] uppercase mb-1"><CalendarDays className="w-3.5 h-3.5" /> 7 Günlük Işık Takvimi</div>
+              <div className="font-serif text-xl sm:text-2xl">{place.n} · Önümüzdeki 7 Gün</div>
+            </div>
+          </div>
+          <div className="p-3 bg-neutral-900/40">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+              {week.map((w, i) => (
+                <button key={i} onClick={() => setDateStr(w.date.toISOString().slice(0, 10))} data-testid={`gh-week-${i}`}
+                  className={`text-left rounded-xl border p-3 transition ${w.isSel ? "border-[#e6a24a] bg-[#e6a24a]/10" : "border-neutral-800 bg-neutral-950/40 hover:border-neutral-700"}`}>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-xs font-semibold text-neutral-300">{w.wd}</span>
+                    <span className="text-[10px] text-neutral-500">{w.dm}</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-1 text-[#e6a24a]"><Sun className="w-3 h-3" /> <span className="text-sm font-medium">{w.golden}</span></div>
+                  <div className="mt-0.5 flex items-center gap-1 text-neutral-400"><Sunset className="w-3 h-3" /> <span className="text-xs">{w.sunset}</span></div>
+                  <div className="mt-0.5 flex items-center gap-1 text-[#7c8fd0]"><Moon className="w-3 h-3" /> <span className="text-[11px]">{w.blue}</span></div>
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-neutral-500 px-1">Bir güne dokunarak o günün detaylarını yukarıda görebilirsiniz. <span className="text-[#e6a24a]">Altın saat</span> · Gün batımı · <span className="text-[#7c8fd0]">Mavi saat</span></p>
+          </div>
         </div>
 
         {/* Recommended shooting spots */}
