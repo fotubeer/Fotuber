@@ -6,6 +6,8 @@ import {
   CalendarClock, Wallet, Users, CheckCheck, Clock, XCircle, CalendarDays,
 } from "lucide-react";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import TrendRadarPanel from "@/components/admin/TrendRadarPanel";
+import { useAuth } from "@/context/AuthContext";
 
 const StatCard = ({ label, value, icon: Icon, tone = "slate", testId }) => (
   <Card className="border-slate-200 hover:shadow-md transition-shadow" data-testid={testId}>
@@ -24,6 +26,8 @@ const StatCard = ({ label, value, icon: Icon, tone = "slate", testId }) => (
 const Dashboard = () => {
   const [s, setS] = useState(null);
   const [recent, setRecent] = useState([]);
+  const { user } = useAuth();
+  const canRadar = user?.role === "admin" || !!user?.can_trend_radar;
 
   useEffect(() => {
     api.get("/reports/summary").then((r) => setS(r.data));
@@ -44,6 +48,9 @@ const Dashboard = () => {
         <StatCard label="Bugün Onaylı" value={s?.today_approved ?? "—"} icon={CalendarClock} tone="blue" testId="stat-today" />
         <StatCard label="Aktif Personel" value={s?.staff_count ?? "—"} icon={Users} tone="slate" testId="stat-staff" />
       </div>
+
+      {/* Sektör Radarı — premium executive panel (admin + yetkili personel) */}
+      {canRadar && <TrendRadarPanel />}
 
       <div className="grid lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2 border-slate-200">

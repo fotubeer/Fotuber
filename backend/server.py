@@ -16,6 +16,7 @@ import bcrypt
 import jwt
 import requests
 import email_service
+import trend_radar
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Literal
 
@@ -212,6 +213,7 @@ def strip_user(user: dict) -> dict:
         "name": user.get("name"),
         "phone": user.get("phone"),
         "role": user.get("role"),
+        "can_trend_radar": True if user.get("role") == "admin" else bool(user.get("can_trend_radar")),
         "kvkk_consent": user.get("kvkk_consent", False),
         "marketing_consent": user.get("marketing_consent", False),
         "created_at": user.get("created_at"),
@@ -250,6 +252,15 @@ async def require_staff_or_admin(user: dict = Depends(get_current_user)) -> dict
     if user.get("role") not in ("admin", "staff"):
         raise HTTPException(status_code=403, detail="Yetkisiz erişim")
     return user
+
+
+async def require_trend_access(user: dict = Depends(get_current_user)) -> dict:
+    """Admins always; staff only if granted the 'Sektör Radarı Görüntüleme' permission."""
+    if user.get("role") == "admin":
+        return user
+    if user.get("role") == "staff" and user.get("can_trend_radar"):
+        return user
+    raise HTTPException(status_code=403, detail="Sektör Radarı görüntüleme yetkiniz yok")
 
 
 MEMBER_MONTHLY_PRICE = float(os.environ.get("MEMBER_MONTHLY_PRICE", "99"))
@@ -516,6 +527,8 @@ async def on_startup():
     asyncio.create_task(_cleanup_expired_uploads())
     # Start membership expiry reminder loop (7 & 3 days before expiry / trial end)
     asyncio.create_task(_membership_reminder_loop())
+    # Start Sektör Radarı daily generation loop (key-free internet scan)
+    asyncio.create_task(_trend_radar_loop())
 
     # Seed default site settings if missing
     if await db.site_settings.count_documents({}) == 0:
@@ -2261,6 +2274,7 @@ class StaffUserIn(BaseModel):
     password: Optional[str] = None
     role: Literal["staff", "admin"] = "staff"
     phone: Optional[str] = ""
+    can_trend_radar: bool = False
 
 
 @api_router.get("/users/staff")
@@ -2285,6 +2299,7 @@ async def create_staff_user(payload: StaffUserIn, admin: dict = Depends(require_
         "name": payload.name,
         "phone": payload.phone or "",
         "role": payload.role,
+        "can_trend_radar": bool(payload.can_trend_radar),
         "password_hash": hash_password(payload.password),
         "created_at": now_iso(),
         "created_by": admin.get("id"),
@@ -2306,6 +2321,7 @@ async def update_staff_user(uid: str, payload: StaffUserIn, admin: dict = Depend
         "name": payload.name,
         "phone": payload.phone or "",
         "role": payload.role,
+        "can_trend_radar": bool(payload.can_trend_radar),
     }
     if payload.password and len(payload.password) >= 6:
         updates["password_hash"] = hash_password(payload.password)
@@ -4741,6 +4757,102 @@ async def admin_email_status(admin: dict = Depends(require_admin)):
     recent = await db.email_log.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=50)
     return {"configured": email_service.email_configured(), "provider": email_service.provider(),
             "sender": email_service.sender_address(), "recent": recent}
+
+
+# ---------------------------------------------------------------------------
+# Sektör Radarı (Agent Reach) — key-free daily internet scan + Turkish report
+# ---------------------------------------------------------------------------
+def _istanbul_today() -> str:
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%Y-%m-%d")
+
+
+async def _generate_and_store_trend_report() -> dict:
+    key = os.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(status_code=500, detail="AI anahtarı yapılandırılmamış")
+    settings = await db.site_settings.find_one({"id": "singleton"}, {"_id": 0}) or {}
+    provider = os.environ.get("TREND_LLM_PROVIDER", "gemini")
+    model = os.environ.get("TREND_LLM_MODEL", "gemini-2.5-flash")
+    report = await trend_radar.generate_report(key, provider, model)
+    date = _istanbul_today()
+    doc = {
+        "id": date,
+        "date": date,
+        "report": report,
+        "sources_count": report.get("_sources_count", 0),
+        "generated_at": now_iso(),
+        "model": f"{provider}/{model}",
+    }
+    await db.trend_reports.update_one({"id": date}, {"$set": doc}, upsert=True)
+    return doc
+
+
+@api_router.get("/admin/trend-radar")
+async def get_trend_radar(admin: dict = Depends(require_trend_access)):
+    """Return today's cached report; if missing, the most recent one. Never blocks on generation."""
+    date = _istanbul_today()
+    doc = await db.trend_reports.find_one({"id": date}, {"_id": 0})
+    if not doc:
+        doc = await db.trend_reports.find_one({}, {"_id": 0}, sort=[("generated_at", -1)])
+    st = await db.meta.find_one({"id": "trend_status"}, {"_id": 0}) or {}
+    return {"report": doc, "today": date, "exists": bool(doc),
+            "generating": bool(st.get("generating")), "error": st.get("error")}
+
+
+async def _set_trend_status(**kw):
+    kw["id"] = "trend_status"
+    kw["updated_at"] = now_iso()
+    await db.meta.update_one({"id": "trend_status"}, {"$set": kw}, upsert=True)
+
+
+async def _generate_trend_bg():
+    """Background generation — decoupled from the HTTP request so the ingress
+    60s timeout never cancels it. Status is tracked in db.meta/trend_status."""
+    await _set_trend_status(generating=True, error=None, started_at=now_iso())
+    try:
+        await asyncio.wait_for(_generate_and_store_trend_report(), timeout=150)
+        await _set_trend_status(generating=False, error=None, finished_at=now_iso())
+    except asyncio.TimeoutError:
+        logger.warning("trend radar generation timed out")
+        await _set_trend_status(generating=False, error="Zaman aşımı — servisler yavaş yanıt verdi, tekrar deneyin.", finished_at=now_iso())
+    except Exception as e:
+        logger.exception("trend radar background generation failed")
+        await _set_trend_status(generating=False, error=str(e)[:200], finished_at=now_iso())
+
+
+@api_router.post("/admin/trend-radar/refresh")
+async def refresh_trend_radar(admin: dict = Depends(require_trend_access)):
+    if not os.environ.get("EMERGENT_LLM_KEY"):
+        raise HTTPException(status_code=500, detail="AI anahtarı yapılandırılmamış")
+    st = await db.meta.find_one({"id": "trend_status"}, {"_id": 0})
+    if st and st.get("generating"):
+        return {"status": "generating"}
+    asyncio.create_task(_generate_trend_bg())
+    return {"status": "started"}
+
+
+async def _trend_radar_loop():
+    """Generate today's sector report once per day (checks every 6h). Idempotent per Istanbul date."""
+    await asyncio.sleep(60)
+    # Reset any stale 'generating' flag left over from a restart mid-generation
+    try:
+        await db.meta.update_one({"id": "trend_status", "generating": True},
+                                 {"$set": {"generating": False, "error": "önceki işlem kesildi"}})
+    except Exception:
+        pass
+    while True:
+        try:
+            date = _istanbul_today()
+            exists = await db.trend_reports.find_one({"id": date}, {"_id": 1})
+            st = await db.meta.find_one({"id": "trend_status"}, {"_id": 0})
+            busy = bool(st and st.get("generating"))
+            if not exists and not busy and os.environ.get("EMERGENT_LLM_KEY"):
+                await _generate_trend_bg()
+                logger.info(f"trend radar auto-generated for {date}")
+        except Exception as e:
+            logger.warning(f"trend radar loop error: {e}")
+        await asyncio.sleep(6 * 3600)
 
 
 # ---------------------------------------------------------------------------

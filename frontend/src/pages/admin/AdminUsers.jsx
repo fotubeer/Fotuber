@@ -18,7 +18,7 @@ import { UserPlus, Pencil, Trash2, ShieldCheck, User } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 
-const emptyUser = { email: "", name: "", password: "", role: "staff", phone: "" };
+const emptyUser = { email: "", name: "", password: "", role: "staff", phone: "", can_trend_radar: false };
 
 const AdminUsers = () => {
   const { user: me } = useAuth();
@@ -115,7 +115,14 @@ const AdminUsers = () => {
                   </TableCell>
                   <TableCell className="text-slate-600">{u.email}</TableCell>
                   <TableCell className="text-slate-600">{u.phone || "—"}</TableCell>
-                  <TableCell>{roleBadge(u.role)}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {roleBadge(u.role)}
+                      {u.role === "staff" && u.can_trend_radar && (
+                        <Badge className="bg-slate-900 text-white gap-1 text-[10px]" data-testid={`user-radar-badge-${u.id}`}>Radar</Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right space-x-1">
                     <Button size="sm" variant="outline" onClick={() => setEditing({ ...u, password: "" })} data-testid={`user-edit-${u.id}`}>
                       <Pencil className="w-3 h-3" />
@@ -196,6 +203,28 @@ const AdminUsers = () => {
                   onChange={(e) => setEditing({ ...editing, password: e.target.value })}
                   placeholder="En az 6 karakter"
                 />
+              </div>
+
+              {/* Yetkiler */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="text-sm font-semibold text-slate-900 mb-2">Yetkiler</div>
+                {editing.role === "admin" ? (
+                  <p className="text-xs text-slate-500">Yöneticiler tüm yetkilere sahiptir (Sektör Radarı dahil).</p>
+                ) : (
+                  <label className="flex items-start gap-3 cursor-pointer" data-testid="perm-trend-radar-wrap">
+                    <input
+                      type="checkbox"
+                      data-testid="perm-trend-radar"
+                      checked={!!editing.can_trend_radar}
+                      onChange={(e) => setEditing({ ...editing, can_trend_radar: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 accent-slate-900"
+                    />
+                    <span>
+                      <span className="text-sm font-medium text-slate-800">Sektör Radarı Görüntüleme</span>
+                      <span className="block text-xs text-slate-500">Genel Bakış'taki Sektör Radarı panosunu görebilir ve "Şimdi Yenile" ile güncelleyebilir.</span>
+                    </span>
+                  </label>
+                )}
               </div>
             </div>
           )}

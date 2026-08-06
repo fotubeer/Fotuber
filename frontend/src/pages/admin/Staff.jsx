@@ -17,7 +17,7 @@ const Staff = () => {
   const [editing, setEditing] = useState(null);
 
   const load = () => api.get("/staff").then((r) => setItems(r.data));
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
 
   const save = async () => {
     try {

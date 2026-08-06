@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, TrendingUp, TrendingDown, Wallet, Save, Info, ArrowRight, Lock } from "lucide-react";
 import { toast } from "sonner";
+import TrendRadarPanel from "@/components/admin/TrendRadarPanel";
+import { useAuth } from "@/context/AuthContext";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const money = (n) => `₺${Number(n || 0).toLocaleString("tr-TR", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -20,6 +22,8 @@ const money = (n) => `₺${Number(n || 0).toLocaleString("tr-TR", { minimumFract
 const emptyTx = { kind: "income", amount: "", category: "", description: "", date: today(), payment_method: "cash" };
 
 const StaffDaily = () => {
+  const { user } = useAuth();
+  const canRadar = user?.role === "admin" || !!user?.can_trend_radar;
   const [day, setDay] = useState(null);
   const [entries, setEntries] = useState([]);
   const [editing, setEditing] = useState(null);
@@ -97,6 +101,9 @@ const StaffDaily = () => {
           <Plus className="w-4 h-4 mr-2" /> Yeni Nakit Hareketi
         </Button>
       </div>
+
+      {/* Sektör Radarı — yalnızca yetkili personel */}
+      {canRadar && <TrendRadarPanel />}
 
       {/* Kasa Devir */}
       <Card className="border-slate-200">
