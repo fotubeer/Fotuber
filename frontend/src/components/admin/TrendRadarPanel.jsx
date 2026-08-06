@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Radar, RefreshCw, Newspaper, Sparkles, Package, ExternalLink, Loader2,
-  TrendingUp, AlertTriangle, Lightbulb, Clock, ChevronDown, ChevronUp, Megaphone,
+  TrendingUp, AlertTriangle, Lightbulb, Clock, ChevronDown, ChevronUp, Megaphone, Plus, Check,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -73,6 +73,23 @@ const SocialItem = ({ it }) => (
 
 const PackageItem = ({ it }) => {
   const high = it.impact === "high";
+  const [published, setPublished] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const publish = async () => {
+    setBusy(true);
+    try {
+      const description = [
+        it.contents ? `İçerik: ${it.contents}` : "",
+        it.target_customer ? `Hedef müşteri: ${it.target_customer}` : "",
+        it.sales_message ? `Satış mesajı: ${it.sales_message}` : "",
+        it.why_now ? `Fırsat: ${it.why_now}` : "",
+      ].filter(Boolean).join("\n");
+      await api.post("/admin/trend-radar/publish-package", { name: it.name, description, price: 0 });
+      setPublished(true);
+      toast.success("Taslak hizmet oluşturuldu — Hizmetler panelinden fiyat/görsel ekleyip yayına alın.");
+    } catch (e) { toast.error(formatApiError(e)); }
+    finally { setBusy(false); }
+  };
   return (
     <div className={`rounded-xl border p-3 ${high ? "border-indigo-300 bg-indigo-50/60 ring-1 ring-indigo-200" : "border-slate-200 bg-slate-50/50"}`}>
       <div className="flex items-center justify-between gap-2">
@@ -87,6 +104,10 @@ const PackageItem = ({ it }) => {
         </div>
       )}
       {it.why_now && <p className="text-[11px] text-amber-700 mt-1.5 flex items-center gap-1"><Lightbulb className="w-3 h-3" />{it.why_now}</p>}
+      <button onClick={publish} disabled={busy || published} data-testid="trend-publish-package"
+        className={`mt-2.5 w-full text-xs font-semibold rounded-lg py-1.5 flex items-center justify-center gap-1.5 transition ${published ? "bg-emerald-100 text-emerald-700 cursor-default" : "bg-slate-900 text-white hover:bg-slate-800"}`}>
+        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : published ? <><Check className="w-3.5 h-3.5" /> Taslak Eklendi</> : <><Plus className="w-3.5 h-3.5" /> Hizmet Olarak Ekle</>}
+      </button>
     </div>
   );
 };

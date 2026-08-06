@@ -40,6 +40,18 @@ export default function MyInvitations() {
   const [waMessage, setWaMessage] = useState("");
   const [waNumbers, setWaNumbers] = useState("");
   const [showPw, setShowPw] = useState(false);
+  const [mode, setMode] = useState("login"); // login | forgot
+  const [forgotSent, setForgotSent] = useState(false);
+
+  const sendForgot = async () => {
+    if (!auth.email) { toast.error("Lütfen e-posta adresinizi girin"); return; }
+    setBusy(true);
+    try {
+      await api("/member/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: auth.email }) });
+      setForgotSent(true);
+    } catch (e) { toast.error("İşlem başarısız, tekrar deneyin"); }
+    finally { setBusy(false); }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -230,6 +242,40 @@ export default function MyInvitations() {
             <span className="text-lg font-serif">fotuber</span>
           </div>
           <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.25em] text-indigo-300 mb-2"><Sparkles className="w-3.5 h-3.5" /> Davetiye Paneli</div>
+
+          {mode === "forgot" ? (
+            forgotSent ? (
+              <div data-testid="forgot-sent">
+                <h1 className="text-2xl font-bold mb-2">E-postanızı kontrol edin</h1>
+                <p className="text-sm text-white/60 mb-6">Eğer <b className="text-white/80">{auth.email}</b> ile kayıtlı bir hesap varsa, şifre sıfırlama bağlantısını gönderdik. Bağlantı 1 saat geçerlidir.</p>
+                <Button onClick={() => { setMode("login"); setForgotSent(false); }} data-testid="back-to-login-btn"
+                  className="w-full h-11 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 font-semibold">
+                  Girişe Dön
+                </Button>
+              </div>
+            ) : (
+              <div data-testid="forgot-form">
+                <h1 className="text-2xl font-bold mb-1">Şifremi unuttum</h1>
+                <p className="text-sm text-white/50 mb-6">Kayıtlı e-posta adresinize sıfırlama bağlantısı gönderelim.</p>
+                <label className="text-xs text-white/50 mb-1 block">E-posta</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Input type="email" placeholder="ornek@eposta.com" value={auth.email}
+                    onChange={(e) => setAuth({ ...auth, email: e.target.value })}
+                    onKeyDown={(e) => e.key === "Enter" && sendForgot()}
+                    data-testid="forgot-email"
+                    className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-white/30 h-11" />
+                </div>
+                <Button onClick={sendForgot} disabled={busy} data-testid="forgot-submit"
+                  className="w-full mt-5 h-11 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 font-semibold gap-2">
+                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Sıfırlama Bağlantısı Gönder
+                </Button>
+                <button onClick={() => setMode("login")} data-testid="forgot-back"
+                  className="w-full mt-4 text-sm text-white/50 hover:text-white/80">← Girişe dön</button>
+              </div>
+            )
+          ) : (
+          <>
           <h1 className="text-2xl font-bold mb-1">Panelinize giriş yapın</h1>
           <p className="text-sm text-white/50 mb-6">Davetiyenizi oluştururken kullandığınız <b className="text-white/70">e-posta ve şifre</b> ile.</p>
 
@@ -246,7 +292,11 @@ export default function MyInvitations() {
               </div>
             </div>
             <div>
-              <label className="text-xs text-white/50 mb-1 block">Şifre</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-white/50">Şifre</label>
+                <button type="button" onClick={() => { setMode("forgot"); setForgotSent(false); }} data-testid="forgot-link"
+                  className="text-xs text-indigo-300 hover:text-indigo-200">Şifremi unuttum?</button>
+              </div>
               <div className="relative">
                 <Lock className="w-4 h-4 text-white/40 absolute left-3 top-1/2 -translate-y-1/2" />
                 <Input type={showPw ? "text" : "password"} placeholder="••••••••" value={auth.password}
@@ -277,6 +327,8 @@ export default function MyInvitations() {
             </Button>
           </Link>
           <p className="text-center text-xs text-white/40 mt-4">Henüz hesabınız yoksa, davetiye oluştururken hesabınız otomatik açılır.</p>
+          </>
+          )}
           <Link to="/" className="block text-center text-xs text-white/40 hover:text-white/70 mt-4">← Ana sayfaya dön</Link>
         </div>
       </div>

@@ -189,3 +189,19 @@ def welcome_email(name: str, trial: bool, monthly_price, yearly_price, portal_ur
             f"Hızlı Başlangıç:\n1) Portala girip fotoğraf yükleyin\n2) Arka plan otomatik temizlenir ve biyometrik kırpılır\n"
             f"3) AI ile kıyafet/renk değiştirin\n4) Baskıya hazır şablonu indirin\n\nBaşla: {portal_url}\n")
     return "Fotuber'e hoş geldiniz 🎉", _wrap(inner, "Fotuber'e hoş geldiniz"), text
+
+
+def password_reset(name: str, link: str):
+    n = escape(name or "Değerli üyemiz")
+    lu = escape(link)
+    inner = f"""
+      <h2 style="margin:0 0 12px;font-size:18px;">Şifre sıfırlama talebi</h2>
+      <p style="margin:0 0 14px;">Merhaba {n}, davetiye panelinize erişim için şifre sıfırlama talebinde bulundunuz.
+      Yeni bir şifre belirlemek için aşağıdaki butona tıklayın:</p>
+      <a href="{lu}" style="display:inline-block;background:{BRAND_COLOR};color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:600;">Şifremi Sıfırla</a>
+      <p style="margin:16px 0 0;color:#64748b;font-size:13px;">Bu bağlantı <b>1 saat</b> geçerlidir ve yalnızca bir kez kullanılabilir.
+      Eğer bu talebi siz yapmadıysanız bu e-postayı yok sayabilirsiniz; şifreniz değişmez.</p>
+      <p style="margin:10px 0 0;color:#94a3b8;font-size:12px;word-break:break-all;">Buton çalışmazsa: {lu}</p>"""
+    text = (f"Şifre sıfırlama talebi\n\nMerhaba {name}, yeni şifre belirlemek için: {link}\n\n"
+            f"Bağlantı 1 saat geçerlidir ve tek kullanımlıktır. Bu talebi siz yapmadıysanız yok sayın.")
+    return "Fotuber · Şifre Sıfırlama", _wrap(inner, "Şifre sıfırlama bağlantınız"), text

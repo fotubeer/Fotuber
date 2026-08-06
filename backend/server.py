@@ -3939,6 +3939,65 @@ async def member_login(payload: MemberLoginIn, response: Response):
 async def member_me(user: dict = Depends(get_current_user)):
     return {"user": _member_public(user), "membership": _membership_state(user)}
 
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    token: str
+    new_password: str = Field(min_length=6, max_length=128)
+
+
+def _hash_reset_token(t: str) -> str:
+    return hashlib.sha256(t.encode("utf-8")).hexdigest()
+
+
+async def _send_reset_email(user: dict, link: str):
+    if not user or not user.get("email"):
+        return
+    try:
+        subject, html, text = email_service.password_reset(user.get("name") or "", link)
+        await email_service.send_email(user["email"], subject, html, text)
+    except Exception as e:
+        logger.warning(f"reset email send failed: {e}")
+
+
+@api_router.post("/member/forgot-password")
+async def member_forgot_password(payload: ForgotPasswordIn):
+    """Always returns ok — never reveals whether the email exists."""
+    email = payload.email.lower()
+    user = await db.users.find_one({"email": email, "role": "member"})
+    if user:
+        raw = secrets.token_urlsafe(32)
+        await db.password_reset_tokens.insert_one({
+            "token_hash": _hash_reset_token(raw),
+            "user_id": user["id"],
+            "email": email,
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+            "used": False,
+            "created_at": now_iso(),
+        })
+        link = f"{PUBLIC_APP_URL.rstrip('/')}/sifre-sifirla?token={raw}"
+        asyncio.create_task(_send_reset_email(user, link))
+    return {"ok": True}
+
+
+@api_router.post("/member/reset-password")
+async def member_reset_password(payload: ResetPasswordIn):
+    rec = await db.password_reset_tokens.find_one({"token_hash": _hash_reset_token(payload.token), "used": False})
+    if not rec:
+        raise HTTPException(status_code=400, detail="Bağlantı geçersiz veya daha önce kullanılmış.")
+    try:
+        expired = datetime.fromisoformat(rec["expires_at"]) < datetime.now(timezone.utc)
+    except Exception:
+        expired = True
+    if expired:
+        raise HTTPException(status_code=400, detail="Bağlantının süresi dolmuş. Lütfen yeniden talep edin.")
+    await db.users.update_one({"id": rec["user_id"]}, {"$set": {"password": hash_password(payload.new_password)}})
+    await db.password_reset_tokens.update_one({"_id": rec["_id"]}, {"$set": {"used": True, "used_at": now_iso()}})
+    return {"ok": True}
+
 @api_router.post("/member/subscribe")
 async def member_subscribe(user: dict = Depends(get_current_user)):
     """DEMO subscription — no real charge. Extends paid access by 30 days."""
@@ -4830,6 +4889,32 @@ async def refresh_trend_radar(admin: dict = Depends(require_trend_access)):
         return {"status": "generating"}
     asyncio.create_task(_generate_trend_bg())
     return {"status": "started"}
+
+
+class PublishPackageIn(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    description: Optional[str] = ""
+    price: float = 0
+
+
+@api_router.post("/admin/trend-radar/publish-package")
+async def publish_trend_package(payload: PublishPackageIn, admin: dict = Depends(require_trend_access)):
+    """Create a DRAFT service (active=False) from a Sektör Radarı package idea.
+    Admin reviews/activates + sets price & image in the Hizmetler panel."""
+    doc = {
+        "id": new_id(),
+        "name": payload.name.strip()[:120],
+        "description": (payload.description or "").strip(),
+        "price": max(0, float(payload.price or 0)),
+        "duration_hours": 2,
+        "image_url": "",
+        "active": False,
+        "source": "trend_radar",
+        "created_at": now_iso(),
+    }
+    await db.services.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
 
 
 async def _trend_radar_loop():

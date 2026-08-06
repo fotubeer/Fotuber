@@ -14,6 +14,7 @@ import MemberVesikalik from "@/pages/MemberVesikalik";
 import InvitationCreate from "@/pages/InvitationCreate";
 import InvitationView from "@/pages/InvitationView";
 import MyInvitations from "@/pages/MyInvitations";
+import ResetPassword from "@/pages/ResetPassword";
 import PrintInvitation from "@/pages/PrintInvitation";
 import PhotoWallSlideshow from "@/pages/PhotoWallSlideshow";
 import GuestPass from "@/pages/GuestPass";
@@ -110,6 +111,7 @@ function App() {
               <Route path="/davetiye/import/:token" element={<GuestImport />} />
               <Route path="/gecis/:token" element={<GuestPass />} />
               <Route path="/davetiyelerim" element={<MyInvitations />} />
+              <Route path="/sifre-sifirla" element={<ResetPassword />} />
 
               <Route
                 path="/randevularim"
