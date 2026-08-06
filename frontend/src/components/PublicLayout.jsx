@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Menu, X, Camera, Phone, LogOut, User, Instagram, Youtube, Facebook, Music2, ShieldCheck, LayoutDashboard } from "lucide-react";
+import { Menu, X, Camera, Phone, LogOut, User, Instagram, Youtube, Facebook, Music2, ShieldCheck, LayoutDashboard, Heart, IdCard } from "lucide-react";
+import { motion } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { Button } from "@/components/ui/button";
@@ -13,8 +14,6 @@ const navItems = [
   { to: "/hizmetler", label: "Hizmetler" },
   { to: "/fotuber-medya", label: "Fotuber Medya" },
   { to: "/galeri", label: "Galeri" },
-  { to: "/vesikalik", label: "Vesikalık", accent: true },
-  { to: "/davetiye-olustur", label: "Davetiye", accent: true },
   { to: "/baskiya-hazir-davetiye", label: "Baskı Davetiye", accent: true },
   { to: "/indirim-kodu", label: "İndirim Kodu", accent: true },
   { to: "/hakkimizda", label: "Hakkımızda" },
@@ -77,6 +76,20 @@ export const PublicLayout = ({ children }) => {
           </nav>
 
           <div className="hidden lg:flex items-center gap-2 xl:gap-3 w-auto min-w-max">
+            <Link to="/davetiye-olustur">
+              <motion.div data-testid="cta-davetiye"
+                className="rounded-full bg-gradient-to-r from-rose-500 to-pink-500 text-white font-semibold px-4 xl:px-5 h-9 xl:h-10 flex items-center gap-1.5 text-xs xl:text-sm shadow-[0_0_18px_rgba(244,63,94,0.4)] cursor-pointer whitespace-nowrap"
+                animate={{ y: [0, -4, 0], scale: [1, 1.05, 1] }}
+                transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+                whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
+                <Heart className="w-4 h-4" fill="currentColor" /> Davetiye
+              </motion.div>
+            </Link>
+            <Link to="/vesikalik">
+              <Button data-testid="cta-vesikalik-panel" className="rounded-full bg-blue-600 hover:bg-blue-500 text-white font-semibold px-4 xl:px-5 gap-1.5 whitespace-nowrap shadow-[0_0_15px_rgba(37,99,235,0.3)] hover:shadow-[0_0_28px_rgba(37,99,235,0.5)] transition-shadow duration-300">
+                <IdCard className="w-4 h-4" /> Vesikalık Paneli
+              </Button>
+            </Link>
             <Link to="/randevu">
               <Button data-testid="cta-book-appointment" className="rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-5 xl:px-6 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] transition-shadow duration-300">
                 Randevu Al
@@ -154,6 +167,16 @@ export const PublicLayout = ({ children }) => {
               <Link to="/randevu" onClick={() => setOpen(false)}>
                 <Button className="w-full rounded-full bg-emerald-500 hover:bg-emerald-600 text-black font-semibold">Randevu Al</Button>
               </Link>
+              <Link to="/davetiye-olustur" onClick={() => setOpen(false)}>
+                <Button data-testid="m-cta-davetiye" className="w-full rounded-full bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white font-semibold gap-1.5">
+                  <Heart className="w-4 h-4" fill="currentColor" /> Davetiye Oluştur
+                </Button>
+              </Link>
+              <Link to="/vesikalik" onClick={() => setOpen(false)}>
+                <Button data-testid="m-cta-vesikalik-panel" className="w-full rounded-full bg-blue-600 hover:bg-blue-500 text-white font-semibold gap-1.5">
+                  <IdCard className="w-4 h-4" /> Vesikalık Paneli
+                </Button>
+              </Link>
               {user && user.role === "admin" && (
                 <Link to="/admin/dashboard" onClick={() => setOpen(false)}>
                   <Button className="w-full rounded-full bg-slate-900 hover:bg-slate-800 text-white gap-2">
@@ -193,6 +216,8 @@ export const PublicLayout = ({ children }) => {
               {navItems.map((n) => (
                 <li key={n.to}><Link to={n.to} className="text-neutral-300 hover:text-[#d4af37]">{n.label}</Link></li>
               ))}
+              <li><Link to="/vesikalik" className="text-blue-400 hover:text-blue-300">Vesikalık Paneli</Link></li>
+              <li><Link to="/davetiye-olustur" className="text-rose-400 hover:text-rose-300">Davetiye Oluştur</Link></li>
             </ul>
           </div>
           <div>
