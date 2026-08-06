@@ -1,0 +1,27 @@
+{
+  "summary": "Verified the Chrome-Android auto-translate fix for Fotuber invitation app. On both homepage (/) and invitation view (/davetiye/ayse-mehmet-test01), <html> has lang='tr' and translate='no', <meta name='google' content='notranslate'> and <meta http-equiv='Content-Language' content='tr'> are present. Invitation view (after clicking the 'Atla' reveal-open-btn) renders the correct Turkish source strings verbatim: RSVP buttons show 'Katılacağım', 'Katılmayacağım', 'Emin Değilim'; brand 'Fotuber' is present (no 'Fotube' garbling); countdown heading 'BÜYÜK GÜNE KALAN' and unit 'GÜN' are correctly rendered — none of the previously reported garbled strings ('GÜNEŞ', 'SİLAH', 'Fotube', 'Reklam') were found. Fix verified.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Invitation view (/davetiye/ayse-mehmet-test01)", "issues": ["Non-blocking console noise: SVG <circle> receives cx/cy 'undefined' warnings (likely a countdown/progress ring receiving undefined props before data loads). Not related to translation fix, but worth fixing.", "Four 401 responses observed during page load (likely admin/auth-protected endpoints being hit from public invitation view). Not blocking; worth reviewing to avoid unnecessary auth calls on public route."]}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_29.json"],
+  "action_items": [
+    "Optional: Fix SVG <circle> undefined cx/cy warnings on invitation view (guard render until countdown value is a number).",
+    "Optional: Investigate 401s fired from public invitation route; avoid calling authed endpoints when no session exists."
+  ],
+  "critical_code_review_comments": [
+    "index.html correctly declares lang='tr', translate='no', google notranslate meta, and Content-Language meta — proper defense against Chrome auto-translate.",
+    "Public invitation view should not trigger admin-scoped requests (observed 401s)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% for the bug-fix verification scope"},
+  "seed_data_creation": "None (used existing seeded slug ayse-mehmet-test01).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The translate-suppression fix is verified end-to-end in Chromium. Note: Chromium/Playwright does not auto-translate, so original garbling can't be reproduced; verification is done via (a) attribute/meta presence and (b) exact-string match of Turkish source. Minor non-blocking issues found: SVG circle undefined cx/cy warnings and 401 requests on public invitation route.",
+  "rca of the issue": "Chrome on Android auto-translated Turkish content into Turkish because <html lang='en'> mismatched the actual language, triggering nonsensical output ('Ad'->'Reklam', 'GÜN'->'SİLAH', 'Fotuber'->'Fotube'). Fix sets lang='tr', translate='no', and adds google notranslate + Content-Language=tr meta tags to prevent auto-translation. iPhone Safari was unaffected because it doesn't auto-translate the same way."
+}
