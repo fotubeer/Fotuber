@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Images, Loader2, Settings, X, Volume2, VolumeX } from "lucide-react";
+import { QRCodeCanvas } from "qrcode.react";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const REFRESH_MS = 15000;
@@ -116,6 +117,15 @@ export default function PhotoWallSlideshow() {
       )}
 
       {musicSrc && <audio ref={audioRef} src={musicSrc} loop preload="auto" />}
+
+      {/* Persistent "upload your photo" QR — guests scan to contribute instantly */}
+      <div className="absolute bottom-5 left-5 z-20 bg-white rounded-2xl p-3 shadow-2xl flex items-center gap-3" data-testid="slideshow-upload-qr">
+        <QRCodeCanvas value={`${window.location.origin}/davetiye/${slug}`} size={84} />
+        <div className="pr-1">
+          <div className="text-slate-900 font-semibold text-sm leading-tight">Fotoğraf<br />Yükle 📸</div>
+          <div className="text-slate-500 text-[11px] mt-1 max-w-[110px]">Karekodu okut,<br />anını duvara ekle</div>
+        </div>
+      </div>
 
       <button onClick={() => setShowSettings((s) => !s)} className="absolute top-4 right-4 z-20 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur grid place-items-center text-white" data-testid="slideshow-settings-btn">
         <Settings className="w-5 h-5" />

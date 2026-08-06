@@ -6,7 +6,7 @@ import { Loader2, Send, MessageCircleHeart, Check, X, Volume2, VolumeX } from "l
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
-import EnvelopeReveal from "@/components/invitation/EnvelopeReveal";
+import InvitationReveal from "@/components/invitation/InvitationReveal";
 import PhotoWall from "@/components/invitation/PhotoWall";
 import { getTheme } from "@/lib/invitationThemes";
 
@@ -121,7 +121,9 @@ export default function InvitationView() {
       {music && musicSrc && <audio ref={audioRef} src={musicSrc} loop preload="auto" />}
 
       {!opened && (
-        <EnvelopeReveal t={t} initials={initials} label="Davetiyeniz" onDone={() => setOpened(true)} />
+        <InvitationReveal t={t} themeKey={inv.theme} eventType={inv.event_type}
+          names={inv.person2 ? `${inv.person1} & ${inv.person2}` : inv.person1}
+          initials={initials} onDone={() => setOpened(true)} />
       )}
 
       {/* Music FAB */}

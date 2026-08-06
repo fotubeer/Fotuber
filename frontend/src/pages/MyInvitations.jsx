@@ -152,7 +152,7 @@ export default function MyInvitations() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-100 py-10 px-4">
+    <div className="min-h-screen bg-slate-100 py-10 px-4 text-slate-900">
       <Toaster position="top-center" richColors />
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-6">
