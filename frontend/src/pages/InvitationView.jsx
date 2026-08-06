@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast, Toaster } from "sonner";
 import { Loader2, Send, MessageCircleHeart, Check, X, Volume2, VolumeX } from "lucide-react";
+import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
 import EnvelopeReveal from "@/components/invitation/EnvelopeReveal";
@@ -25,6 +26,7 @@ export default function InvitationView() {
   const [rsvp, setRsvp] = useState({ name: "", surname: "", attending: true, guest_count: 1, note: "" });
   const [mem, setMem] = useState({ name: "", message: "" });
   const [rsvpDone, setRsvpDone] = useState(false);
+  const [checkinToken, setCheckinToken] = useState(null);
   const [busy, setBusy] = useState(false);
   const [opened, setOpened] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -74,6 +76,7 @@ export default function InvitationView() {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.detail || "Gönderilemedi");
       setRsvpDone(true);
+      if (d.checkin_token) setCheckinToken(d.checkin_token);
       toast.success("Yanıtınız alındı, teşekkürler!");
     } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
@@ -141,8 +144,19 @@ export default function InvitationView() {
               <h3 className="text-2xl mb-1 text-center" style={{ fontFamily: t.heading, color: t.accent }}>Katılım Durumu · LCV</h3>
               <p className="text-xs mb-5 text-center" style={{ color: t.sub, fontFamily: "'Montserrat', sans-serif" }}>Onaylamak için ad ve soyadınız gereklidir.</p>
               {rsvpDone ? (
-                <div className="flex items-center justify-center gap-2 text-sm py-3" style={{ color: t.accent }}>
-                  <Check className="w-4 h-4" /> Yanıtınız kaydedildi. Teşekkür ederiz!
+                <div className="text-center py-3">
+                  <div className="flex items-center justify-center gap-2 text-sm" style={{ color: t.accent }}>
+                    <Check className="w-4 h-4" /> Yanıtınız kaydedildi. Teşekkür ederiz!
+                  </div>
+                  {checkinToken && (
+                    <div className="mt-4" data-testid="guest-checkin-qr">
+                      <div className="inline-block bg-white p-2.5 rounded-xl shadow-lg">
+                        <QRCodeCanvas value={`${window.location.origin}/gecis/${checkinToken}`} size={140} data-testid="guest-qr" />
+                      </div>
+                      <div className="text-xs mt-3" style={{ color: t.sub }}>🎟️ Girişte bu QR kodu görevliye gösterin.</div>
+                      <a href={`/gecis/${checkinToken}`} target="_blank" rel="noreferrer" className="text-xs underline mt-1 inline-block" style={{ color: t.accent }} data-testid="guest-pass-link">Giriş kartımı aç →</a>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">

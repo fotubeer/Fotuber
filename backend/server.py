@@ -4868,6 +4868,7 @@ class PrintInvitationIn(BaseModel):
     accent_color: str = "#B76E79"
     text_color: str = "#4A2F33"
     symbol: str = "heart"
+    qr_url: Optional[str] = ""
 
 
 @api_router.post("/invitations/print-pdf")

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { QRCodeCanvas } from "qrcode.react";
 import { EVENT_TYPE_LABELS } from "@/lib/invitationThemes";
 import { getMessagesFor } from "@/lib/invitationMessages";
 
@@ -56,7 +57,7 @@ export default function PrintInvitation() {
   const [f, setF] = useState({
     person1: "", person2: "", event_type: "dugun", event_date: "", event_time: "",
     venue_name: "", venue_address: "", message: "", size: "a5", symbol: "heart",
-    bg_color: "#FFF1F2", accent_color: "#D8A7B1", text_color: "#4A3B3C",
+    bg_color: "#FFF1F2", accent_color: "#D8A7B1", text_color: "#4A3B3C", qr_url: "",
   });
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
@@ -178,6 +179,12 @@ export default function PrintInvitation() {
               </div>
             </div>
 
+            <div>
+              <Label>Dijital Davetiye Bağlantısı (QR) <span className="text-slate-400 font-normal">— isteğe bağlı</span></Label>
+              <Input value={f.qr_url} onChange={(e) => set("qr_url", e.target.value)} placeholder="https://fotuber.com.tr/davetiye/..." data-testid="print-qr-url" />
+              <p className="text-[11px] text-slate-400 mt-1">Dijital davetiye linkinizi yapıştırın; baskıya QR eklenir, misafir okutunca LCV + foto duvarı açılır.</p>
+            </div>
+
             <Button onClick={download} disabled={busy} className="w-full bg-rose-600 hover:bg-rose-700 h-12 text-base" data-testid="print-download-btn">
               {busy ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Download className="w-5 h-5 mr-2" />} Baskıya Hazır PDF İndir
             </Button>
@@ -204,7 +211,14 @@ export default function PrintInvitation() {
               {f.venue_name && <div className="font-semibold mt-3" style={{ color: f.text_color, fontFamily: "'Cormorant Garamond', serif" }}>{f.venue_name}</div>}
               {f.venue_address && <div className="text-xs" style={{ color: f.text_color }}>{f.venue_address}</div>}
               {f.message && <div className="text-xs mt-3 max-w-[80%]" style={{ color: f.text_color, fontFamily: "'Cormorant Garamond', serif" }}>{f.message}</div>}
-              <div className="mt-auto pt-4"><SymbolMark kind={f.symbol} color={f.accent_color} size={20} /></div>
+              {f.qr_url ? (
+                <div className="mt-auto pt-4 flex flex-col items-center">
+                  <div className="bg-white p-1.5 rounded"><QRCodeCanvas value={f.qr_url} size={54} /></div>
+                  <div className="text-[8px] mt-1 tracking-wide" style={{ color: f.text_color }}>Dijital davetiye · okutun</div>
+                </div>
+              ) : (
+                <div className="mt-auto pt-4"><SymbolMark kind={f.symbol} color={f.accent_color} size={20} /></div>
+              )}
             </div>
           </div>
           <div className="mt-4 text-xs text-slate-500 tracking-wide" data-testid="print-preview-size">Önizleme oranı: {SIZES.find((s) => s.key === f.size)?.label}</div>

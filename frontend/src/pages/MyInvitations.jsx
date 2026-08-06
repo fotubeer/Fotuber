@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast, Toaster } from "sonner";
-import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, MessageCircleHeart, Calendar, Images, Eye, EyeOff, Presentation } from "lucide-react";
+import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, MessageCircleHeart, Calendar, Images, Eye, EyeOff, Presentation, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -171,6 +171,13 @@ export default function MyInvitations() {
                   <Button variant="outline" size="sm" className="w-full mt-2 text-indigo-600 border-indigo-200 hover:bg-indigo-50" onClick={() => openPhotoWall(inv)} data-testid={`inv-photowall-${inv.id}`}>
                     <Images className="w-4 h-4 mr-1" /> Foto Duvarı Yönetimi
                   </Button>
+                )}
+                {inv.checkin_enabled && (
+                  <a href={`/davetiye/${inv.id}/kapi`} target="_blank" rel="noreferrer" className="block">
+                    <Button variant="outline" size="sm" className="w-full mt-2 text-emerald-600 border-emerald-200 hover:bg-emerald-50" data-testid={`inv-checkin-${inv.id}`}>
+                      <QrCode className="w-4 h-4 mr-1" /> Kapıda Karşılama (QR)
+                    </Button>
+                  </a>
                 )}
               </div>
             ))}

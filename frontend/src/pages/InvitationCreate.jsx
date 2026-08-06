@@ -152,10 +152,11 @@ export default function InvitationCreate() {
   const downloadPrintPdf = async () => {
     if (!data.person1.trim()) { toast.error("En az bir isim girin"); return; }
     const colors = printColors(data.theme);
+    const qr_url = published?.slug ? `${window.location.origin}/davetiye/${published.slug}` : "";
     const body = {
       person1: data.person1, person2: data.person2, event_type: data.event_type,
       event_date: data.event_date, event_time: data.event_time, venue_name: data.venue_name,
-      venue_address: data.venue_address, message: data.message, size: "a5", symbol: "heart", ...colors,
+      venue_address: data.venue_address, message: data.message, size: "a5", symbol: "heart", qr_url, ...colors,
     };
     try {
       const r = await fetch(`${API}/api/invitations/print-pdf`, {

@@ -9,6 +9,9 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor, Color
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.graphics.barcode import qr as _qr
+from reportlab.graphics.shapes import Drawing as _Drawing
+from reportlab.graphics import renderPDF as _renderPDF
 
 MM = 72.0 / 25.4
 BLEED_MM = 3.0
@@ -139,6 +142,16 @@ def _centred_spaced(c, x, y, text, font, size, color, char_space=0.0):
     c.restoreState()
 
 
+def _draw_qr(c, url, cx, y_bottom, size):
+    widget = _qr.QrCodeWidget(url)
+    b = widget.getBounds()
+    w = b[2] - b[0]
+    h = b[3] - b[1]
+    d = _Drawing(size, size, transform=[size / w, 0, 0, size / h, 0, 0])
+    d.add(widget)
+    _renderPDF.draw(d, c, cx - size / 2.0, y_bottom)
+
+
 def render_invitation_pdf(data: dict) -> bytes:
     size_key = (data.get("size") or "a5").lower()
     tw_mm, th_mm = SIZES.get(size_key, SIZES["a5"])
@@ -246,8 +259,18 @@ def render_invitation_pdf(data: dict) -> bytes:
         for ln in _wrap(c, msg, _SERIF, 12, (tx1 - tx0) - 30 * MM)[:6]:
             c.drawCentredString(cx, y, ln); y -= 6 * MM
 
-    # Bottom ornament
-    if symbol != "none":
+    # Bottom ornament OR QR code linking to the digital invitation
+    qr_url = (data.get("qr_url") or "").strip()
+    if qr_url:
+        qsize = 20 * MM
+        qy = ty0 + 14 * MM
+        c.setFillColor(HexColor("#FFFFFF"))
+        c.roundRect(cx - qsize / 2 - 2 * MM, qy - 2 * MM, qsize + 4 * MM, qsize + 4 * MM, 2 * MM, fill=1, stroke=0)
+        _draw_qr(c, qr_url, cx, qy, qsize)
+        c.setFont(_SERIF, 8)
+        c.setFillColor(text_c)
+        c.drawCentredString(cx, qy + qsize + 4 * MM, "Dijital davetiye · LCV & foto duvarı için okutun")
+    elif symbol != "none":
         _draw_symbol(c, symbol, cx, ty0 + 20 * MM, sym_size * 0.8, accent, bg)
 
     # Footer
