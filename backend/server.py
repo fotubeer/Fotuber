@@ -508,6 +508,8 @@ async def on_startup():
     await db.invitation_memories.create_index([("invitation_id", 1), ("created_at", -1)])
     await db.invitation_photos.create_index([("invitation_id", 1), ("created_at", -1)])
     await db.invitation_rsvps.create_index("checkin_token")
+    await db.invitation_guests.create_index([("invitation_id", 1), ("created_at", 1)])
+    await db.invitation_guests.create_index("guest_token")
     init_storage()
 
     # Start background cleanup task (deletes expired guest uploads once an hour)
@@ -4829,6 +4831,7 @@ class RsvpIn(BaseModel):
     attending: bool = True
     guest_count: int = 1
     note: Optional[str] = ""
+    guest_token: Optional[str] = ""
 
 
 class MemoryIn(BaseModel):
@@ -5228,14 +5231,29 @@ async def submit_rsvp(slug: str, payload: RsvpIn):
         raise HTTPException(status_code=400, detail="Ad ve soyad zorunludur")
     d = await _get_active_invitation(slug)
     token = uuid.uuid4().hex[:12]
+    # Link to a pre-added guest (personalized link) → auto side + status tracking.
+    guest = None
+    side = ""
+    if (payload.guest_token or "").strip():
+        guest = await db.invitation_guests.find_one({"invitation_id": d["id"], "guest_token": payload.guest_token.strip()})
+        if guest:
+            side = guest.get("side") or ""
     rec = {
         "id": new_id(), "invitation_id": d["id"], "name": payload.name.strip(),
         "surname": payload.surname.strip(), "attending": bool(payload.attending),
         "guest_count": max(1, int(payload.guest_count or 1)), "note": (payload.note or "").strip(),
+        "side": side, "guest_id": guest.get("id") if guest else None,
         "checkin_token": token, "checked_in": False, "checked_in_at": None,
         "created_at": now_iso(),
     }
     await db.invitation_rsvps.insert_one(rec)
+    if guest:
+        await db.invitation_guests.update_one(
+            {"id": guest["id"]},
+            {"$set": {"rsvp_status": "yes" if payload.attending else "no",
+                      "guest_count": max(1, int(payload.guest_count or 1)) if payload.attending else 0,
+                      "rsvp_at": now_iso()}},
+        )
     resp = {"ok": True}
     if d.get("checkin_enabled") and payload.attending:
         resp["checkin_token"] = token
@@ -5275,11 +5293,19 @@ async def invitation_report(iid: str, user: dict = Depends(get_current_user)):
     no = [r for r in rsvps if not r.get("attending")]
     heads = sum(int(r.get("guest_count") or 1) for r in yes)
     checked = sum(1 for r in rsvps if r.get("checked_in"))
+    def _side(sd):
+        sy = [r for r in yes if (r.get("side") or "") == sd]
+        sn = [r for r in no if (r.get("side") or "") == sd]
+        return {"attending": len(sy), "declined": len(sn),
+                "guests": sum(int(r.get("guest_count") or 1) for r in sy)}
+    guest_count = await db.invitation_guests.count_documents({"invitation_id": iid})
     return {
         "invitation": _invite_public(d, owner=True),
         "rsvps": rsvps, "memories": memories,
         "stats": {"rsvp_total": len(rsvps), "attending": len(yes), "declined": len(no),
-                  "total_guests": heads, "memories": len(memories), "checked_in": checked},
+                  "total_guests": heads, "memories": len(memories), "checked_in": checked,
+                  "guest_list_total": guest_count,
+                  "by_side": {"gelin": _side("gelin"), "damat": _side("damat")}},
     }
 
 
@@ -5299,6 +5325,189 @@ async def invitation_report_csv(iid: str, user: dict = Depends(get_current_user)
     buf.seek(0)
     return StreamingResponse(iter(["\ufeff" + buf.getvalue()]), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": f"attachment; filename=davetiye_{d.get('slug')}.csv"})
+
+
+# ---------------------------------------------------------------------------
+# Guest management: Bride/Groom side, contacts import (manual/paste/vCard/Contact-Picker/QR),
+# one-click WhatsApp send, and side-based auto RSVP tracking.
+# ---------------------------------------------------------------------------
+class GuestIn(BaseModel):
+    name: str = ""
+    phone: Optional[str] = ""
+    side: Optional[str] = ""  # "gelin" | "damat" | ""
+    role: Optional[str] = ""  # gelin_anne|gelin_baba|damat_anne|damat_baba|"" (special people)
+
+
+class GuestBulkIn(BaseModel):
+    side: Optional[str] = ""
+    guests: List[GuestIn] = []
+
+
+class GuestPatchIn(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    side: Optional[str] = None
+    role: Optional[str] = None
+    rsvp_status: Optional[str] = None  # pending|yes|no (manual override)
+    invited: Optional[bool] = None
+
+
+ROLE_SIDE = {"gelin_anne": "gelin", "gelin_baba": "gelin", "damat_anne": "damat", "damat_baba": "damat"}
+
+
+def _guest_public(g: dict) -> dict:
+    return {
+        "id": g.get("id"), "name": g.get("name"), "phone": g.get("phone"),
+        "phone_norm": g.get("phone_norm"), "side": g.get("side") or "",
+        "role": g.get("role") or "",
+        "guest_token": g.get("guest_token"),
+        "rsvp_status": g.get("rsvp_status") or "pending",
+        "guest_count": g.get("guest_count") or 0,
+        "invited": bool(g.get("invited")), "wa_sent_at": g.get("wa_sent_at"),
+        "created_at": g.get("created_at"),
+    }
+
+
+async def _owned_invitation(iid: str, user: dict) -> dict:
+    d = await db.invitations.find_one({"id": iid, "owner_user_id": user.get("id")}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    return d
+
+
+async def _add_guests(iid: str, side: str, rows: list) -> int:
+    side = side if side in ("gelin", "damat") else ""
+    existing = await db.invitation_guests.find({"invitation_id": iid}, {"phone_norm": 1}).to_list(20000)
+    seen = {e.get("phone_norm") for e in existing if e.get("phone_norm")}
+    added = 0
+    for r in rows:
+        name = (r.get("name") or "").strip()[:80]
+        phone = (r.get("phone") or "").strip()[:30]
+        pn = _norm_phone(phone)
+        if not name and not pn:
+            continue
+        if pn and pn in seen:
+            continue
+        if pn:
+            seen.add(pn)
+        row_side = r.get("side") if r.get("side") in ("gelin", "damat") else side
+        role = (r.get("role") or "").strip()
+        if role not in ROLE_SIDE:
+            role = ""
+        if role and row_side not in ("gelin", "damat"):
+            row_side = ROLE_SIDE[role]
+        await db.invitation_guests.insert_one({
+            "id": new_id(), "invitation_id": iid, "name": name or pn,
+            "phone": phone, "phone_norm": pn, "side": row_side, "role": role,
+            "guest_token": uuid.uuid4().hex[:10], "rsvp_status": "pending",
+            "guest_count": 0, "invited": False, "wa_sent_at": None,
+            "created_at": now_iso(),
+        })
+        added += 1
+    return added
+
+
+@api_router.get("/invitations/{iid}/guests")
+async def list_guests(iid: str, user: dict = Depends(get_current_user)):
+    await _owned_invitation(iid, user)
+    guests = await db.invitation_guests.find({"invitation_id": iid}).sort("created_at", 1).to_list(20000)
+    items = [_guest_public(g) for g in guests]
+
+    def _c(side, st=None):
+        return sum(1 for g in items if (side is None or g["side"] == side) and (st is None or g["rsvp_status"] == st))
+
+    summary = {}
+    for side in ("gelin", "damat", ""):
+        summary[side or "belirsiz"] = {"total": _c(side), "yes": _c(side, "yes"),
+                                       "no": _c(side, "no"), "pending": _c(side, "pending")}
+    summary["all"] = {"total": len(items), "yes": _c(None, "yes"),
+                      "no": _c(None, "no"), "pending": _c(None, "pending")}
+    return {"guests": items, "summary": summary}
+
+
+@api_router.post("/invitations/{iid}/guests")
+async def add_guest(iid: str, payload: GuestIn, user: dict = Depends(get_current_user)):
+    await _owned_invitation(iid, user)
+    n = await _add_guests(iid, payload.side or "", [payload.dict()])
+    return {"ok": True, "added": n}
+
+
+@api_router.post("/invitations/{iid}/guests/bulk")
+async def add_guests_bulk(iid: str, payload: GuestBulkIn, user: dict = Depends(get_current_user)):
+    await _owned_invitation(iid, user)
+    n = await _add_guests(iid, payload.side or "", [g.dict() for g in (payload.guests or [])])
+    return {"ok": True, "added": n}
+
+
+@api_router.patch("/invitations/{iid}/guests/{gid}")
+async def update_guest(iid: str, gid: str, payload: GuestPatchIn, user: dict = Depends(get_current_user)):
+    await _owned_invitation(iid, user)
+    upd = {}
+    if payload.name is not None:
+        upd["name"] = payload.name.strip()[:80]
+    if payload.phone is not None:
+        upd["phone"] = payload.phone.strip()[:30]
+        upd["phone_norm"] = _norm_phone(payload.phone)
+    if payload.side is not None:
+        upd["side"] = payload.side if payload.side in ("gelin", "damat") else ""
+    if payload.role is not None:
+        role = payload.role if payload.role in ROLE_SIDE else ""
+        upd["role"] = role
+        if role:
+            upd["side"] = ROLE_SIDE[role]
+    if payload.rsvp_status is not None and payload.rsvp_status in ("pending", "yes", "no"):
+        upd["rsvp_status"] = payload.rsvp_status
+    if payload.invited is not None:
+        upd["invited"] = bool(payload.invited)
+    if not upd:
+        return {"ok": True}
+    r = await db.invitation_guests.update_one({"id": gid, "invitation_id": iid}, {"$set": upd})
+    if not r.matched_count:
+        raise HTTPException(status_code=404, detail="Misafir bulunamadı")
+    return {"ok": True}
+
+
+@api_router.post("/invitations/{iid}/guests/{gid}/sent")
+async def mark_guest_sent(iid: str, gid: str, user: dict = Depends(get_current_user)):
+    await _owned_invitation(iid, user)
+    await db.invitation_guests.update_one({"id": gid, "invitation_id": iid},
+                                          {"$set": {"invited": True, "wa_sent_at": now_iso()}})
+    return {"ok": True}
+
+
+@api_router.delete("/invitations/{iid}/guests/{gid}")
+async def delete_guest(iid: str, gid: str, user: dict = Depends(get_current_user)):
+    await _owned_invitation(iid, user)
+    await db.invitation_guests.delete_one({"id": gid, "invitation_id": iid})
+    return {"ok": True}
+
+
+# ---- QR phone import: phone has no login; a short-lived token authorizes the upload ----
+@api_router.post("/invitations/{iid}/import-token")
+async def create_import_token(iid: str, user: dict = Depends(get_current_user)):
+    await _owned_invitation(iid, user)
+    token = secrets.token_urlsafe(9)
+    expires = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    await db.invitations.update_one({"id": iid}, {"$set": {"import_token": token, "import_token_expires": expires}})
+    return {"token": token, "expires_at": expires}
+
+
+@api_router.get("/invitations/import/{token}")
+async def import_token_info(token: str):
+    d = await db.invitations.find_one({"import_token": token}, {"_id": 0})
+    if not d or (d.get("import_token_expires") or "") < now_iso():
+        raise HTTPException(status_code=410, detail="Bağlantı süresi doldu")
+    return {"invitation_id": d["id"], "person1": d.get("person1"),
+            "person2": d.get("person2"), "slug": d.get("slug")}
+
+
+@api_router.post("/invitations/import/{token}/guests")
+async def import_token_guests(token: str, payload: GuestBulkIn):
+    d = await db.invitations.find_one({"import_token": token})
+    if not d or (d.get("import_token_expires") or "") < now_iso():
+        raise HTTPException(status_code=410, detail="Bağlantı süresi doldu")
+    n = await _add_guests(d["id"], payload.side or "", [g.dict() for g in (payload.guests or [])])
+    return {"ok": True, "added": n}
 
 
 # Register the router

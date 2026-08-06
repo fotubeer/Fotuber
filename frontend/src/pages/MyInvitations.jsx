@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { EVENT_TYPE_LABELS } from "@/lib/invitationThemes";
+import GuestManager from "@/components/invitation/GuestManager";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const api = (path, opts = {}) => fetch(`${API}/api${path}`, { credentials: "include", ...opts });
@@ -35,6 +36,7 @@ export default function MyInvitations() {
   const [modLoading, setModLoading] = useState(false);
   const [paying, setPaying] = useState(false);
   const [waInvite, setWaInvite] = useState(null);
+  const [guestInv, setGuestInv] = useState(null);
   const [waMessage, setWaMessage] = useState("");
   const [waNumbers, setWaNumbers] = useState("");
 
@@ -250,6 +252,9 @@ export default function MyInvitations() {
                 <Button variant="outline" size="sm" className="w-full mt-2 text-[#128C7E] border-[#25D366]/40 hover:bg-[#25D366]/10" onClick={() => openWhatsApp(inv)} data-testid={`inv-whatsapp-${inv.id}`}>
                   <MessageCircle className="w-4 h-4 mr-1" /> WhatsApp ile Davet Gönder
                 </Button>
+                <Button variant="outline" size="sm" className="w-full mt-2 text-fuchsia-700 border-fuchsia-200 hover:bg-fuchsia-50" onClick={() => setGuestInv(inv)} data-testid={`inv-guests-${inv.id}`}>
+                  <Users className="w-4 h-4 mr-1" /> Misafir Yönetimi (Gelin / Damat)
+                </Button>
                 {!inv.extended ? (
                   <Button variant="outline" size="sm" className="w-full mt-2 text-amber-700 border-amber-300 hover:bg-amber-50" onClick={() => extendInvitation(inv)} disabled={paying} data-testid={`inv-extend-${inv.id}`}>
                     <Clock className="w-4 h-4 mr-1" /> Süreyi Uzat · 99₺ (+15 gün)
@@ -350,6 +355,19 @@ export default function MyInvitations() {
                 ))}
               </div>
             )}
+          </>)}
+        </DialogContent>
+      </Dialog>
+
+      {/* Guest management (Bride/Groom side, contacts import, WhatsApp, RSVP tracking) */}
+      <Dialog open={!!guestInv} onOpenChange={(o) => { if (!o) { setGuestInv(null); load(); } }}>
+        <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto" data-testid="guest-dialog">
+          {guestInv && (<>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><Users className="w-5 h-5" /> Misafir Yönetimi — {guestInv.person2 ? `${guestInv.person1} & ${guestInv.person2}` : guestInv.person1}</DialogTitle>
+              <DialogDescription>Rehberden ekleyin, Gelin/Damat tarafına ayırın, tek tıkla WhatsApp'tan davet gönderin. Katılım (LCV) otomatik takip edilir.</DialogDescription>
+            </DialogHeader>
+            <GuestManager inv={guestInv} />
           </>)}
         </DialogContent>
       </Dialog>

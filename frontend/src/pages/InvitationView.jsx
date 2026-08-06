@@ -19,6 +19,7 @@ const reveal = {
 
 export default function InvitationView() {
   const { slug } = useParams();
+  const guestToken = new URLSearchParams(window.location.search).get("g") || "";
   const [loading, setLoading] = useState(true);
   const [inv, setInv] = useState(null);
   const [error, setError] = useState(null);
@@ -71,7 +72,7 @@ export default function InvitationView() {
     setBusy(true);
     try {
       const r = await fetch(`${API}/api/invitations/public/${slug}/rsvp`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rsvp),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...rsvp, guest_token: guestToken }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.detail || "Gönderilemedi");

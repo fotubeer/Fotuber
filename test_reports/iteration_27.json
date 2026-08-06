@@ -1,0 +1,24 @@
+{
+  "summary": "Frontend + integration testing for Fotuber Davetiye guest-management round. Header CTAs (Davetiye rose animated, Vesikalık Paneli blue, Randevu Al emerald + Personel Girişi) render on a single line at 1920 width and navigate correctly. GuestManager dialog opens from /davetiyelerim inv-guests-<id> and supports Gelin/Damat side switching, manual add, special-role quick add (window.prompt handled), bulk paste, WhatsApp popup + '✓ gönderildi', row delete, and QR import panel with QR code + import URL. Public /davetiye/import/:token page renders all controls and paste-add appends guests to owner list. Personalized RSVP flow via /davetiye/{slug}?g={guest_token} works — API-submitted RSVP updates guest rsvp_status to 'yes' and by_side.gelin.yes increments. Backend already curl-verified by main agent; sanity confirmed via network calls during flow. No critical bugs.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "GuestManager.jsx uses window.prompt for role quick-add — works but is a jarring UX. Consider a small inline modal.",
+    "sendWhatsApp: window.open then fetch is not awaited; in flaky networks the invited flag may not update reliably. Consider awaiting fetch or using sendBeacon.",
+    "MyInvitations.jsx list endpoint /api/invitations returns owner_user_id-owned invitations but no filter surfaces published-only view; UI badges do not clearly show 'unpaid' vs 'published' status for the owner card."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (sanity)", "frontend": "100%"},
+  "test_credentials": "Member: expired@fotuber.com.tr / Test1234 (cookie auth). Owns published test-reveal-ac0fbc (id effc0ae7-21b3-4f57-9c15-9d7d1402ed03) and moderator-1ddd7d.",
+  "seed_data_creation": "Created transient TEST_ guests in test-reveal-ac0fbc during RSVP + import tests; deleted at end of run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Header CTAs use data-testid cta-davetiye/cta-vesikalik-panel/cta-book-appointment (desktop) and m-cta-davetiye/m-cta-vesikalik-panel (mobile). GuestManager testids: guest-manager, guest-side-{gelin|damat}, guest-manual-{name|phone|role}, guest-add-manual, guest-roles + guest-role-{gelin_anne|gelin_baba|damat_anne|damat_baba}, guest-paste + guest-add-paste, guest-vcf-btn/input, guest-pick-contacts, guest-qr-btn/panel/code, guest-list, guest-row-<id>, guest-wa-<id>, guest-del-<id>, guest-stat-{gelin|damat}. Import page: guest-import-page, import-side-{gelin|damat}, import-pick-contacts, import-vcf-btn/input, import-paste, import-add-paste. Special-role add uses window.prompt — register page.on('dialog', d => d.accept('Name')). WhatsApp opens popup via window.open; use page.expect_popup. For personalized RSVP link on published slug test-reveal-ac0fbc, use POST /api/invitations/public/test-reveal-ac0fbc/rsvp with body {name,surname,attending,guest_count,message,guest_token} — status auto-updates to 'yes' and side is preserved.",
+  "rca of the issue": "N/A — no bugs found."
+}
