@@ -18,6 +18,7 @@ import PrintInvitation from "@/pages/PrintInvitation";
 import PhotoWallSlideshow from "@/pages/PhotoWallSlideshow";
 import GuestPass from "@/pages/GuestPass";
 import CheckinScanner from "@/pages/CheckinScanner";
+import GoldenHour from "@/pages/GoldenHour";
 import GuestImport from "@/pages/GuestImport";
 
 import Home from "@/pages/Home";
@@ -88,6 +89,7 @@ function App() {
               <Route path="/randevu" element={<P><Booking /></P>} />
               <Route path="/indirim-kodu" element={<P><DiscountCode /></P>} />
               <Route path="/fotuber-medya" element={<P><FotuberMedya /></P>} />
+              <Route path="/altin-saat" element={<P><GoldenHour /></P>} />
               {/* Public photo selection album (auth required inside component) */}
               <Route path="/albumler/:token" element={<AlbumViewer />} />
               {/* Public guest upload via QR (auth required for uploads) */}

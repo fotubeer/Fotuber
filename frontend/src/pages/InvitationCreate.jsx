@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
 import InvitationReveal, { SIGNATURE_STYLES } from "@/components/invitation/InvitationReveal";
+import RevealOptions from "@/components/invitation/RevealOptions";
 import VoiceRecorder from "@/components/invitation/VoiceRecorder";
 import { INVITATION_THEMES, EVENT_TYPE_LABELS, getTheme, printColors } from "@/lib/invitationThemes";
 import { getMessagesFor } from "@/lib/invitationMessages";
@@ -24,7 +25,7 @@ export default function InvitationCreate() {
   const [data, setData] = useState({
     event_type: "dugun", person1: "", person2: "", event_date: "", event_time: "",
     venue_name: "", venue_address: "", map_url: "", message: "", theme: "romantic",
-    primary_color: "", cover_image_id: "", music_url: "", reveal_style: "",
+    primary_color: "", cover_image_id: "", music_url: "", reveal_style: "", reveal_opts: {},
     gift: { full_name: "", bank_name: "", iban: "", note: "" },
     sections: { countdown: true, map: true, memories: true, rsvp: true, gift: true, music: false },
   });
@@ -334,6 +335,8 @@ export default function InvitationCreate() {
                   );
                 })}
               </div>
+              <RevealOptions styleKey={data.reveal_style || "envelope"} opts={data.reveal_opts || {}}
+                setOpt={(k, v) => setData((d) => ({ ...d, reveal_opts: { ...(d.reveal_opts || {}), [k]: v } }))} />
             </div>
 
             <button onClick={() => { setPreviewKey((k) => k + 1); setPreviewReveal(true); }} type="button" data-testid="preview-reveal-btn"
@@ -480,7 +483,7 @@ export default function InvitationCreate() {
       {previewReveal && (
         <div className="fixed inset-0 z-[80]" data-testid="reveal-preview-modal">
           <InvitationReveal key={previewKey}
-            t={getTheme(data.theme, data.primary_color)} themeKey={data.theme} eventType={data.event_type} styleKey={data.reveal_style}
+            t={getTheme(data.theme, data.primary_color)} themeKey={data.theme} eventType={data.event_type} styleKey={data.reveal_style} opts={data.reveal_opts}
             names={data.person2 ? `${data.person1 || "İsim"} & ${data.person2}` : (data.person1 || "İsimler")}
             initials={`${(data.person1 || "").trim()[0] || ""}${(data.person2 || "").trim()[0] || ""}`.toUpperCase() || "♥"}
             onDone={() => {}} />

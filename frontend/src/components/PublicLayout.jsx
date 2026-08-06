@@ -218,6 +218,7 @@ export const PublicLayout = ({ children }) => {
               ))}
               <li><Link to="/vesikalik" className="text-blue-400 hover:text-blue-300">Vesikalık Paneli</Link></li>
               <li><Link to="/davetiye-olustur" className="text-rose-400 hover:text-rose-300">Davetiye Oluştur</Link></li>
+              <li><Link to="/altin-saat" className="text-[#e6a24a] hover:text-[#f0b45f]">Altın Saat Hesaplayıcı</Link></li>
             </ul>
           </div>
           <div>

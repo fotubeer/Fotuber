@@ -4793,6 +4793,7 @@ def _invite_public(doc: dict, owner: bool = False) -> dict:
         "gift": doc.get("gift") or {},
         "is_premium": bool(doc.get("is_premium")),
         "reveal_style": doc.get("reveal_style") or "",
+        "reveal_opts": doc.get("reveal_opts") or {},
         "extended": bool(doc.get("extended")),
         "created_at": doc.get("created_at"), "expires_at": doc.get("expires_at"),
     }
@@ -4820,6 +4821,7 @@ class InvitationIn(BaseModel):
     music_url: Optional[str] = ""
     greeting_audio_id: Optional[str] = ""
     reveal_style: Optional[str] = ""
+    reveal_opts: Optional[dict] = None
     checkin_enabled: bool = False
     sections: Optional[dict] = None
     gift: Optional[dict] = None
@@ -5126,6 +5128,7 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
         "music_url": payload.music_url, "greeting_audio_id": payload.greeting_audio_id,
         "checkin_enabled": bool(payload.checkin_enabled),
         "reveal_style": payload.reveal_style or "",
+        "reveal_opts": payload.reveal_opts or {},
         "sections": sections,
         "gift": payload.gift or {},
         "is_premium": pricing["needs_payment"], "price": pricing["price"],

@@ -123,7 +123,7 @@ export default function InvitationView() {
       {music && musicSrc && <audio ref={audioRef} src={musicSrc} loop preload="auto" />}
 
       {!opened && (
-        <InvitationReveal t={t} themeKey={inv.theme} eventType={inv.event_type} styleKey={inv.reveal_style}
+        <InvitationReveal t={t} themeKey={inv.theme} eventType={inv.event_type} styleKey={inv.reveal_style} opts={inv.reveal_opts}
           names={inv.person2 ? `${inv.person1} & ${inv.person2}` : inv.person1}
           initials={initials} onDone={() => setOpened(true)} />
       )}
