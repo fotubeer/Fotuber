@@ -1,22 +1,37 @@
 import React, { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Hand, DoorOpen, Sparkles, PartyPopper, Heart, Flame } from "lucide-react";
-import { PRINT_BG } from "@/lib/invitationThemes";
+import { Hand, DoorOpen, Sparkles, PartyPopper, Heart, Flame, Flower2 } from "lucide-react";
+import { PRINT_BG, EVENT_TYPE_LABELS } from "@/lib/invitationThemes";
 
 const EASE = [0.76, 0, 0.24, 1];
 
-// Per event-type interactive reveal config. Guests must TAP to open — each
-// event type gets its own signature opening + falling flourish. This is a
-// premium (paid) experience, so it is deliberately rich and varied.
-const CFG = {
-  dugun:     { kind: "doors",    cta: "Kapıyı Aç",        hint: "Düğünümüze hoş geldiniz",        extra: "petals",   Icon: DoorOpen, label: "Düğün" },
-  nikah:     { kind: "doors",    cta: "Kapıyı Aç",        hint: "Nikah törenimize davetlisiniz",  extra: "petals",   Icon: DoorOpen, label: "Nikah" },
-  nisan:     { kind: "veil",     cta: "Dokun ve Aç",      hint: "Söz kestik, sizi bekliyoruz",    extra: "petals",   Icon: Heart,    label: "Nişan" },
-  kina:      { kind: "henna",    cta: "Kınamıza Dokun",   hint: "Kına gecemize buyurun",          extra: "gold",     Icon: Flame,    label: "Kına Gecesi" },
-  sunnet:    { kind: "curtain",  cta: "Perdeyi Aç",       hint: "Sünnet şölenimize davetlisiniz", extra: "stars",    Icon: Sparkles, label: "Sünnet" },
-  dogumgunu: { kind: "balloons", cta: "Balonları Uçur",   hint: "Doğum günü partisi!",            extra: "confetti", Icon: PartyPopper, label: "Doğum Günü" },
-  diger:     { kind: "veil",     cta: "Dokun ve Aç",      hint: "Özel günümüze davetlisiniz",     extra: "sparkle",  Icon: Hand,     label: "Davet" },
+// Reveal STYLE registry — each is a selectable opening animation.
+export const REVEAL_STYLES = {
+  doors:     { kind: "doors",    extra: "petals",    cta: "Kapıyı Aç",      hint: "Kapımız size açık",          Icon: DoorOpen,   label: "Kapı Açılışı" },
+  curtain:   { kind: "curtain",  extra: "stars",     cta: "Perdeyi Aç",     hint: "Perde arkasındaki sürpriz",  Icon: Sparkles,   label: "Perde" },
+  petals:    { kind: "veil",     extra: "petals",    cta: "Dokun ve Aç",    hint: "Güller sizin için düşüyor",  Icon: Flower2,    label: "Gül Yağmuru" },
+  hearts:    { kind: "veil",     extra: "hearts",    cta: "Dokun ve Aç",    hint: "Kalpler sizin için",         Icon: Heart,      label: "Kalp Yağmuru" },
+  veil:      { kind: "veil",     extra: "sparkle",   cta: "Dokun ve Aç",    hint: "Tülü aralayın",              Icon: Hand,       label: "Tül & Işıltı" },
+  gold:      { kind: "veil",     extra: "gold",      cta: "Dokun ve Aç",    hint: "Altın bir davet",            Icon: Sparkles,   label: "Altın Işıltı" },
+  balloons:  { kind: "balloons", extra: "confetti",  cta: "Balonları Uçur", hint: "Parti başlasın!",            Icon: PartyPopper, label: "Balonlar" },
+  fireworks: { kind: "veil",     extra: "fireworks", cta: "Dokun ve Aç",    hint: "Kutlama zamanı",             Icon: Sparkles,   label: "Havai Fişek" },
+  henna:     { kind: "henna",    extra: "gold",      cta: "Kınamıza Dokun", hint: "Kına gecemize buyurun",      Icon: Flame,      label: "Kına Eli & Mum" },
 };
+
+// 5-6 curated style options per event type (first = default)
+export const REVEALS_BY_EVENT = {
+  dugun:     ["doors", "petals", "hearts", "veil", "curtain", "gold"],
+  nikah:     ["doors", "veil", "petals", "curtain", "gold", "hearts"],
+  nisan:     ["hearts", "petals", "doors", "veil", "gold", "fireworks"],
+  kina:      ["henna", "gold", "veil", "curtain", "petals", "fireworks"],
+  sunnet:    ["curtain", "balloons", "fireworks", "doors", "gold", "veil"],
+  dogumgunu: ["balloons", "fireworks", "hearts", "curtain", "gold", "veil"],
+  nikah2:    ["doors"],
+  diger:     ["veil", "gold", "petals", "hearts", "doors", "fireworks"],
+};
+
+export const eventStyleOptions = (eventType) => (REVEALS_BY_EVENT[eventType] || REVEALS_BY_EVENT.diger);
+export const resolveStyle = (eventType, styleKey) => REVEAL_STYLES[styleKey] || REVEAL_STYLES[eventStyleOptions(eventType)[0]] || REVEAL_STYLES.veil;
 
 const CONFETTI = ["#e11d48", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ec4899"];
 
