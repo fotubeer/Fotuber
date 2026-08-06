@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Hand, DoorOpen, Sparkles, PartyPopper, Heart } from "lucide-react";
+import { Hand, DoorOpen, Sparkles, PartyPopper, Heart, Flame } from "lucide-react";
 import { PRINT_BG } from "@/lib/invitationThemes";
 
 const EASE = [0.76, 0, 0.24, 1];
@@ -12,7 +12,7 @@ const CFG = {
   dugun:     { kind: "doors",    cta: "Kapıyı Aç",        hint: "Düğünümüze hoş geldiniz",        extra: "petals",   Icon: DoorOpen, label: "Düğün" },
   nikah:     { kind: "doors",    cta: "Kapıyı Aç",        hint: "Nikah törenimize davetlisiniz",  extra: "petals",   Icon: DoorOpen, label: "Nikah" },
   nisan:     { kind: "veil",     cta: "Dokun ve Aç",      hint: "Söz kestik, sizi bekliyoruz",    extra: "petals",   Icon: Heart,    label: "Nişan" },
-  kina:      { kind: "veil",     cta: "Kınamıza Dokun",   hint: "Kına gecemize buyurun",          extra: "gold",     Icon: Sparkles, label: "Kına Gecesi" },
+  kina:      { kind: "henna",    cta: "Kınamıza Dokun",   hint: "Kına gecemize buyurun",          extra: "gold",     Icon: Flame,    label: "Kına Gecesi" },
   sunnet:    { kind: "curtain",  cta: "Perdeyi Aç",       hint: "Sünnet şölenimize davetlisiniz", extra: "stars",    Icon: Sparkles, label: "Sünnet" },
   dogumgunu: { kind: "balloons", cta: "Balonları Uçur",   hint: "Doğum günü partisi!",            extra: "confetti", Icon: PartyPopper, label: "Doğum Günü" },
   diger:     { kind: "veil",     cta: "Dokun ve Aç",      hint: "Özel günümüze davetlisiniz",     extra: "sparkle",  Icon: Hand,     label: "Davet" },
@@ -22,7 +22,42 @@ const CONFETTI = ["#e11d48", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ec489
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 
-// Falling flourish overlay (petals / gold / stars / confetti / sparkle)
+// Flickering henna candle
+const Candle = ({ accent }) => (
+  <div className="flex flex-col items-center" style={{ width: 16 }}>
+    <motion.div style={{ width: 11, height: 17, borderRadius: "50% 50% 45% 45%", background: "radial-gradient(circle at 50% 25%, #fff6c2, #ffb347 55%, #ff7a18)", filter: "drop-shadow(0 0 10px #ffb347)" }}
+      animate={{ scaleY: [1, 1.25, 0.9, 1.15, 1], opacity: [0.9, 1, 0.8, 1, 0.9], y: [0, -1, 0] }}
+      transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }} />
+    <div style={{ width: 7, height: 44, background: `linear-gradient(${accent}66, ${accent}22)`, borderRadius: 4, marginTop: -1 }} />
+  </div>
+);
+
+// Stylized henna (mehndi) hand with the couple's initials in the palm
+const HennaHand = ({ accent, dark, initials }) => (
+  <div className="relative mx-auto" style={{ width: 132, height: 156 }}>
+    <svg viewBox="0 0 100 120" width="132" height="156" aria-hidden>
+      <g fill={accent}>
+        <rect x="30" y="54" width="40" height="48" rx="18" />
+        <rect x="32" y="16" width="8" height="44" rx="4" />
+        <rect x="44" y="8" width="8" height="52" rx="4" />
+        <rect x="56" y="14" width="8" height="48" rx="4" />
+        <rect x="68" y="24" width="8" height="40" rx="4" />
+        <rect x="16" y="58" width="8" height="28" rx="4" transform="rotate(-32 20 72)" />
+      </g>
+      <g fill="none" stroke={dark ? "#0d0d0d" : "#fff"} strokeWidth="1.6" opacity="0.55">
+        <circle cx="50" cy="80" r="11" />
+        <circle cx="50" cy="80" r="5" />
+        <circle cx="36" cy="20" r="2.4" /><circle cx="48" cy="12" r="2.4" /><circle cx="60" cy="18" r="2.4" /><circle cx="72" cy="28" r="2.4" />
+        <path d="M50 63 q6 8 0 16 q-6 -8 0 -16" />
+      </g>
+    </svg>
+    <div className="absolute inset-0 grid place-items-center" style={{ paddingTop: 44 }}>
+      <span style={{ fontFamily: "'Great Vibes', cursive", color: dark ? "#0d0d0d" : "#fff", fontSize: "1.5rem" }}>{initials}</span>
+    </div>
+  </div>
+);
+
+// Flourish (falling petals / gold / stars / confetti / sparkle)
 const Flourish = ({ type, accent, boost }) => {
   const n = boost ? 46 : 16;
   const items = useMemo(() => Array.from({ length: n }, () => ({
@@ -112,7 +147,7 @@ export default function InvitationReveal({ t, themeKey, eventType, names, initia
             </>
           )}
 
-          {(cfg.kind === "veil" || cfg.kind === "balloons") && (
+          {(cfg.kind === "veil" || cfg.kind === "balloons" || cfg.kind === "henna") && (
             <motion.div className="absolute inset-0 overflow-hidden" style={{ background: t.bg }}
               animate={{ opacity: open ? 0 : 1 }} transition={{ duration: dur * 0.8, ease: "easeOut" }} data-testid="reveal-veil">
               {cfg.kind === "balloons" && balloons.map((b, i) => (
@@ -141,13 +176,23 @@ export default function InvitationReveal({ t, themeKey, eventType, names, initia
                   <div className="leading-none mb-2" style={{ fontFamily: t.script, color: accent, fontSize: "clamp(2.6rem, 11vw, 4.5rem)" }}>{names}</div>
                   <div className="text-sm mb-8" style={{ color: t.sub, fontFamily: t.heading }}>{cfg.hint}</div>
 
-                  {/* Pulsing medallion */}
-                  <motion.div className="mx-auto mb-8 rounded-full grid place-items-center relative"
-                    style={{ width: 92, height: 92, background: `radial-gradient(circle at 35% 30%, ${accent}, ${accent}bb)`, color: t.dark ? "#0b0b0b" : "#fff", fontFamily: t.script, fontSize: "2.1rem", boxShadow: `0 0 0 8px ${accent}22` }}
-                    animate={{ boxShadow: [`0 0 0 8px ${accent}22`, `0 0 0 18px ${accent}00`] }}
-                    transition={{ duration: 1.8, repeat: Infinity }}>
-                    {initials}
-                  </motion.div>
+                  {/* Pulsing medallion OR henna hand + candles */}
+                  {cfg.kind === "henna" ? (
+                    <div className="mb-8" data-testid="reveal-henna">
+                      <HennaHand accent={accent} dark={t.dark} initials={initials} />
+                      <div className="flex items-end justify-center gap-10 -mt-2">
+                        <Candle accent={accent} />
+                        <Candle accent={accent} />
+                      </div>
+                    </div>
+                  ) : (
+                    <motion.div className="mx-auto mb-8 rounded-full grid place-items-center relative"
+                      style={{ width: 92, height: 92, background: `radial-gradient(circle at 35% 30%, ${accent}, ${accent}bb)`, color: t.dark ? "#0b0b0b" : "#fff", fontFamily: t.script, fontSize: "2.1rem", boxShadow: `0 0 0 8px ${accent}22` }}
+                      animate={{ boxShadow: [`0 0 0 8px ${accent}22`, `0 0 0 18px ${accent}00`] }}
+                      transition={{ duration: 1.8, repeat: Infinity }}>
+                      {initials}
+                    </motion.div>
+                  )}
 
                   <motion.button onClick={(e) => { e.stopPropagation(); trigger(); }} data-testid="reveal-open-btn"
                     className="inline-flex items-center gap-2 rounded-full px-8 h-14 text-base font-semibold"

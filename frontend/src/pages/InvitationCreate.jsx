@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
+import InvitationReveal from "@/components/invitation/InvitationReveal";
 import VoiceRecorder from "@/components/invitation/VoiceRecorder";
 import { INVITATION_THEMES, EVENT_TYPE_LABELS, getTheme, printColors } from "@/lib/invitationThemes";
 import { getMessagesFor } from "@/lib/invitationMessages";
@@ -35,6 +36,8 @@ export default function InvitationCreate() {
   const [published, setPublished] = useState(null); // { slug, url }
   const [payGate, setPayGate] = useState(null); // { invitation_id, price, pricing, slug, url }
   const [paying, setPaying] = useState(false);
+  const [previewReveal, setPreviewReveal] = useState(false);
+  const [previewKey, setPreviewKey] = useState(0);
   const [tplOpen, setTplOpen] = useState(false);
   const [previewTpl, setPreviewTpl] = useState(null); // theme key being inspected fullscreen
   const [mobilePrev, setMobilePrev] = useState(false);
@@ -310,6 +313,12 @@ export default function InvitationCreate() {
               </div>
             </div>
 
+            <button onClick={() => { setPreviewKey((k) => k + 1); setPreviewReveal(true); }} type="button" data-testid="preview-reveal-btn"
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-indigo-200 text-indigo-700 text-sm font-medium hover:bg-indigo-50">
+              <Eye className="w-4 h-4" /> Açılış Animasyonunu Önizle
+            </button>
+            <p className="text-[11px] text-slate-400 text-center -mt-1">Etkinlik türüne göre açılış: düğün/nikah kapı, kına mum & kına eli, sünnet perde, doğum günü balon, nişan tül.</p>
+
             {invPrice > 0 && (
               <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 flex items-start gap-2" data-testid="premium-price-note">
                 <Lock className="w-4 h-4 mt-0.5 shrink-0" />
@@ -444,6 +453,21 @@ export default function InvitationCreate() {
           </div>
         </div>
       )}
+      {/* Reveal animation preview */}
+      {previewReveal && (
+        <div className="fixed inset-0 z-[80]" data-testid="reveal-preview-modal">
+          <InvitationReveal key={previewKey}
+            t={getTheme(data.theme, data.primary_color)} themeKey={data.theme} eventType={data.event_type}
+            names={data.person2 ? `${data.person1 || "İsim"} & ${data.person2}` : (data.person1 || "İsimler")}
+            initials={`${(data.person1 || "").trim()[0] || ""}${(data.person2 || "").trim()[0] || ""}`.toUpperCase() || "♥"}
+            onDone={() => {}} />
+          <div className="fixed top-4 right-4 z-[95] flex gap-2">
+            <button onClick={() => setPreviewKey((k) => k + 1)} className="px-3 py-1.5 rounded-full bg-white/90 text-slate-800 text-xs font-semibold shadow" data-testid="preview-replay">↻ Tekrar Oynat</button>
+            <button onClick={() => setPreviewReveal(false)} className="px-3 py-1.5 rounded-full bg-slate-900 text-white text-xs font-semibold shadow" data-testid="preview-close">Kapat</button>
+          </div>
+        </div>
+      )}
+
       {/* Premium invitation payment (one-time via PayTR) */}
       {payGate && (
         <div className="fixed inset-0 bg-black/60 grid place-items-center z-50 p-4" data-testid="pay-gate">
