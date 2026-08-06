@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as SunCalc from "suncalc";
 import { Link } from "react-router-dom";
 import {
   Sun, Sunrise, Sunset, Moon, Camera, MapPin, Navigation, CalendarDays,
   Cloud, CloudRain, CloudSnow, CloudSun, CloudFog, CloudLightning, Droplets,
-  Sparkles, Bot, Heart, ArrowRight, Thermometer, Sun as SunIcon,
+  Sparkles, Bot, Heart, ArrowRight, Thermometer, Sun as SunIcon, Search, Loader2,
 } from "lucide-react";
 import { useSettings } from "@/context/SettingsContext";
 
@@ -129,11 +129,47 @@ export default function GoldenHour() {
   const [locBusy, setLocBusy] = useState(false);
   const [weather, setWeather] = useState(null);
   const [wxState, setWxState] = useState("idle"); // idle | loading | ok | none | error
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const searchTimer = useRef(null);
 
   const place = coords || CITIES.find((c) => c.k === cityKey) || CITIES[0];
-  const tz = coords ? undefined : "Europe/Istanbul";
+  const tz = "Europe/Istanbul"; // App targets Turkey — always Istanbul tz
   const date = useMemo(() => { const d = new Date(dateStr + "T12:00:00"); return isNaN(d) ? new Date() : d; }, [dateStr]);
   const t = useMemo(() => SunCalc.getTimes(date, place.lat, place.lng), [date, place]);
+
+  // Live province/district autocomplete via Open-Meteo geocoding (free, no key, all TR)
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) { setResults([]); setSearching(false); return; }
+    setSearching(true);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const u = new URL("https://geocoding-api.open-meteo.com/v1/search");
+        u.searchParams.set("name", q);
+        u.searchParams.set("count", "12");
+        u.searchParams.set("language", "tr");
+        const res = await fetch(u.toString());
+        const j = await res.json();
+        const rs = (j.results || []).filter((r) => r.country_code === "TR");
+        setResults(rs);
+        setShowResults(true);
+      } catch (_) { setResults([]); }
+      finally { setSearching(false); }
+    }, 300);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+  }, [query]);
+
+  const pickResult = (r) => {
+    const label = r.admin1 && r.admin1 !== r.name ? `${r.name}, ${r.admin1}` : r.name;
+    setCoords({ lat: r.latitude, lng: r.longitude, n: label });
+    setQuery(label);
+    setShowResults(false);
+    setResults([]);
+  };
 
   // Fetch weather directly from Open-Meteo (free, no key). Works for cities & geolocation coords.
   useEffect(() => {
@@ -260,15 +296,51 @@ export default function GoldenHour() {
       </div>
 
       <div className="max-w-5xl mx-auto px-6 py-10">
+        {/* Search — all provinces & districts (Open-Meteo geocoding) */}
+        <div className="relative mb-3" data-testid="gh-search-wrap">
+          <label className="text-xs text-neutral-500 flex items-center gap-1 mb-1"><Search className="w-3.5 h-3.5" /> İl / İlçe Ara — Tüm Türkiye</label>
+          <div className="relative">
+            <input
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setShowResults(true); }}
+              onFocus={() => { if (results.length) setShowResults(true); }}
+              onBlur={() => setTimeout(() => setShowResults(false), 150)}
+              placeholder="Örn: Kadıköy, Çankaya, Alaçatı, Uzungöl, Ürgüp…"
+              data-testid="gh-search"
+              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg pl-9 pr-9 py-2.5 text-sm outline-none focus:border-[#e6a24a]"
+            />
+            <Search className="w-4 h-4 text-neutral-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            {searching && <Loader2 className="w-4 h-4 text-neutral-500 absolute right-3 top-1/2 -translate-y-1/2 animate-spin" />}
+          </div>
+          {showResults && results.length > 0 && (
+            <div className="absolute z-20 mt-1 w-full bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden shadow-2xl max-h-72 overflow-y-auto" data-testid="gh-search-results">
+              {results.map((r, i) => (
+                <button key={`${r.id}-${i}`} onMouseDown={() => pickResult(r)} data-testid={`gh-search-result-${i}`}
+                  className="w-full text-left px-3 py-2.5 hover:bg-neutral-800 flex items-center justify-between border-b border-neutral-800/50 last:border-0">
+                  <span className="text-sm">
+                    {r.name}
+                    {(r.admin1 && r.admin1 !== r.name) && <span className="text-neutral-500">, {r.admin1}</span>}
+                    {(r.admin2 && r.admin2 !== r.admin1 && r.admin2 !== r.name) && <span className="text-neutral-600 text-xs"> · {r.admin2}</span>}
+                  </span>
+                  <MapPin className="w-3.5 h-3.5 text-[#e6a24a] shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
+          {showResults && !searching && query.trim().length >= 2 && results.length === 0 && (
+            <div className="absolute z-20 mt-1 w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm text-neutral-500">Sonuç bulunamadı. Farklı bir yazım deneyin.</div>
+          )}
+        </div>
+
         {/* Controls */}
         <div className="flex flex-col sm:flex-row gap-3 mb-8">
           <div className="flex-1">
-            <label className="text-xs text-neutral-500 flex items-center gap-1 mb-1"><MapPin className="w-3.5 h-3.5" /> Şehir</label>
+            <label className="text-xs text-neutral-500 flex items-center gap-1 mb-1"><MapPin className="w-3.5 h-3.5" /> Popüler Şehir</label>
             <select value={coords ? "__loc" : cityKey}
-              onChange={(e) => { if (e.target.value === "__loc") return; setCoords(null); setCityKey(e.target.value); }}
+              onChange={(e) => { if (e.target.value === "__loc") return; setCoords(null); setQuery(""); setCityKey(e.target.value); }}
               data-testid="gh-city"
               className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-[#e6a24a]">
-              {coords && <option value="__loc">📍 Konumum</option>}
+              {coords && <option value="__loc">📍 {place.n}</option>}
               {CITIES.map((c) => <option key={c.k} value={c.k}>{c.n}</option>)}
             </select>
           </div>
@@ -283,6 +355,25 @@ export default function GoldenHour() {
               <Navigation className="w-4 h-4" /> {locBusy ? "Bulunuyor…" : "Konumumu Kullan"}
             </button>
           </div>
+        </div>
+
+        {/* Mini map — current selected location */}
+        <div className="mb-8 rounded-2xl border border-neutral-800 overflow-hidden" data-testid="gh-map">
+          <div className="flex items-center justify-between px-4 py-2.5 bg-neutral-900/60">
+            <div className="flex items-center gap-2 text-sm"><MapPin className="w-4 h-4 text-[#e6a24a]" /> <span className="font-medium">{place.n}</span></div>
+            <a href={`https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`} target="_blank" rel="noopener noreferrer"
+              data-testid="gh-map-directions" className="text-xs text-[#e6a24a] hover:text-[#f0b45f] flex items-center gap-1">
+              <Navigation className="w-3.5 h-3.5" /> Yol Tarifi
+            </a>
+          </div>
+          <iframe
+            title="Konum Haritası"
+            data-testid="gh-map-frame"
+            className="w-full h-64 border-0"
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            src={`https://www.openstreetmap.org/export/embed.html?bbox=${place.lng - 0.08}%2C${place.lat - 0.05}%2C${place.lng + 0.08}%2C${place.lat + 0.05}&layer=mapnik&marker=${place.lat}%2C${place.lng}`}
+          />
         </div>
 
         {/* Weather strip */}

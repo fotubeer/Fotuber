@@ -352,6 +352,11 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
   - `reports/summary` approved sorgusuna projection (paid_amount/deposit_amount/date) eklendi. Curl ile doğrulandı (keys + total_revenue).
 - **CANLIYA ALMA**: Kod deploy-hazır. Kullanıcı Emergent "Deploy / Re-publish" ile yayına alır.
 
+## Session W-2b (Jun 2026) — Tüm İl/İlçe Araması + Mini Harita (self-tested screenshot)
+- **Tüm Türkiye il/ilçe araması** (`GoldenHour.jsx`): Open-Meteo geocoding ile canlı autocomplete (anahtarsız, debounce 300ms, `country_code==="TR"` filtre). `gh-search`, `gh-search-results`, `gh-search-result-{i}`. Seçince coords + etiket (İlçe, İl) set edilir. Popüler şehir dropdown hızlı erişim için kaldı (`__loc` seçeneği artık seçili yeri gösterir). tz artık HER ZAMAN "Europe/Istanbul" (tüm TR).
+- **Mini harita** (`gh-map`): seçili konum için anahtarsız OpenStreetMap embed (marker'lı) + "Yol Tarifi" (Google Maps) linki (`gh-map-directions`, `gh-map-frame`). Arama/şehir/konum değişince harita + hava + haftalık takvim birlikte güncellenir.
+- Doğrulama: screenshot — "Kadıköy" araması 12 ilçe sonucu; seçim sonrası harita marker + hava (Babadağ/Denizli 36°/24° UV8) güncellendi.
+
 ## Session W-3 (PLANLANAN) — FAZ 2: Sektör Radarı (admin-only AI trend ajanı)
 - Admin panelinde günlük internet taraması yapan ajan. Kullanıcı notu: "GitHub'da 60k+ yıldızlı, anahtar istemeyen bir CLI aracı" ile yapılsın (araştırılacak — muhtemelen duckduckgo-search/ddgs veya SearXNG gibi anahtarsız arama + Emergent LLM ile Türkçe özet/çeviri).
 - Odak: TÜM sektör — düğün/nişan/kına, stüdyo/vesikalık, doğum günü, kurumsal, ÜRÜN çekimi, sosyal medya/reels trendleri. Sektörel olumlu/olumsuz haberler dahil.
