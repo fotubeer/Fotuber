@@ -774,11 +774,14 @@ async def availability(date: str, request: Request):
 # ---------------------------------------------------------------------------
 # Appointments
 # ---------------------------------------------------------------------------
-async def _enrich_appointment(a: dict) -> dict:
+async def _enrich_appointment(a: dict, service_map: Optional[dict] = None) -> dict:
     if not a:
         return a
     a.pop("_id", None)
-    svc = await db.services.find_one({"id": a.get("service_id")}, {"_id": 0, "name": 1, "price": 1})
+    if service_map is not None:
+        svc = service_map.get(a.get("service_id"))
+    else:
+        svc = await db.services.find_one({"id": a.get("service_id")}, {"_id": 0, "name": 1, "price": 1})
     a["service_name"] = svc["name"] if svc else "Bilinmeyen Hizmet"
     a["service_price"] = svc["price"] if svc else 0
     # Compute derived financials
@@ -875,10 +878,19 @@ async def create_appointment(payload: AppointmentIn, user: dict = Depends(get_cu
     return await _enrich_appointment(doc)
 
 
+async def _build_service_map(items: list) -> dict:
+    ids = list({a.get("service_id") for a in items if a.get("service_id")})
+    if not ids:
+        return {}
+    svcs = await db.services.find({"id": {"$in": ids}}, {"_id": 0, "id": 1, "name": 1, "price": 1}).to_list(len(ids))
+    return {s["id"]: s for s in svcs}
+
+
 @api_router.get("/appointments/me")
 async def my_appointments(user: dict = Depends(get_current_user)):
     items = await db.appointments.find({"user_id": user["id"]}).sort("created_at", -1).to_list(200)
-    return [await _enrich_appointment(i) for i in items]
+    smap = await _build_service_map(items)
+    return [await _enrich_appointment(i, smap) for i in items]
 
 
 @api_router.get("/appointments")
@@ -899,7 +911,8 @@ async def list_appointments(
             rng["$lte"] = date_to
         q["date"] = rng
     items = await db.appointments.find(q).sort([("date", 1), ("time", 1)]).to_list(500)
-    return [await _enrich_appointment(i) for i in items]
+    smap = await _build_service_map(items)
+    return [await _enrich_appointment(i, smap) for i in items]
 
 
 @api_router.patch("/appointments/{aid}")
