@@ -41,13 +41,20 @@ export const detectBiometricCrop = async (imgEl, spec) => {
   if (chinToEye <= 0) return { ok: false, message: "Yüz açısı uygun değil" };
   const headHeight = chinToEye * 2.2;
 
-  // ICAO: head fills ~72% of photo height, eyes ~55% from bottom (i.e. 0.45 from top)
-  const photoH = headHeight / 0.72;
+  // Framing rules differ by format:
+  //  - biometric/passport (ICAO): head fills ~72% of photo height, eyes at 0.45 from top.
+  //  - vesikalık (TR studio ID): NO biometric rules — a looser frame that shows more of
+  //    the shoulders/chest, so the head fills less of the frame and there is more body.
+  const isVesikalik = spec?.format === "vesikalik";
+  const headFill = isVesikalik ? 0.52 : 0.72;      // smaller head → more body visible
+  const eyesFromTop = isVesikalik ? 0.40 : 0.45;   // eyes higher → more chest below
+
+  const photoH = headHeight / headFill;
   const photoW = photoH * (spec.w / spec.h);
 
-  // Photo center-Y: eyes should sit at 0.45 * photoH from top,
-  // so center is 0.05 * photoH below the eyes.
-  const cy = eyeMidY + 0.05 * photoH;
+  // Center-Y: eyes sit at eyesFromTop of photo height, so center is
+  // (0.5 - eyesFromTop) * photoH below the eyes.
+  const cy = eyeMidY + (0.5 - eyesFromTop) * photoH;
   const cx = eyeMidX;
 
   return { ok: true, cx, cy, w: photoW, h: photoH };

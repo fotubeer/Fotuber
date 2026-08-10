@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   Camera, LogOut, IdCard, Clock, Sparkles, HardDrive, CalendarRange, ShieldAlert,
-  Images, Palette, ScanFace, Check, Crown, Wand2, Bell, Save, Copy,
+  Images, Palette, ScanFace, Check, Crown, Wand2, Bell, Save, Copy, Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +36,11 @@ export default function StudioDashboard() {
       () => toast.error("Kopyalanamadı")
     );
   };
+
+  const [chatUnread, setChatUnread] = useState(0);
+  useEffect(() => {
+    studioApi.get("/studio/chat").then((r) => setChatUnread(r.data.unread || 0)).catch(() => {});
+  }, []);
 
   const logout = async () => {
     try { await studioApi.post("/studio/logout"); } catch {}
@@ -133,6 +138,9 @@ export default function StudioDashboard() {
           )}
           <ModuleCard testid="studio-module-design" icon={Palette} title="Davetiye Tasarım Stüdyosu"
             desc="Canva benzeri sürükle-bırak editör, 50+ font, kişiselleştirme." to="/tasarim-studyosu" cta="Tasarla" accent />
+          <ModuleCard testid="studio-module-team" icon={Users} title="Ekip & Sohbet"
+            desc={acc.current_user?.is_owner ? "Çalışan ekle/yönet, kullanıcı limiti ve ekip sohbeti." : "Ekip sohbeti ve firma çalışanları."}
+            to="/studyo/ekip" cta="Aç" badge={chatUnread} />
           {!acc.modules?.vesikalik && !acc.modules?.gallery && (
             <div data-testid="studio-no-modules" className="sm:col-span-2 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-5 text-sm text-amber-100">
               Paketinizde aktif modül yok. Vesikalık veya Etkinlik Galerisi paketini satın alın.
@@ -215,13 +223,16 @@ function Limit({ icon: Icon, label, value, testid }) {
   );
 }
 
-function ModuleCard({ testid, icon: Icon, title, desc, to, cta, soon, accent }) {
+function ModuleCard({ testid, icon: Icon, title, desc, to, cta, soon, accent, badge }) {
   const inner = (
     <div className={`h-full rounded-2xl border p-5 transition-colors ${
       accent ? "border-amber-400/40 bg-amber-500/10 hover:bg-amber-500/15"
              : soon ? "border-white/10 bg-white/5 opacity-70"
                     : "border-white/12 bg-white/5 hover:bg-white/10"}`}>
-      <div className="w-11 h-11 rounded-xl grid place-items-center bg-white/10"><Icon size={22} /></div>
+      <div className="relative w-11 h-11 rounded-xl grid place-items-center bg-white/10">
+        <Icon size={22} />
+        {badge > 0 && <span data-testid={`${testid}-badge`} className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold grid place-items-center">{badge > 9 ? "9+" : badge}</span>}
+      </div>
       <div className="mt-3 font-semibold flex items-center gap-2">
         {title}
         {soon && <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/60">Yakında</span>}

@@ -25,6 +25,7 @@ import DesignStudio from "@/pages/DesignStudio";
 import StudioPortal from "@/pages/StudioPortal";
 import StudioDashboard from "@/pages/StudioDashboard";
 import StudioVesikalik from "@/pages/StudioVesikalik";
+import StudioTeam from "@/pages/StudioTeam";
 import StudioGallery from "@/pages/StudioGallery";
 import GallerySelect from "@/pages/GallerySelect";
 
@@ -124,6 +125,7 @@ function App() {
               <Route path="/studyo" element={<StudioPortal />} />
               <Route path="/studyo/panel" element={<StudioDashboard />} />
               <Route path="/studyo/vesikalik" element={<StudioVesikalik />} />
+              <Route path="/studyo/ekip" element={<StudioTeam />} />
               <Route path="/studyo/galeri" element={<StudioGallery />} />
               <Route path="/galeri/:token" element={<GallerySelect />} />
 

@@ -4366,7 +4366,7 @@ async def _vesikalik_edit_call(admin, b64, system_msg, prompt):
     return images[0].get("data", ""), images[0].get("mime_type", "image/png")
 
 
-async def _vesikalik_archive_save(owner_id, b64, mime):
+async def _vesikalik_archive_save(owner_id, b64, mime, staff_name="", photo_type="", print_pref=""):
     import base64 as _b64m, uuid as _uuid
     if b64 and "," in b64 and b64.startswith("data:"):
         b64 = b64.split(",", 1)[1]
@@ -4381,14 +4381,20 @@ async def _vesikalik_archive_save(owner_id, b64, mime):
     put_object(path, data, mime or "image/png")
     await db.vesikalik_archive.insert_one({
         "id": aid, "owner_id": owner_id, "path": path,
-        "mime": mime or "image/png", "created_at": now_iso(),
+        "mime": mime or "image/png",
+        "staff_name": staff_name or "", "photo_type": photo_type or "", "print_pref": print_pref or "",
+        "created_at": now_iso(),
     })
-    # keep only the last 20
+    # keep only the last 20 (firm-wide)
     docs = await db.vesikalik_archive.find({"owner_id": owner_id}, {"_id": 0, "id": 1, "path": 1}) \
         .sort("created_at", -1).to_list(1000)
     for old in docs[20:]:
         await db.vesikalik_archive.delete_one({"id": old["id"]})
     return aid
+
+
+def _staff_name(user: dict) -> str:
+    return user.get("_emp_name") or user.get("firma_adi") or user.get("name") or ""
 
 
 class VesikalikTripleItem(BaseModel):
@@ -4398,6 +4404,8 @@ class VesikalikTripleItem(BaseModel):
     collar: str = ""
     color: str = ""
     color_name: str = ""
+    photo_type: str = ""
+    print_pref: str = ""
 
 
 class VesikalikTripleIn(BaseModel):
@@ -4432,7 +4440,10 @@ async def vesikalik_ai_edit_triple(payload: VesikalikTripleIn, admin: dict = Dep
             success += 1
             entry = {"index": i, "ok": True, "image_base64": r[0], "mime_type": r[1]}
             if payload.save_to_archive:
-                entry["archive_id"] = await _vesikalik_archive_save(admin["id"], r[0], r[1])
+                entry["archive_id"] = await _vesikalik_archive_save(
+                    admin["id"], r[0], r[1],
+                    staff_name=_staff_name(admin),
+                    photo_type=items[i].photo_type, print_pref=items[i].print_pref)
             out.append(entry)
 
     credits_remaining = remaining
@@ -4448,17 +4459,23 @@ async def vesikalik_ai_edit_triple(payload: VesikalikTripleIn, admin: dict = Dep
 async def vesikalik_archive_list(admin: dict = Depends(require_vesikalik_access)):
     docs = await db.vesikalik_archive.find({"owner_id": admin["id"]}, {"_id": 0}) \
         .sort("created_at", -1).to_list(30)
-    return [{"id": d["id"], "url": f"/api/vesikalik/archive/{d['id']}/image", "created_at": d.get("created_at")} for d in docs]
+    return [{"id": d["id"], "url": f"/api/vesikalik/archive/{d['id']}/image",
+             "staff_name": d.get("staff_name", ""), "photo_type": d.get("photo_type", ""),
+             "print_pref": d.get("print_pref", ""), "created_at": d.get("created_at")} for d in docs]
 
 
 class VesikalikArchiveSaveIn(BaseModel):
     image_base64: str
     mime: str = "image/png"
+    photo_type: str = ""
+    print_pref: str = ""
 
 
 @api_router.post("/vesikalik/archive")
 async def vesikalik_archive_add(payload: VesikalikArchiveSaveIn, admin: dict = Depends(require_vesikalik_access)):
-    aid = await _vesikalik_archive_save(admin["id"], payload.image_base64, payload.mime)
+    aid = await _vesikalik_archive_save(admin["id"], payload.image_base64, payload.mime,
+                                        staff_name=_staff_name(admin),
+                                        photo_type=payload.photo_type, print_pref=payload.print_pref)
     if not aid:
         raise HTTPException(status_code=400, detail="Görsel kaydedilemedi")
     return {"id": aid, "url": f"/api/vesikalik/archive/{aid}/image"}

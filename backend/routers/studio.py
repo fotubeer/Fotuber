@@ -32,31 +32,31 @@ STUDIO_TRIAL_MAX_EVENTS = int(os.environ.get("STUDIO_TRIAL_MAX_EVENTS", "2"))
 # Subscription plans. Prices in TRY; PayTR handles the actual charge later.
 STUDIO_PLANS = [
     {
-        "id": "trial", "name": "Ücretsiz Deneme", "price": 0, "period": "3 gün",
+        "id": "trial", "max_users": 1, "name": "Ücretsiz Deneme", "price": 0, "period": "3 gün",
         "ai_credits": 0, "storage_gb": STUDIO_TRIAL_STORAGE_GB, "max_events": STUDIO_TRIAL_MAX_EVENTS,
         "max_devices": 1, "watermark_forced": True,
         "highlights": ["3 gün tam erişim", "Fotuber filigranı zorunlu", "0 AI kredisi"],
     },
     {
-        "id": "basic", "name": "Basic", "price": 499, "period": "aylık",
+        "id": "basic", "max_users": 1, "name": "Basic", "price": 499, "period": "aylık",
         "ai_credits": 50, "storage_gb": 50, "max_events": 10,
         "max_devices": 1, "watermark_forced": False,
         "highlights": ["50 AI kredisi", "50 GB depolama", "Filigtransız"],
     },
     {
-        "id": "bronze", "name": "Bronze", "price": 899, "period": "aylık",
+        "id": "bronze", "max_users": 3, "name": "Bronze", "price": 899, "period": "aylık",
         "ai_credits": 150, "storage_gb": 150, "max_events": 30,
         "max_devices": 2, "watermark_forced": False,
         "highlights": ["150 AI kredisi", "150 GB depolama", "2 cihaz"],
     },
     {
-        "id": "silver", "name": "Silver", "price": 1499, "period": "aylık",
+        "id": "silver", "max_users": 5, "name": "Silver", "price": 1499, "period": "aylık",
         "ai_credits": 400, "storage_gb": 400, "max_events": 100,
         "max_devices": 4, "watermark_forced": False,
         "highlights": ["400 AI kredisi", "400 GB depolama", "4 cihaz"],
     },
     {
-        "id": "gold", "name": "Gold", "price": 2499, "period": "aylık",
+        "id": "gold", "max_users": 10, "name": "Gold", "price": 2499, "period": "aylık",
         "ai_credits": 1200, "storage_gb": 1024, "max_events": 500,
         "max_devices": 8, "watermark_forced": False,
         "highlights": ["1200 AI kredisi", "1 TB depolama", "8 cihaz"],
@@ -77,7 +77,7 @@ class StudioRegisterIn(BaseModel):
 
 
 class StudioLoginIn(BaseModel):
-    email: EmailStr
+    email: str  # firm e-mail OR employee username
     password: str
 
 
@@ -141,6 +141,7 @@ def _studio_state(acc: dict) -> dict:
             "storage_gb": plan["storage_gb"],
             "max_events": plan["max_events"],
             "max_devices": plan["max_devices"],
+            "max_users": plan.get("max_users", 1),
             "watermark_forced": plan["watermark_forced"],
         },
         "ai_credits_remaining": acc.get("ai_credits", plan["ai_credits"]),
@@ -162,6 +163,9 @@ def _strip_studio(acc: dict) -> dict:
         "brand_name": acc.get("brand_name") or acc.get("firma_adi"),
         "brand_logo_asset_id": acc.get("brand_logo_asset_id"),
         "ai_credits": acc.get("ai_credits", 0),
+        "current_user": {"name": acc.get("_emp_name") or acc.get("firma_adi"),
+                         "is_owner": acc.get("_is_owner", True),
+                         "emp_id": acc.get("_emp_id")},
         "notify_email": acc.get("notify_email") or acc.get("email"),
         "notify_enabled": acc.get("notify_enabled", True),
         "created_at": acc.get("created_at"),
@@ -189,6 +193,19 @@ def build_get_current_studio(db, JWT_SECRET, JWT_ALGORITHM):
             acc = await db.studio_accounts.find_one({"id": payload["sub"]}, {"_id": 0})
             if not acc:
                 raise HTTPException(status_code=401, detail="Stüdyo hesabı bulunamadı")
+            # Attach current-user identity (firm owner vs. employee) from token claims
+            emp_id = payload.get("emp")
+            if emp_id:
+                emp = await db.studio_employees.find_one({"id": emp_id, "studio_id": acc["id"]}, {"_id": 0})
+                if not emp or not emp.get("active", True):
+                    raise HTTPException(status_code=401, detail="Çalışan hesabı pasif veya bulunamadı")
+                acc["_emp_id"] = emp_id
+                acc["_emp_name"] = emp.get("name") or emp.get("username")
+                acc["_is_owner"] = False
+            else:
+                acc["_emp_id"] = None
+                acc["_emp_name"] = acc.get("firma_adi")
+                acc["_is_owner"] = True
             return acc
         except jwt.ExpiredSignatureError:
             raise HTTPException(status_code=401, detail="Oturum süresi doldu")
@@ -285,16 +302,40 @@ def get_router(db, deps):
         _set_studio_cookie(response, access)
         return {"account": _strip_studio(doc), "token": access}
 
-    # ---- Login ---------------------------------------------------------------
+    # ---- Login (firm owner by email, OR employee by username) ---------------
+    def _emp_token(studio_id: str, emp_id: str, emp_name: str) -> str:
+        payload = {
+            "sub": studio_id, "role": "studio", "type": "access",
+            "emp": emp_id, "emp_name": emp_name,
+            "exp": datetime.now(timezone.utc) + timedelta(hours=12),
+        }
+        return jwt.encode(payload, JWT_SECRET, algorithm=deps["JWT_ALGORITHM"])
+
     @router.post("/login")
     async def studio_login(payload: StudioLoginIn, response: Response):
-        email = payload.email.lower().strip()
-        acc = await db.studio_accounts.find_one({"email": email})
-        if not acc or not verify_password(payload.password, acc.get("password_hash", "")):
-            raise HTTPException(status_code=401, detail="E-posta veya şifre hatalı")
-        access = create_access_token(acc["id"], email, "studio")
-        _set_studio_cookie(response, access)
-        return {"account": _strip_studio(acc), "token": access}
+        ident = payload.email.strip()
+        acc = await db.studio_accounts.find_one({"email": ident.lower()})
+        if acc and verify_password(payload.password, acc.get("password_hash", "")):
+            access = create_access_token(acc["id"], ident.lower(), "studio")
+            _set_studio_cookie(response, access)
+            acc["_is_owner"] = True
+            acc["_emp_name"] = acc.get("firma_adi")
+            return {"account": _strip_studio(acc), "token": access}
+        # Employee login by username (case-insensitive)
+        emp = await db.studio_employees.find_one({"username": ident.lower()})
+        if emp and verify_password(payload.password, emp.get("password_hash", "")):
+            if not emp.get("active", True):
+                raise HTTPException(status_code=403, detail="Hesabınız pasif durumda. Firma yöneticinize başvurun.")
+            firm = await db.studio_accounts.find_one({"id": emp["studio_id"]}, {"_id": 0})
+            if not firm:
+                raise HTTPException(status_code=401, detail="Firma bulunamadı")
+            access = _emp_token(firm["id"], emp["id"], emp.get("name") or emp.get("username"))
+            _set_studio_cookie(response, access)
+            firm["_is_owner"] = False
+            firm["_emp_id"] = emp["id"]
+            firm["_emp_name"] = emp.get("name") or emp.get("username")
+            return {"account": _strip_studio(firm), "token": access}
+        raise HTTPException(status_code=401, detail="E-posta/kullanıcı adı veya şifre hatalı")
 
     # ---- Logout --------------------------------------------------------------
     @router.post("/logout")
@@ -486,6 +527,125 @@ def get_router(db, deps):
             {"$set": {"brand_name": name or acc.get("firma_adi")}})
         fresh = await db.studio_accounts.find_one({"id": acc["id"]}, {"_id": 0})
         return {"account": _strip_studio(fresh)}
+
+    # ---- Employee (team) management (owner only) ----------------------------
+    def _require_owner(acc: dict):
+        if not acc.get("_is_owner", True):
+            raise HTTPException(status_code=403, detail="Bu işlem yalnızca firma sahibi tarafından yapılabilir.")
+
+    def _emp_out(e: dict) -> dict:
+        return {"id": e["id"], "name": e.get("name"), "username": e.get("username"),
+                "active": e.get("active", True), "created_at": e.get("created_at")}
+
+    @router.get("/employees")
+    async def list_employees(acc: dict = Depends(get_current_studio)):
+        emps = await db.studio_employees.find({"studio_id": acc["id"]}, {"_id": 0}).sort("created_at", 1).to_list(100)
+        state = _studio_state(acc)
+        max_users = state["limits"].get("max_users", 1)
+        return {"owner": {"name": acc.get("firma_adi"), "email": acc.get("email")},
+                "employees": [_emp_out(e) for e in emps],
+                "max_users": max_users, "used_users": 1 + len(emps),
+                "can_add": (1 + len(emps)) < max_users}
+
+    class EmployeeIn(BaseModel):
+        name: str = Field(min_length=2, max_length=60)
+        username: str = Field(min_length=3, max_length=40)
+        password: str = Field(min_length=4, max_length=128)
+
+    @router.post("/employees")
+    async def add_employee(payload: EmployeeIn, acc: dict = Depends(get_current_studio)):
+        _require_owner(acc)
+        state = _studio_state(acc)
+        max_users = state["limits"].get("max_users", 1)
+        count = await db.studio_employees.count_documents({"studio_id": acc["id"]})
+        if (1 + count) >= max_users:
+            raise HTTPException(status_code=403, detail=f"Paket kullanıcı limitine ulaştınız ({max_users}). Daha fazla çalışan için paketinizi yükseltin.")
+        uname = payload.username.lower().strip()
+        if await db.studio_employees.find_one({"username": uname}) or await db.studio_accounts.find_one({"email": uname}):
+            raise HTTPException(status_code=409, detail="Bu kullanıcı adı zaten kullanılıyor.")
+        doc = {"id": new_id(), "studio_id": acc["id"], "name": payload.name.strip(),
+               "username": uname, "password_hash": hash_password(payload.password),
+               "active": True, "created_at": now_iso()}
+        await db.studio_employees.insert_one(doc)
+        return {"employee": _emp_out(doc)}
+
+    class EmployeePatchIn(BaseModel):
+        name: str | None = None
+        active: bool | None = None
+
+    @router.patch("/employees/{eid}")
+    async def patch_employee(eid: str, payload: EmployeePatchIn, acc: dict = Depends(get_current_studio)):
+        _require_owner(acc)
+        upd = {}
+        if payload.name is not None:
+            upd["name"] = payload.name.strip()
+        if payload.active is not None:
+            upd["active"] = bool(payload.active)
+        if not upd:
+            raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
+        r = await db.studio_employees.update_one({"id": eid, "studio_id": acc["id"]}, {"$set": upd})
+        if r.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Çalışan bulunamadı")
+        return {"ok": True}
+
+    class EmployeePwIn(BaseModel):
+        password: str = Field(min_length=4, max_length=128)
+
+    @router.post("/employees/{eid}/reset-password")
+    async def reset_employee_pw(eid: str, payload: EmployeePwIn, acc: dict = Depends(get_current_studio)):
+        _require_owner(acc)
+        r = await db.studio_employees.update_one({"id": eid, "studio_id": acc["id"]},
+                                                 {"$set": {"password_hash": hash_password(payload.password)}})
+        if r.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Çalışan bulunamadı")
+        return {"ok": True}
+
+    @router.delete("/employees/{eid}")
+    async def delete_employee(eid: str, acc: dict = Depends(get_current_studio)):
+        _require_owner(acc)
+        r = await db.studio_employees.delete_one({"id": eid, "studio_id": acc["id"]})
+        if r.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Çalışan bulunamadı")
+        return {"ok": True}
+
+    # ---- Team chat (3+ user packages only) ----------------------------------
+    def _chat_enabled(acc: dict) -> bool:
+        return _studio_state(acc)["limits"].get("max_users", 1) >= 3
+
+    @router.get("/chat")
+    async def get_chat(acc: dict = Depends(get_current_studio)):
+        if not _chat_enabled(acc):
+            return {"enabled": False, "messages": [], "unread": 0}
+        me = acc.get("_emp_id") or "owner"
+        msgs = await db.studio_chat_messages.find({"studio_id": acc["id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
+        msgs = list(reversed(msgs))
+        unread = sum(1 for m in msgs if me not in (m.get("read_by") or []) and m.get("sender_id") != me)
+        return {"enabled": True, "messages": msgs, "unread": unread, "me": me}
+
+    class ChatIn(BaseModel):
+        text: str = Field(min_length=1, max_length=1000)
+
+    @router.post("/chat")
+    async def post_chat(payload: ChatIn, acc: dict = Depends(get_current_studio)):
+        if not _chat_enabled(acc):
+            raise HTTPException(status_code=403, detail="Ekip sohbeti 3+ kullanıcılı paketlerde aktiftir.")
+        me = acc.get("_emp_id") or "owner"
+        doc = {"id": new_id(), "studio_id": acc["id"], "sender_id": me,
+               "sender_name": acc.get("_emp_name") or acc.get("firma_adi"),
+               "text": payload.text.strip(), "read_by": [me], "created_at": now_iso()}
+        await db.studio_chat_messages.insert_one(doc)
+        doc.pop("_id", None)
+        return {"message": doc}
+
+    @router.post("/chat/read")
+    async def read_chat(acc: dict = Depends(get_current_studio)):
+        if not _chat_enabled(acc):
+            return {"ok": True}
+        me = acc.get("_emp_id") or "owner"
+        await db.studio_chat_messages.update_many(
+            {"studio_id": acc["id"], "read_by": {"$ne": me}}, {"$addToSet": {"read_by": me}})
+        return {"ok": True}
+
     @router.get("/design/ai-favorites")
     async def list_ai_favorites(acc: dict = Depends(get_current_studio)):
         favs = await db.design_ai_favorites.find({"studio_id": acc["id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)

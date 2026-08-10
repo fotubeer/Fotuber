@@ -77,7 +77,7 @@ export default function StudioPortal() {
           ))}
         </div>
 
-        <form onSubmit={submit} className="space-y-3.5">
+        <form onSubmit={submit} noValidate className="space-y-3.5">
           {mode === "register" && (
             <Field icon={Building2}>
               <Input data-testid="studio-firma" placeholder="Firma / Stüdyo adı" value={form.firma_adi}
@@ -85,7 +85,8 @@ export default function StudioPortal() {
             </Field>
           )}
           <Field icon={Mail}>
-            <Input data-testid="studio-email" type="email" placeholder="E-posta" value={form.email}
+            <Input data-testid="studio-email" type={mode === "register" ? "email" : "text"}
+              placeholder={mode === "register" ? "E-posta" : "E-posta veya kullanıcı adı"} value={form.email}
               onChange={(e) => upd("email", e.target.value)} required className="pl-10 h-11 bg-white/5 border-white/15 text-white placeholder:text-white/40" />
           </Field>
           <Field icon={Lock}>
