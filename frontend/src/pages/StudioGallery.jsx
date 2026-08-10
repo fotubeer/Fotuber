@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { studioApi } from "@/lib/studioApi";
 import { API_BASE, formatApiError } from "@/lib/api";
+import { TrDatePicker } from "@/components/TrDatePicker";
 
 const BE = process.env.REACT_APP_BACKEND_URL;
 const CHUNK = 512 * 1024;
@@ -175,7 +176,10 @@ function EventsList({ events, onOpen, onCopy, onCreated, onDeleted, onQuota }) {
             <Input data-testid="sg-event-client" placeholder="Müşteri adı" value={form.client_name} onChange={(e) => setForm({ ...form, client_name: e.target.value })} />
             <Input data-testid="sg-event-phone" placeholder="Müşteri telefonu (WhatsApp hatırlatma için · örn. 0532...)" value={form.client_phone} onChange={(e) => setForm({ ...form, client_phone: e.target.value })} />
             <Input data-testid="sg-event-email" type="email" placeholder="Müşteri e-postası (süre bitiş bildirimi için)" value={form.client_email} onChange={(e) => setForm({ ...form, client_email: e.target.value })} />
-            <Input data-testid="sg-event-date" type="date" value={form.event_date} onChange={(e) => setForm({ ...form, event_date: e.target.value })} />
+            <div>
+              <label className="text-xs text-neutral-500">Etkinlik tarihi</label>
+              <TrDatePicker testid="sg-event-date" value={form.event_date} onChange={(v) => setForm({ ...form, event_date: v })} placeholder="gg.aa.yyyy" />
+            </div>
             <div className="grid grid-cols-3 gap-2">
               <div><label className="text-xs text-neutral-500">Albüm limiti</label><Input data-testid="sg-event-albumlimit" type="number" value={form.album_limit} onChange={(e) => setForm({ ...form, album_limit: e.target.value })} /></div>
               <div><label className="text-xs text-neutral-500">Kanvas limiti</label><Input type="number" value={form.canvas_limit} onChange={(e) => setForm({ ...form, canvas_limit: e.target.value })} /></div>

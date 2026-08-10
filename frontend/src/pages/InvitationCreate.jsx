@@ -16,6 +16,7 @@ import RevealOptions from "@/components/invitation/RevealOptions";
 import VoiceRecorder from "@/components/invitation/VoiceRecorder";
 import { INVITATION_THEMES, EVENT_TYPE_LABELS, getTheme, printColors } from "@/lib/invitationThemes";
 import { getMessagesFor } from "@/lib/invitationMessages";
+import { TrDatePicker } from "@/components/TrDatePicker";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const api = (path, opts = {}) => fetch(`${API}/api${path}`, { credentials: "include", ...opts });
@@ -257,7 +258,7 @@ export default function InvitationCreate() {
               <div><Label>2. İsim</Label><Input value={data.person2} onChange={(e) => set("person2", e.target.value)} placeholder="Yasemin" data-testid="person2" /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Tarih *</Label><Input type="date" value={data.event_date} onChange={(e) => set("event_date", e.target.value)} data-testid="event-date" /></div>
+              <div><Label>Tarih *</Label><TrDatePicker value={data.event_date} onChange={(v) => set("event_date", v)} placeholder="gg.aa.yyyy" testid="event-date" /></div>
               <div><Label>Saat</Label><Input type="time" value={data.event_time} onChange={(e) => set("event_time", e.target.value)} data-testid="event-time" /></div>
             </div>
             <div><Label>Mekân Adı</Label><Input value={data.venue_name} onChange={(e) => set("venue_name", e.target.value)} placeholder="Deniz Restoran" data-testid="venue-name" /></div>

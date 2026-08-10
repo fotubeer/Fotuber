@@ -200,6 +200,36 @@ def get_router(db, deps):
         return {"total": total, "used": used, "active": total - used,
                 "free_used": free_used, "discount_used": disc_used}
 
+    # ---- Detailed usage report (which couple used which code, when) ----------
+    @router.get("/report")
+    async def report(acc: dict = Depends(get_current_venue)):
+        rows = await db.venue_invite_codes.find(
+            {"venue_id": acc["id"], "status": "used"}, {"_id": 0}
+        ).sort("used_at", -1).to_list(2000)
+        out = []
+        for c in rows:
+            inv = None
+            if c.get("used_invitation_id"):
+                inv = await db.invitations.find_one(
+                    {"id": c["used_invitation_id"]},
+                    {"_id": 0, "person1": 1, "person2": 1, "event_date": 1, "slug": 1, "event_type": 1, "status": 1})
+            couple = c.get("couple_name", "")
+            if inv:
+                names = f"{inv.get('person1','')} & {inv.get('person2','')}".strip(" &")
+                if names:
+                    couple = names
+            out.append({
+                "id": c["id"], "code": c["code"], "code_type": c.get("code_type", "free"),
+                "discount_percent": c.get("discount_percent", 0),
+                "couple_name": couple, "note": c.get("note", ""),
+                "used_at": c.get("used_at"),
+                "invitation_slug": (inv or {}).get("slug") or c.get("used_slug"),
+                "event_date": (inv or {}).get("event_date", ""),
+                "event_type": (inv or {}).get("event_type", ""),
+                "invitation_status": (inv or {}).get("status", ""),
+            })
+        return {"report": out, "count": len(out)}
+
     # ---- Public: validate a code (used by the invitation wizard) -------------
     @router.get("/code/{code}")
     async def validate_code(code: str):
