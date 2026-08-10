@@ -495,3 +495,9 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - **RAW Uyarısı & Filigran**: RAW yüklemede toast uyarı (spesifik metin). Galeri ayarları (owner): GET/PUT `/studio/gallery/settings` {watermark, allow_originals}; trial → filigran zorunlu, orijinal indirme kapalı. Public link'te filigran overlay + izinliyse orijinal indirme butonu. UI: StudioGallery "Ayarlar" sekmesi.
 - **Üyelik & PayTR**: GET `/studio/modules/pricing` (vesikalik+gallery × basic/bronze/silver/gold), ikinci modülde otomatik %20 indirim. POST `/studio/payments/module/create` → PayTR link. Ödeme başarılı olunca `_grant_paid_order` kind=studio_module → modül entitlement + plan set edilir. UI: `/studyo/paketler` (StudioPackages.jsx) + dashboard "Paketler & Satın Al" kartı.
 - **Düzeltmeler**: StudioPortal login alanı `type=text` (çalışan kullanıcı adı girişi); fmtDate(null) → "—".
+
+## Session AB (Jun 2026) — Bug: Ana site "Vesikalık Paneli" → "Stüdyo Paneli" birleştirme (verified iteration_37: backend 3/3, frontend %100)
+- **Bug**: Ana site header/mobil/footer'da "Vesikalık Paneli" butonu `/vesikalik`'e gidiyordu (kullanıcı birleşik Stüdyo Paneli bekliyordu). PublicLayout.jsx'te üç yer de "Stüdyo Paneli" → `/studyo` olarak değiştirildi.
+- **DEVAM EDEN — Deneme & Kotalar (Feature A, kısmi)**: gallery create_event artık `_studio_state` ile abonelik/deneme aktifliğini ve `max_events` kotasını zorunlu kılıyor; aşımda 402 `[UPGRADE]` döner. Etkinliğe `client_phone` alanı eklendi (WhatsApp hatırlatma için). PayTR modül grant'i artık `paid_until` (+30 gün) set ediyor (yoksa satın alan hesap pasif kalıyordu — düzeltildi).
+  - KALAN: etkinlik başına 10GB depolama zorlaması, frontend yükseltme ekranı (402 yakalama → /studyo/paketler), create formunda telefon input'u.
+- **KALAN — Süre Bitiş Hatırlatması (Feature B)**: silinmeye 24 saat kala müşteriye e-posta + yöneticiye tek tık WhatsApp mesaj butonu. (Henüz başlanmadı.)

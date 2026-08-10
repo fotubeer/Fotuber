@@ -4624,7 +4624,8 @@ async def _grant_paid_order(order: dict):
             acc = await db.studio_accounts.find_one({"id": sid}, {"_id": 0, "modules": 1})
             mods = (acc or {}).get("modules") or {"vesikalik": False, "gallery": False}
             mods[mod] = True
-            await db.studio_accounts.update_one({"id": sid}, {"$set": {"modules": mods, "plan": plan}})
+            paid_until = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+            await db.studio_accounts.update_one({"id": sid}, {"$set": {"modules": mods, "plan": plan, "paid_until": paid_until}})
             await db.studio_module_purchases.insert_one({
                 "studio_id": sid, "module": mod, "plan": plan, "price": order.get("price"),
                 "discount": order.get("discount", 0), "currency": "TRY",

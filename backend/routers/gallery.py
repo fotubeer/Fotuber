@@ -14,7 +14,12 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, R
 from pydantic import BaseModel, Field
 from starlette.responses import Response as StarletteResponse, StreamingResponse
 
-from routers.studio import build_get_current_studio
+from routers.studio import build_get_current_studio, _studio_state
+
+
+def _quota_error(message: str):
+    """402 with an [UPGRADE] marker so the frontend can show the upgrade screen."""
+    return HTTPException(status_code=402, detail=f"[UPGRADE] {message}")
 
 RAW_EXTS = {"cr2", "cr3", "nef", "arw", "dng", "raf", "orf", "rw2", "sr2", "pef", "raw"}
 
@@ -36,6 +41,7 @@ _UPLOADS: dict = {}
 class EventIn(BaseModel):
     name: str = Field(min_length=1)
     client_name: str = ""
+    client_phone: str = ""
     event_date: str = ""
     album_limit: int = 0     # 0 = sınırsız
     canvas_limit: int = 0
@@ -88,6 +94,7 @@ def get_router(db, deps):
     def _event_out(ev, counts=None):
         return {
             "id": ev["id"], "name": ev["name"], "client_name": ev.get("client_name", ""),
+            "client_phone": ev.get("client_phone", ""),
             "event_date": ev.get("event_date", ""), "album_limit": ev.get("album_limit", 0),
             "canvas_limit": ev.get("canvas_limit", 0), "retouch_limit": ev.get("retouch_limit", 0),
             "share_token": ev["share_token"], "status": ev.get("status", "open"),
@@ -138,10 +145,18 @@ def get_router(db, deps):
     # ==================== STUDIO: EVENTS ====================
     @router.post("/studio/gallery/events")
     async def create_event(payload: EventIn, acc: dict = Depends(get_current_studio)):
+        state = _studio_state(acc)
+        if not state["active"]:
+            raise _quota_error("Deneme/abonelik süreniz doldu. Devam etmek için bir paket seçin.")
+        max_events = state["limits"].get("max_events", 0)
+        current = await db.gallery_events.count_documents({"studio_id": acc["id"]})
+        if max_events and current >= max_events:
+            raise _quota_error(f"Paket etkinlik limitine ulaştınız ({max_events}). Daha fazlası için paketinizi yükseltin.")
         link_days, del_days = _gallery_durations(acc.get("plan"))
         doc = {
             "id": new_id(), "studio_id": acc["id"], "name": payload.name,
-            "client_name": payload.client_name, "event_date": payload.event_date,
+            "client_name": payload.client_name, "client_phone": (payload.client_phone or "").strip(),
+            "event_date": payload.event_date,
             "album_limit": payload.album_limit, "canvas_limit": payload.canvas_limit,
             "retouch_limit": payload.retouch_limit,
             "share_token": secrets.token_urlsafe(9), "status": "open",
@@ -149,6 +164,7 @@ def get_router(db, deps):
             "link_expires_at": _add_days(link_days),
             "originals_delete_at": _add_days(del_days),
             "extra_link_used": False, "originals_purged": False,
+            "reminder_sent": False,
         }
         await db.gallery_events.insert_one(doc)
         return _event_out(doc)

@@ -100,9 +100,9 @@ export const PublicLayout = ({ children }) => {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Link to="/vesikalik">
+            <Link to="/studyo">
               <Button data-testid="cta-vesikalik-panel" className="rounded-full bg-blue-600 hover:bg-blue-500 text-white font-semibold px-4 xl:px-5 gap-1.5 whitespace-nowrap shadow-[0_0_15px_rgba(37,99,235,0.3)] hover:shadow-[0_0_28px_rgba(37,99,235,0.5)] transition-shadow duration-300">
-                <IdCard className="w-4 h-4" /> Vesikalık Paneli
+                <IdCard className="w-4 h-4" /> Stüdyo Paneli
               </Button>
             </Link>
             <Link to="/randevu">
@@ -193,9 +193,9 @@ export const PublicLayout = ({ children }) => {
                   <BarChart3 className="w-4 h-4" /> Davetiyelerim (LCV Takip)
                 </Button>
               </Link>
-              <Link to="/vesikalik" onClick={() => setOpen(false)}>
+              <Link to="/studyo" onClick={() => setOpen(false)}>
                 <Button data-testid="m-cta-vesikalik-panel" className="w-full rounded-full bg-blue-600 hover:bg-blue-500 text-white font-semibold gap-1.5">
-                  <IdCard className="w-4 h-4" /> Vesikalık Paneli
+                  <IdCard className="w-4 h-4" /> Stüdyo Paneli
                 </Button>
               </Link>
               {user && user.role === "admin" && (
@@ -239,7 +239,7 @@ export const PublicLayout = ({ children }) => {
               {navItems.map((n) => (
                 <li key={n.to}><Link to={n.to} className="text-neutral-300 hover:text-[#d4af37]">{n.label}</Link></li>
               ))}
-              <li><Link to="/vesikalik" className="text-blue-400 hover:text-blue-300">Vesikalık Paneli</Link></li>
+              <li><Link to="/studyo" className="text-blue-400 hover:text-blue-300">Stüdyo Paneli</Link></li>
               <li><Link to="/davetiye-olustur" className="text-rose-400 hover:text-rose-300">Davetiye Oluştur</Link></li>
               <li><Link to="/altin-saat" className="text-[#e6a24a] hover:text-[#f0b45f]">Altın Saat Hesaplayıcı</Link></li>
             </ul>
