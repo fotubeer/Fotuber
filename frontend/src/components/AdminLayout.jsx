@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, CalendarDays, CalendarClock, Users, Wallet,
   ImageIcon, Camera, LogOut, Menu, X, Package, Settings, Coins, Ticket, Film, KeyRound, ArrowLeftRight,
-  Images, QrCode, Frame, MapPin, Instagram, Bot, Contact, BadgeCheck, Wand2,
+  Images, QrCode, Frame, MapPin, Instagram, Bot, Contact, BadgeCheck, Wand2, Bell,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
@@ -13,6 +13,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 
 const items = [
   { to: "/admin/dashboard", label: "Genel Bakış", icon: LayoutDashboard },
+  { to: "/admin/bildirimler", label: "Bildirimler", icon: Bell },
   { to: "/admin/randevular", label: "Randevular", icon: CalendarDays },
   { to: "/admin/takvim", label: "Takvim & Kapatma", icon: CalendarClock },
   { to: "/admin/albumler", label: "Fotoğraf Seçim Albümleri", icon: Images },

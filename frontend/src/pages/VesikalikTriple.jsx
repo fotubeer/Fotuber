@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { Loader2, Upload, Sparkles, Trash2, Images, X, Download } from "lucide-react";
+import JSZip from "jszip";
+import { Loader2, Upload, Sparkles, Trash2, Images, X, Download, FolderDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,6 +19,7 @@ export default function VesikalikTriple() {
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState([]);
   const [archive, setArchive] = useState([]);
+  const [zipBusy, setZipBusy] = useState(false);
 
   const loadArchive = useCallback(async () => {
     try { setArchive((await api.get("/vesikalik/archive")).data); } catch {}
@@ -56,6 +58,30 @@ export default function VesikalikTriple() {
 
   const dl = (dataUrl, name) => {
     const a = document.createElement("a"); a.href = dataUrl; a.download = name; a.click();
+  };
+
+  const downloadArchiveZip = async () => {
+    if (archive.length === 0) { toast.error("Arşiv boş"); return; }
+    setZipBusy(true);
+    try {
+      const zip = new JSZip();
+      let n = 1;
+      for (const a of archive) {
+        const res = await fetch(`${BE}${a.url}`, { credentials: "include" });
+        const blob = await res.blob();
+        zip.file(`vesikalik-arsiv-${String(n).padStart(2, "0")}.png`, blob);
+        n += 1;
+      }
+      const out = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(out);
+      const link = document.createElement("a");
+      link.href = url; link.download = `firma-arsivi-${new Date().toISOString().slice(0, 10)}.zip`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success(`${archive.length} fotoğraf ZIP olarak indirildi`);
+    } catch (e) {
+      toast.error("ZIP indirme başarısız");
+    } finally { setZipBusy(false); }
   };
 
   return (
@@ -112,7 +138,14 @@ export default function VesikalikTriple() {
 
         {/* Firm archive */}
         <div className="mt-10">
-          <div className="flex items-center gap-2 mb-3"><Images size={18} className="text-amber-400" /><h2 className="text-lg font-semibold">Firma Arşivi</h2><span className="text-xs text-slate-500">(son 20)</span></div>
+          <div className="flex items-center gap-2 mb-3"><Images size={18} className="text-amber-400" /><h2 className="text-lg font-semibold">Firma Arşivi</h2><span className="text-xs text-slate-500">(son 20)</span>
+            {archive.length > 0 && (
+              <Button data-testid="vt-archive-zip-btn" onClick={downloadArchiveZip} disabled={zipBusy}
+                size="sm" className="ml-auto gap-1.5 h-8 bg-slate-800 hover:bg-slate-700 text-slate-100">
+                {zipBusy ? <><Loader2 size={14} className="animate-spin" /> Hazırlanıyor…</> : <><FolderDown size={14} /> Arşivi İndir (ZIP)</>}
+              </Button>
+            )}
+          </div>
           {archive.length === 0 ? <p className="text-slate-500 text-sm">Arşiv boş.</p> : (
             <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-8 gap-2">
               {archive.map((a) => (

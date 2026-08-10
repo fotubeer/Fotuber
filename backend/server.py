@@ -881,7 +881,11 @@ async def create_appointment(payload: AppointmentIn, user: dict = Depends(get_cu
         "title": "Yeni randevu talebi",
         "message": f"{user.get('name')} · {service.get('name')} · {payload.date} {payload.time}",
         "appointment_id": doc["id"],
+        "severity": "critical",
+        "firma_adi": user.get("company_name") or user.get("name") or "",
+        "link": "/admin/randevular",
         "read": False,
+        "read_at": None,
         "created_at": now_iso(),
     })
 
@@ -2568,20 +2572,71 @@ async def _build_message_context(appointment: dict) -> dict:
     }
 
 
+async def _create_notification(kind: str, title: str, message: str, *, severity: str = "general",
+                               firma_adi: str = "", link: str = "", **extra) -> dict:
+    """Central notification creator. Substitutes {firma_adi} tokens in title/message."""
+    fa = firma_adi or ""
+    title = (title or "").replace("{firma_adi}", fa)
+    message = (message or "").replace("{firma_adi}", fa)
+    doc = {
+        "id": new_id(),
+        "kind": kind,
+        "title": title,
+        "message": message,
+        "severity": "critical" if severity == "critical" else "general",
+        "firma_adi": fa,
+        "link": link or "",
+        "read": False,
+        "read_at": None,
+        "created_at": now_iso(),
+        **extra,
+    }
+    await db.notifications.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
 @api_router.get("/notifications")
-async def list_notifications(admin: dict = Depends(require_admin), limit: int = 30, unread_only: bool = False):
-    q = {"read": False} if unread_only else {}
+async def list_notifications(admin: dict = Depends(require_admin), limit: int = 30,
+                             unread_only: bool = False, severity: Optional[str] = None):
+    q = {}
+    if unread_only:
+        q["read"] = False
+    if severity in ("critical", "general"):
+        q["severity"] = severity
     items = await db.notifications.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
     unread_count = await db.notifications.count_documents({"read": False})
-    return {"items": items, "unread_count": unread_count}
+    critical_unread = await db.notifications.count_documents({"read": False, "severity": "critical"})
+    return {"items": items, "unread_count": unread_count, "critical_unread": critical_unread}
+
+
+class NotificationCreateIn(BaseModel):
+    title: str
+    message: str = ""
+    severity: str = "general"
+    firma_adi: str = ""
+    link: str = ""
+
+
+@api_router.post("/notifications")
+async def create_notification(payload: NotificationCreateIn, admin: dict = Depends(require_admin)):
+    if not payload.title.strip():
+        raise HTTPException(status_code=400, detail="Başlık gerekli")
+    doc = await _create_notification(
+        "manual", payload.title.strip(), payload.message.strip(),
+        severity=payload.severity, firma_adi=payload.firma_adi.strip(), link=payload.link.strip(),
+        created_by=admin.get("id"), created_by_name=admin.get("name"),
+    )
+    return doc
 
 
 @api_router.post("/notifications/mark-read")
 async def mark_read(admin: dict = Depends(require_admin), notification_id: Optional[str] = None):
+    now = now_iso()
     if notification_id:
-        await db.notifications.update_one({"id": notification_id}, {"$set": {"read": True}})
+        await db.notifications.update_one({"id": notification_id}, {"$set": {"read": True, "read_at": now, "read_by": admin.get("name")}})
     else:
-        await db.notifications.update_many({"read": False}, {"$set": {"read": True}})
+        await db.notifications.update_many({"read": False}, {"$set": {"read": True, "read_at": now, "read_by": admin.get("name")}})
     return {"ok": True}
 
 
@@ -4366,6 +4421,82 @@ async def vesikalik_archive_image(aid: str):
     from starlette.responses import Response as _Resp
     return _Resp(content=data, media_type=doc.get("mime") or ctype or "image/png",
                  headers={"Cache-Control": "private, max-age=3600"})
+
+
+# ---------------------------------------------------------------------------
+# Golden Hour — AI shooting-spot suggestions (public, free) with distance
+# ---------------------------------------------------------------------------
+class GoldenSpotsIn(BaseModel):
+    lat: float
+    lng: float
+    city: str = ""
+    date: str = ""
+    golden_time: str = ""
+
+
+def _haversine_km(lat1, lon1, lat2, lon2) -> float:
+    import math
+    R = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return round(R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)), 1)
+
+
+@api_router.post("/golden-hour/ai-spots")
+async def golden_hour_ai_spots(payload: GoldenSpotsIn):
+    """AI suggests real photography spots near the selected coordinate + computes distance."""
+    import json as _json
+    key = os.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise HTTPException(status_code=503, detail="AI servisi yapılandırılmamış")
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    loc = payload.city or f"{payload.lat:.4f},{payload.lng:.4f}"
+    sysmsg = (
+        "Sen profesyonel bir fotoğrafçılık mekan danışmanısın. Verilen koordinata YAKIN, "
+        "gerçek ve altın saat/gün batımı fotoğrafçılığı için ideal 5 çekim mekanı öner. "
+        "SADECE geçerli JSON dizisi döndür, başka metin yok. Her öğe: "
+        '{"name": "mekan adı", "description": "neden ideal (max 15 kelime, Türkçe)", '
+        '"best_for": "portre|manzara|çift|aile", "lat": enlem_sayı, "lon": boylam_sayı}. '
+        "lat/lon değerleri gerçek koordinatlara mümkün olduğunca yakın olmalı."
+    )
+    prompt = (
+        f"Konum: {loc} (enlem {payload.lat}, boylam {payload.lng}). "
+        f"Tarih: {payload.date or 'bugün'}. Altın saat: {payload.golden_time or 'gün batımı'}. "
+        "Bu koordinata en yakın 5 çekim mekanını JSON dizi olarak ver."
+    )
+    try:
+        chat = LlmChat(api_key=key, session_id=f"gh-spots-{new_id()}", system_message=sysmsg).with_model("gemini", "gemini-2.5-flash")
+        resp = await chat.send_message(UserMessage(text=prompt))
+        raw = (resp or "").strip()
+        if raw.startswith("```"):
+            raw = raw.split("```", 2)[1] if "```" in raw else raw
+            raw = raw.replace("json", "", 1).strip() if raw.lower().startswith("json") else raw
+        start, end = raw.find("["), raw.rfind("]")
+        arr = _json.loads(raw[start:end + 1]) if start != -1 and end != -1 else []
+    except Exception as e:
+        logging.getLogger("fotuber").error(f"golden ai-spots error: {e}")
+        raise HTTPException(status_code=502, detail="AI önerisi alınamadı, tekrar deneyin")
+    out = []
+    for s in arr[:6]:
+        try:
+            slat, slon = float(s.get("lat")), float(s.get("lon"))
+            dist = _haversine_km(payload.lat, payload.lng, slat, slon)
+            out.append({
+                "name": str(s.get("name", "")).strip()[:80],
+                "description": str(s.get("description", "")).strip()[:140],
+                "best_for": str(s.get("best_for", "")).strip()[:20],
+                "lat": slat, "lon": slon, "distance_km": dist,
+                "maps_url": f"https://www.google.com/maps/dir/?api=1&destination={slat},{slon}",
+            })
+        except Exception:
+            continue
+    out.sort(key=lambda x: x["distance_km"])
+    if not out:
+        raise HTTPException(status_code=502, detail="Uygun mekan bulunamadı, tekrar deneyin")
+    return {"spots": out}
+
 
 
 # ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ import {
   Sparkles, Bot, Heart, ArrowRight, Thermometer, Sun as SunIcon, Search, Loader2,
 } from "lucide-react";
 import { useSettings } from "@/context/SettingsContext";
+import { toast } from "sonner";
 
 // Compact list of major Turkish cities (lat, lng). "Konumumu Kullan" covers the rest.
 const CITIES = [
@@ -133,6 +134,8 @@ export default function GoldenHour() {
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [aiSpots, setAiSpots] = useState([]);
+  const [aiBusy, setAiBusy] = useState(false);
   const searchTimer = useRef(null);
 
   const place = coords || CITIES.find((c) => c.k === cityKey) || CITIES[0];
@@ -269,6 +272,25 @@ export default function GoldenHour() {
     window.dispatchEvent(new CustomEvent("fotuber-ai-open", {
       detail: { city: place.n, date: dateStr, goldenTime: goldenWindow },
     }));
+  };
+
+  // AI shooting-spot suggestions near the selected coordinate (with distance)
+  const fetchAiSpots = async () => {
+    setAiBusy(true); setAiSpots([]);
+    try {
+      const BE = process.env.REACT_APP_BACKEND_URL;
+      const res = await fetch(`${BE}/api/golden-hour/ai-spots`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat: place.lat, lng: place.lng, city: place.n, date: dateStr, golden_time: goldenWindow }),
+      });
+      if (!res.ok) throw new Error("fail");
+      const data = await res.json();
+      setAiSpots(data.spots || []);
+      if (!(data.spots || []).length) toast.error("Öneri bulunamadı, tekrar deneyin");
+    } catch (e) {
+      setAiSpots([]);
+      toast.error("Mekan önerisi alınamadı, lütfen tekrar deneyin");
+    } finally { setAiBusy(false); }
   };
 
   // Social links from settings
@@ -464,6 +486,36 @@ export default function GoldenHour() {
             ))}
           </ul>
           <p className="mt-3 text-xs text-neutral-500">Akşam altın saatte (<b className="text-[#e6a24a]">{goldenWindow}</b>) bu mekanlarda ışık en zarif haliyle olur.</p>
+        </div>
+
+        {/* AI spot suggestions with distance */}
+        <div className="mt-6 rounded-2xl border border-[#e6a24a]/30 bg-gradient-to-br from-neutral-950 to-neutral-900 p-5" data-testid="gh-ai-spots">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2 text-[#e6a24a]"><Sparkles className="w-4 h-4" /> <span className="text-sm font-semibold tracking-wide">AI Mekan Önerisi</span></div>
+            <button data-testid="gh-ai-spots-btn" onClick={fetchAiSpots} disabled={aiBusy}
+              className="inline-flex items-center gap-2 rounded-full bg-[#e6a24a] hover:bg-[#d5923c] text-neutral-950 text-sm font-semibold px-4 py-2 disabled:opacity-60">
+              {aiBusy ? <><Loader2 className="w-4 h-4 animate-spin" /> Öneriliyor…</> : <><Bot className="w-4 h-4" /> Yapay Zekâ ile Mekan Öner</>}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-neutral-500">Seçili konuma (<b className="text-neutral-300">{place.n}</b>) en yakın çekim mekanlarını yapay zekâ önerir ve mesafeyi gösterir.</p>
+          {aiSpots.length > 0 && (
+            <ul className="mt-4 grid sm:grid-cols-2 gap-3">
+              {aiSpots.map((s, i) => (
+                <li key={i} data-testid={`gh-ai-spot-${i}`} className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="font-semibold text-white text-sm">{s.name}</div>
+                    <span className="shrink-0 rounded-full bg-[#e6a24a]/15 text-[#e6a24a] text-[11px] font-semibold px-2 py-0.5" data-testid={`gh-ai-dist-${i}`}>{s.distance_km} km</span>
+                  </div>
+                  <div className="text-xs text-neutral-400 mt-1">{s.description}</div>
+                  <div className="flex items-center gap-3 mt-2">
+                    {s.best_for && <span className="text-[11px] text-neutral-500 capitalize">📸 {s.best_for}</span>}
+                    <a href={s.maps_url} target="_blank" rel="noreferrer" data-testid={`gh-ai-maps-${i}`}
+                      className="ml-auto inline-flex items-center gap-1 text-[11px] text-[#5b6aa8] hover:text-[#7d8bd0]"><Navigation className="w-3 h-3" /> Yol Tarifi</a>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <div className="mt-6 rounded-2xl border border-neutral-800 bg-neutral-900/40 p-5 text-sm text-neutral-400">

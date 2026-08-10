@@ -322,6 +322,20 @@ def get_router(db, deps):
         await db.gallery_events.update_one({"id": ev["id"]}, {"$set": {"submitted": True, "order_status": "new"}})
         order.pop("_id", None)
 
+        # Central admin notification (critical) with firma tag
+        try:
+            _st = await db.studio_accounts.find_one({"id": ev["studio_id"]}, {"_id": 0, "firma_adi": 1})
+            _firma = (_st or {}).get("firma_adi", "Stüdyo")
+            await db.notifications.insert_one({
+                "id": new_id(), "kind": "gallery_order",
+                "title": "Yeni galeri seçimi",
+                "message": f"{_firma} · {ev['name']} ({order_no}) · Albüm {album_n}, Kanvas {canvas_n}, Rötuş {retouch_n}",
+                "severity": "critical", "firma_adi": _firma,
+                "link": "/studyo/galeri", "read": False, "read_at": None, "created_at": now_iso(),
+            })
+        except Exception:
+            pass
+
         # Notify the studio by email (best-effort; never blocks the client)
         try:
             if send_email and email_configured and email_configured():

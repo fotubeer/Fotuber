@@ -264,6 +264,16 @@ def get_router(db, deps):
             "created_at": now_iso(),
         }
         await db.studio_accounts.insert_one(doc)
+        try:
+            await db.notifications.insert_one({
+                "id": new_id(), "kind": "studio_register",
+                "title": "Yeni stüdyo kaydı",
+                "message": f"{doc.get('firma_adi')} ({email}) ücretsiz deneme ile katıldı.",
+                "severity": "general", "firma_adi": doc.get("firma_adi", ""),
+                "link": "/admin/uyelikler", "read": False, "read_at": None, "created_at": now_iso(),
+            })
+        except Exception:
+            pass
         access = create_access_token(doc["id"], email, "studio")
         _set_studio_cookie(response, access)
         return {"account": _strip_studio(doc), "token": access}
