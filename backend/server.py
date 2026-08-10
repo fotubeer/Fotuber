@@ -623,6 +623,19 @@ async def on_startup():
             s.update({"id": new_id(), "created_at": now_iso()})
             await db.services.insert_one(s)
 
+    # Seed design-rights packages (admin-configurable via /api/admin/design-rights-packages)
+    if await db.design_rights_packages.count_documents({}) == 0:
+        for i, p in enumerate([
+            {"name": "1 Tasarım Hakkı", "rights": 1, "price": 149.0},
+            {"name": "3 Tasarım Hakkı", "rights": 3, "price": 399.0},
+            {"name": "5 Tasarım Hakkı", "rights": 5, "price": 599.0},
+            {"name": "10 Tasarım Hakkı", "rights": 10, "price": 999.0},
+        ]):
+            await db.design_rights_packages.insert_one({
+                "id": new_id(), "name": p["name"], "rights": p["rights"], "price": p["price"],
+                "active": True, "sort": i, "created_at": now_iso(),
+            })
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
@@ -4208,6 +4221,20 @@ def _paytr_callback_hash(callback_id: str, merchant_oid: str, pay_status: str, t
 
 async def _grant_paid_order(order: dict):
     """Apply the entitlement (membership days or AI credits) for a paid order."""
+    # Studio Suite: design rights top-up (owner is a studio_accounts doc, not db.users)
+    if order.get("kind") == "studio_design_rights":
+        sid = order.get("studio_id")
+        rights = int(order.get("rights") or 0)
+        if sid and rights > 0:
+            await db.studio_accounts.update_one({"id": sid}, {"$inc": {"design_rights": rights}})
+            await db.studio_design_purchases.insert_one({
+                "studio_id": sid, "package_id": order.get("package_id"),
+                "rights": rights, "price": order.get("price"), "currency": "TRY",
+                "callback_id": order.get("callback_id"),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+        return
+
     uid = order.get("user_id")
     user = await db.users.find_one({"id": uid})
     if not user:
@@ -4377,6 +4404,86 @@ async def paytr_create(payload: PaytrCreateIn, request: Request, user: dict = De
         "callback_link": callback_link,
         "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
     })
+    return {"callback_id": cid, "link": result.get("link"), "paytr_link_id": result.get("id")}
+
+
+class DesignRightsPackageIn(BaseModel):
+    name: str
+    rights: int = Field(gt=0)
+    price: float = Field(ge=0)
+    active: bool = True
+    sort: int = 0
+
+
+@api_router.get("/admin/design-rights-packages")
+async def admin_list_design_rights_packages(admin: dict = Depends(require_admin)):
+    return await db.design_rights_packages.find({}, {"_id": 0}).sort("sort", 1).to_list(100)
+
+
+@api_router.post("/admin/design-rights-packages")
+async def admin_create_design_rights_package(payload: DesignRightsPackageIn, admin: dict = Depends(require_admin)):
+    doc = payload.model_dump()
+    doc.update({"id": new_id(), "created_at": now_iso()})
+    await db.design_rights_packages.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.put("/admin/design-rights-packages/{pid}")
+async def admin_update_design_rights_package(pid: str, payload: DesignRightsPackageIn, admin: dict = Depends(require_admin)):
+    r = await db.design_rights_packages.update_one({"id": pid}, {"$set": payload.model_dump()})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Paket bulunamadı")
+    return await db.design_rights_packages.find_one({"id": pid}, {"_id": 0})
+
+
+@api_router.delete("/admin/design-rights-packages/{pid}")
+async def admin_delete_design_rights_package(pid: str, admin: dict = Depends(require_admin)):
+    r = await db.design_rights_packages.delete_one({"id": pid})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Paket bulunamadı")
+    return {"ok": True}
+
+
+async def _create_paytr_order(title: str, price: float, origin_url: str, request_base_url, order_extra: dict) -> dict:
+    """Shared PayTR Link API order creator. Reused by studio design-rights purchases.
+    order_extra must carry ownership/grant fields (kind, studio_id/user_id, rights, package_id...)."""
+    import httpx as _httpx
+    if not (PAYTR_MERCHANT_ID and PAYTR_MERCHANT_KEY and PAYTR_MERCHANT_SALT):
+        raise HTTPException(status_code=500, detail="PayTR yapılandırılmamış")
+    price_kurus = str(int(round(float(price) * 100)))
+    cid = uuid.uuid4().hex
+    max_installment, currency, lang, link_type, min_count = "1", "TL", "tr", "product", "1"
+    token = _paytr_link_token(title, price_kurus, currency, max_installment, link_type, lang, min_count)
+    origin = (origin_url or "").strip().rstrip("/")
+    if (not origin.startswith("http")) or origin.startswith("http://localhost") or origin.startswith("http://127."):
+        origin = f"{request_base_url}".rstrip("/")
+    origin = origin.replace("http://", "https://")
+    callback_link = f"{origin}/api/payments/paytr-callback"
+    post_data = {
+        "merchant_id": PAYTR_MERCHANT_ID, "name": title, "price": price_kurus,
+        "currency": currency, "max_installment": max_installment, "link_type": link_type,
+        "lang": lang, "min_count": min_count, "max_count": "1",
+        "callback_link": callback_link, "callback_id": cid,
+        "debug_on": "1", "get_qr": "0", "paytr_token": token,
+    }
+    async with _httpx.AsyncClient(timeout=25) as http:
+        r = await http.post(PAYTR_LINK_CREATE_URL, data=post_data,
+                            headers={"Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        result = r.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail=f"PayTR yanıtı okunamadı: {r.text[:200]}")
+    if result.get("status") != "success":
+        raise HTTPException(status_code=502, detail=result.get("err_msg") or result.get("reason") or "PayTR link oluşturulamadı")
+    doc = {
+        "callback_id": cid, "paytr_link_id": result.get("id"),
+        "expected_amount": price_kurus, "currency": "TRY", "price": float(price),
+        "callback_link": callback_link, "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    doc.update(order_extra or {})
+    await db.payment_orders.insert_one(doc)
     return {"callback_id": cid, "link": result.get("link"), "paytr_link_id": result.get("id")}
 
 
@@ -5762,6 +5869,7 @@ _module_deps = {
     "now_iso": now_iso,
     "put_object": put_object,
     "get_object": get_object,
+    "create_paytr_order": _create_paytr_order,
     "JWT_SECRET": JWT_SECRET,
     "JWT_ALGORITHM": JWT_ALGORITHM,
 }

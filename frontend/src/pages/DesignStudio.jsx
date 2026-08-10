@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import * as fabric from "fabric";
+import JSZip from "jszip";
 import { toast } from "sonner";
 import {
   Type, Heading, Square, Circle as CircleIcon, Minus, Image as ImageIcon,
   UserSquare, Save, Download, LayoutTemplate, Trash2, Copy, ArrowUp, ArrowDown,
   Bold, Italic, AlignLeft, AlignCenter, AlignRight, ArrowLeft, ZoomIn,
-  Sparkles, Loader2, Wand2,
+  Sparkles, Loader2, Wand2, Users, ShoppingCart, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,6 +58,17 @@ export default function DesignStudio() {
   const [aiBusy, setAiBusy] = useState(false);
   const [aiImages, setAiImages] = useState([]);
   const [aiRights, setAiRights] = useState(undefined); // undefined=checking, null=not logged in, number=rights
+  // buy rights / revise / bulk
+  const [aiBuyOpen, setAiBuyOpen] = useState(false);
+  const [aiPackages, setAiPackages] = useState([]);
+  const [aiBuying, setAiBuying] = useState(null);
+  const [reviseFor, setReviseFor] = useState(null);
+  const [reviseText, setReviseText] = useState("");
+  const [reviseBusy, setReviseBusy] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkNames, setBulkNames] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(0);
 
   // ---- Fit canvas to container using fabric zoom ------------------------
   const fitCanvas = useCallback(() => {
@@ -191,25 +203,27 @@ export default function DesignStudio() {
   };
 
   // Overflow protection: shrink font until sample name fits the box width.
-  const applySample = (name) => {
-    setSampleName(name);
+  const applyNameToCanvas = (name) => {
     const fc = fcRef.current;
-    if (!fc) return;
+    if (!fc) return false;
+    let found = false;
     fc.getObjects().forEach((o) => {
       if (!o.personalize) return;
-      const text = name.trim() || "{isim}";
+      found = true;
+      const text = (name || "").trim() || "{isim}";
       const base = o.baseFontSize || o.fontSize;
       let fs = base;
       o.set({ text, fontSize: fs, width: o.boxWidth || o.width });
       o.initDimensions && o.initDimensions();
-      // reduce until it fits on a single line within the box
       let guard = 0;
       while (o.width && o.__lineWidths && Math.max(...o.__lineWidths) > (o.boxWidth || o.width) && fs > 18 && guard < 60) {
         fs -= 3; o.set({ fontSize: fs }); o.initDimensions && o.initDimensions(); guard++;
       }
     });
     fc.requestRenderAll();
+    return found;
   };
+  const applySample = (name) => { setSampleName(name); applyNameToCanvas(name); };
 
   const uploadImage = async (e) => {
     const file = e.target.files?.[0];
@@ -351,6 +365,122 @@ export default function DesignStudio() {
     }
   };
 
+  // ---- Buy design rights (PayTR) ---------------------------------------
+  const openBuy = async () => {
+    setAiBuyOpen(true);
+    setAiPackages(null);
+    try {
+      const { data } = await studioApi.get("/studio/design/rights-packages");
+      setAiPackages(data.packages || []);
+      setAiRights(data.design_rights);
+    } catch {
+      setAiPackages([]);
+      setAiRights(null);
+    }
+  };
+
+  const pollStudioPayment = (cid) => {
+    const started = Date.now();
+    const timer = setInterval(async () => {
+      if (Date.now() - started > 5 * 60 * 1000) { clearInterval(timer); return; }
+      try {
+        const { data } = await studioApi.get(`/studio/payments/status/${cid}`);
+        if (data.status === "paid") {
+          clearInterval(timer);
+          setAiRights(data.design_rights);
+          setAiBuying(null);
+          setAiBuyOpen(false);
+          toast.success("Ödeme alındı! Tasarım haklarınız yüklendi.");
+        }
+      } catch {}
+    }, 3000);
+  };
+
+  const buyPackage = async (pkg) => {
+    setAiBuying(pkg.id);
+    try {
+      const { data } = await studioApi.post("/studio/payments/design-rights/create", {
+        package_id: pkg.id, origin_url: window.location.origin,
+      });
+      window.open(data.link, "_blank");
+      toast.info("Ödeme sayfası açıldı. Ödeme sonrası haklar otomatik yüklenir.");
+      pollStudioPayment(data.callback_id);
+    } catch (err) {
+      toast.error(formatApiError(err, "Ödeme başlatılamadı"));
+      setAiBuying(null);
+    }
+  };
+
+  // ---- AI revise (revize) ----------------------------------------------
+  const doRevise = async (assetId) => {
+    if (!reviseText.trim()) { toast.error("Revize isteğinizi yazın"); return; }
+    setReviseBusy(true);
+    try {
+      const { data } = await studioApi.post("/studio/design/ai-edit", {
+        asset_id: assetId, instruction: reviseText.trim(),
+      });
+      setAiImages((prev) => [data.image, ...prev]);
+      setAiRights(data.rights_remaining);
+      setReviseFor(null); setReviseText("");
+      toast.success("Revize edildi · 1 tasarım hakkı kullanıldı");
+    } catch (err) {
+      const st = err?.response?.status;
+      if (st === 402) toast.error(formatApiError(err, "Tasarım hakkınız bitti"));
+      else toast.error(formatApiError(err, "Revize başarısız"));
+    } finally {
+      setReviseBusy(false);
+    }
+  };
+
+  // ---- Bulk personalization (client-side render + ZIP) -----------------
+  const parseBulkNames = (raw) =>
+    (raw || "").split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean).slice(0, 200);
+
+  const onBulkCsv = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    const text = await file.text();
+    setBulkNames((prev) => (prev ? prev + "\n" : "") + text);
+  };
+
+  const doBulkGenerate = async () => {
+    const fc = fcRef.current; if (!fc) return;
+    const names = parseBulkNames(bulkNames);
+    if (names.length === 0) { toast.error("En az bir isim girin"); return; }
+    if (!fc.getObjects().some((o) => o.personalize)) {
+      toast.error("Önce tuvale {isim} kişiselleştirme alanı ekleyin");
+      return;
+    }
+    setBulkBusy(true); setBulkProgress(0);
+    const savedName = sampleName;
+    try {
+      const zip = new JSZip();
+      const scale = fc.__displayScale || 1;
+      for (let i = 0; i < names.length; i++) {
+        applyNameToCanvas(names[i]);
+        await new Promise((r) => setTimeout(r, 30));
+        const dataUrl = fc.toDataURL({ format: "png", multiplier: 1 / scale });
+        const b64 = dataUrl.split(",")[1];
+        const safe = names[i].replace(/[^\p{L}\p{N}\-_ ]/gu, "").slice(0, 40) || `davetli-${i + 1}`;
+        zip.file(`${String(i + 1).padStart(3, "0")}-${safe}.png`, b64, { base64: true });
+        setBulkProgress(Math.round(((i + 1) / names.length) * 100));
+      }
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `${title || "davetiye"}-toplu.zip`; a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`${names.length} kişiselleştirilmiş davetiye ZIP olarak indirildi`);
+      setBulkOpen(false);
+    } catch (err) {
+      toast.error("Toplu üretim başarısız");
+    } finally {
+      applyNameToCanvas(savedName);
+      setBulkBusy(false);
+    }
+  };
+
   return (
     <div data-testid="design-studio-page" className="fixed inset-0 flex flex-col bg-neutral-100 text-neutral-900">
       {/* Header */}
@@ -410,6 +540,7 @@ export default function DesignStudio() {
         <Tool testid="ds-add-image" icon={ImageIcon} label="Görsel" onClick={() => fileInputRef.current?.click()} />
         <Tool testid="ds-add-personalize" icon={UserSquare} label="{isim}" onClick={addPersonalize} accent />
         <Tool testid="ds-ai-btn" icon={Sparkles} label="AI Tasarla" onClick={() => openAi(true)} accent />
+        <Tool testid="ds-bulk-btn" icon={Users} label="Toplu Üret" onClick={() => setBulkOpen(true)} accent />
         <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={uploadImage} />
       </div>
 
@@ -434,9 +565,13 @@ export default function DesignStudio() {
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-neutral-500">Kalan Tasarım Hakkı</span>
-                <span data-testid="ai-rights" className="font-semibold text-amber-600">
-                  {aiRights === undefined ? "…" : `${aiRights} hak`}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span data-testid="ai-rights" className="font-semibold text-amber-600">
+                    {aiRights === undefined ? "…" : `${aiRights} hak`}
+                  </span>
+                  <Button data-testid="ai-buy-btn" size="sm" variant="outline" className="h-7 gap-1 text-xs"
+                    onClick={openBuy}><ShoppingCart size={13} /> Hak Satın Al</Button>
+                </div>
               </div>
               <Textarea
                 data-testid="ai-prompt"
@@ -460,23 +595,101 @@ export default function DesignStudio() {
 
               {aiImages.length > 0 && (
                 <div>
-                  <p className="text-xs text-neutral-500 mb-2">Birini seçin — tuvale arka plan olarak eklenir:</p>
+                  <p className="text-xs text-neutral-500 mb-2">Görsele tıkla → tuvale arka plan olur. "Revize et" ile AI'a değişiklik yaptır (1 hak).</p>
                   <div className="grid grid-cols-3 gap-2">
                     {aiImages.map((im, i) => (
-                      <button
-                        key={im.id}
-                        data-testid={`ai-result-${i}`}
-                        onClick={() => addAiBackground(im.url)}
-                        className="rounded-lg overflow-hidden border-2 border-transparent hover:border-amber-400 transition-colors aspect-[4/5]"
-                      >
-                        <img src={`${process.env.REACT_APP_BACKEND_URL}${im.url}`} alt={`Alternatif ${i + 1}`} className="w-full h-full object-cover" />
-                      </button>
+                      <div key={im.id} className="space-y-1">
+                        <button
+                          data-testid={`ai-result-${i}`}
+                          onClick={() => addAiBackground(im.url)}
+                          className="w-full rounded-lg overflow-hidden border-2 border-transparent hover:border-amber-400 transition-colors aspect-[4/5]"
+                        >
+                          <img src={`${process.env.REACT_APP_BACKEND_URL}${im.url}`} alt={`Alternatif ${i + 1}`} className="w-full h-full object-cover" />
+                        </button>
+                        <button
+                          data-testid={`ai-revise-${i}`}
+                          onClick={() => { setReviseFor(im.id); setReviseText(""); }}
+                          className="w-full text-[11px] flex items-center justify-center gap-1 py-1 rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700"
+                        >
+                          <RefreshCw size={11} /> Revize et
+                        </button>
+                      </div>
                     ))}
                   </div>
+                  {reviseFor && (
+                    <div data-testid="ai-revise-panel" className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3 space-y-2">
+                      <p className="text-xs text-amber-800 font-medium">Seçilen alternatifi nasıl revize edelim?</p>
+                      <Input data-testid="ai-revise-input" value={reviseText} onChange={(e) => setReviseText(e.target.value)}
+                        placeholder="Örn. daha koyu bordo yap, farklı çiçek kullan" className="h-9 text-sm text-neutral-900" />
+                      <div className="flex gap-2">
+                        <Button data-testid="ai-revise-submit" size="sm" disabled={reviseBusy}
+                          onClick={() => doRevise(reviseFor)}
+                          className="gap-1 bg-amber-500 hover:bg-amber-600 text-white">
+                          {reviseBusy ? <><Loader2 size={14} className="animate-spin" /> Revize ediliyor…</> : <><Wand2 size={14} /> Revize Et (1 hak)</>}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setReviseFor(null)}>Vazgeç</Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Buy design rights dialog */}
+      <Dialog open={aiBuyOpen} onOpenChange={setAiBuyOpen}>
+        <DialogContent data-testid="ai-buy-dialog" className="max-w-lg text-neutral-900">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><ShoppingCart size={18} className="text-amber-500" /> Tasarım Hakkı Satın Al</DialogTitle>
+            <DialogDescription>PayTR ile güvenli ödeme. Ödeme sonrası haklar otomatik yüklenir. Her hak = 3 AI alternatifi veya 1 revize.</DialogDescription>
+          </DialogHeader>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {aiPackages === null && <p className="text-sm text-neutral-500">Paketler yükleniyor…</p>}
+            {(aiPackages || []).map((p) => (
+              <div key={p.id} data-testid={`buy-pkg-${p.id}`} className="rounded-xl border border-neutral-200 p-4">
+                <div className="font-semibold">{p.name}</div>
+                <div className="text-2xl font-bold text-amber-600 mt-1">{p.price}₺</div>
+                <div className="text-xs text-neutral-500">{p.rights} tasarım hakkı</div>
+                <Button data-testid={`buy-pkg-btn-${p.id}`} size="sm" disabled={aiBuying === p.id}
+                  onClick={() => buyPackage(p)}
+                  className="mt-3 w-full gap-1 bg-neutral-900 hover:bg-neutral-800">
+                  {aiBuying === p.id ? <><Loader2 size={14} className="animate-spin" /> Bekleniyor…</> : <>Satın Al</>}
+                </Button>
+              </div>
+            ))}
+            {aiPackages !== null && aiPackages.length === 0 && <p className="text-sm text-neutral-500">Paket bulunamadı.</p>}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk personalization dialog */}
+      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <DialogContent data-testid="bulk-dialog" className="max-w-lg text-neutral-900">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Users size={18} className="text-amber-500" /> Toplu Kişiselleştirme</DialogTitle>
+            <DialogDescription>Her isim için ayrı, isme özel davetiye üretilir ve ZIP olarak indirilir. Tuvalde {"{isim}"} alanı olmalı. En fazla 200 isim.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Textarea data-testid="bulk-names" value={bulkNames} onChange={(e) => setBulkNames(e.target.value)}
+              placeholder={"Her satıra bir isim:\nAyşe Yılmaz\nMehmet Demir\nZeynep Kaya"} rows={6} className="text-neutral-900" />
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-neutral-600 flex items-center gap-2 cursor-pointer">
+                <input data-testid="bulk-csv" type="file" accept=".csv,.txt" onChange={onBulkCsv} className="text-xs" />
+              </label>
+              <span className="text-xs text-neutral-500">{parseBulkNames(bulkNames).length} isim</span>
+            </div>
+            {bulkBusy && (
+              <div className="h-2 rounded-full bg-neutral-200 overflow-hidden">
+                <div className="h-full bg-amber-500 transition-all" style={{ width: `${bulkProgress}%` }} />
+              </div>
+            )}
+            <Button data-testid="bulk-generate-btn" disabled={bulkBusy} onClick={doBulkGenerate}
+              className="w-full gap-2 bg-gradient-to-r from-amber-400 to-amber-600 text-neutral-900 font-semibold hover:from-amber-300 hover:to-amber-500">
+              {bulkBusy ? <><Loader2 size={18} className="animate-spin" /> Üretiliyor… %{bulkProgress}</> : <><Download size={18} /> Üret ve ZIP İndir</>}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

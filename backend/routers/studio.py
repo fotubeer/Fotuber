@@ -85,6 +85,16 @@ class AiDesignIn(BaseModel):
     prompt: str = Field(min_length=3, max_length=600)
 
 
+class AiEditIn(BaseModel):
+    asset_id: str
+    instruction: str = Field(min_length=2, max_length=400)
+
+
+class DesignRightsBuyIn(BaseModel):
+    package_id: str
+    origin_url: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -163,6 +173,8 @@ def get_router(db, deps):
     new_id = deps["new_id"]
     now_iso = deps["now_iso"]
     put_object = deps["put_object"]
+    get_object = deps["get_object"]
+    create_paytr_order = deps["create_paytr_order"]
     JWT_SECRET = deps["JWT_SECRET"]
     JWT_ALGORITHM = deps["JWT_ALGORITHM"]
 
@@ -340,5 +352,87 @@ def get_router(db, deps):
 
         fresh = await db.studio_accounts.find_one({"id": acc["id"]}, {"_id": 0, "design_rights": 1})
         return {"images": images, "rights_remaining": int((fresh or {}).get("design_rights", 0))}
+
+    # ---- AI Edit (revize) — 1 hak, referans görsel ile Nano Banana --------
+    @router.post("/design/ai-edit")
+    async def ai_edit(payload: AiEditIn, acc: dict = Depends(get_current_studio)):
+        if not EMERGENT_KEY:
+            raise HTTPException(status_code=500, detail="AI anahtarı yapılandırılmamış")
+        asset = await db.design_assets.find_one({"id": payload.asset_id})
+        if not asset or asset.get("owner_studio_id") != acc["id"]:
+            raise HTTPException(status_code=404, detail="Görsel bulunamadı")
+        if int(acc.get("design_rights", 0) or 0) < 1:
+            raise HTTPException(status_code=402, detail="Tasarım hakkınız bitti.")
+        res = await db.studio_accounts.update_one(
+            {"id": acc["id"], "design_rights": {"$gte": 1}}, {"$inc": {"design_rights": -1}})
+        if res.modified_count == 0:
+            raise HTTPException(status_code=402, detail="Tasarım hakkınız bitti.")
+
+        try:
+            src_bytes, _ct = get_object(asset["path"])
+            from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+            b64 = base64.b64encode(src_bytes).decode("utf-8")
+            chat = LlmChat(
+                api_key=EMERGENT_KEY, session_id=f"studio-edit-{secrets.token_hex(4)}",
+                system_message="Sen profesyonel bir davetiye tasarımcısısın. Verilen davetiye arka planını, kompozisyonu ve ortadaki boş metin alanını KORUYARAK istenen şekilde revize edersin. Görselde yazı/harf/rakam olmasın.",
+            )
+            chat.with_model("gemini", NANO_BANANA_MODEL).with_params(modalities=["image", "text"])
+            instruction = (
+                f"Bu davetiye arka planını şu isteğe göre revize et: {payload.instruction}. "
+                "Genel kompozisyonu ve ORTADAKİ boş metin alanını koru. Görselde yazı olmasın."
+            )
+            _text, images = await chat.send_message_multimodal_response(
+                UserMessage(text=instruction, file_contents=[ImageContent(b64)]))
+        except Exception as e:
+            await db.studio_accounts.update_one({"id": acc["id"]}, {"$inc": {"design_rights": 1}})
+            _log.error(f"ai-edit failed: {e}")
+            raise HTTPException(status_code=502, detail="AI revizyonu başarısız, hakkınız iade edildi.")
+
+        if not images:
+            await db.studio_accounts.update_one({"id": acc["id"]}, {"$inc": {"design_rights": 1}})
+            raise HTTPException(status_code=502, detail="Revize görsel üretilemedi, hakkınız iade edildi.")
+
+        data = base64.b64decode(images[0]["data"])
+        new_asset_id = new_id()
+        path = f"design/ai/{acc['id']}/{new_asset_id}.png"
+        put_object(path, data, "image/png")
+        await db.design_assets.insert_one({
+            "id": new_asset_id, "owner_studio_id": acc["id"], "path": path,
+            "content_type": "image/png", "source": "ai_edit", "instruction": payload.instruction,
+            "parent_asset_id": payload.asset_id, "created_at": now_iso(),
+        })
+        fresh = await db.studio_accounts.find_one({"id": acc["id"]}, {"_id": 0, "design_rights": 1})
+        return {"image": {"id": new_asset_id, "url": f"/api/design/asset/{new_asset_id}"},
+                "rights_remaining": int((fresh or {}).get("design_rights", 0))}
+
+    # ---- Design-rights packages + PayTR purchase -------------------------
+    @router.get("/design/rights-packages")
+    async def rights_packages(acc: dict = Depends(get_current_studio)):
+        pkgs = await db.design_rights_packages.find({"active": True}, {"_id": 0}).sort("sort", 1).to_list(100)
+        return {"packages": pkgs, "design_rights": int(acc.get("design_rights", 0) or 0)}
+
+    @router.post("/payments/design-rights/create")
+    async def buy_rights(payload: DesignRightsBuyIn, request: Request, acc: dict = Depends(get_current_studio)):
+        pkg = await db.design_rights_packages.find_one({"id": payload.package_id, "active": True})
+        if not pkg:
+            raise HTTPException(status_code=400, detail="Geçersiz paket")
+        title = f"Fotuber {int(pkg['rights'])} Tasarim Hakki"
+        return await create_paytr_order(
+            title=title, price=float(pkg["price"]), origin_url=payload.origin_url,
+            request_base_url=request.base_url,
+            order_extra={"kind": "studio_design_rights", "studio_id": acc["id"],
+                         "rights": int(pkg["rights"]), "package_id": pkg["id"]},
+        )
+
+    @router.get("/payments/status/{callback_id}")
+    async def payment_status(callback_id: str, acc: dict = Depends(get_current_studio)):
+        order = await db.payment_orders.find_one({"callback_id": callback_id}, {"_id": 0})
+        if not order or order.get("studio_id") != acc["id"]:
+            raise HTTPException(status_code=404, detail="Sipariş bulunamadı")
+        resp = {"callback_id": callback_id, "status": order.get("status"), "kind": order.get("kind")}
+        if order.get("status") == "paid":
+            fresh = await db.studio_accounts.find_one({"id": acc["id"]}, {"_id": 0, "design_rights": 1})
+            resp["design_rights"] = int((fresh or {}).get("design_rights", 0))
+        return resp
 
     return router
