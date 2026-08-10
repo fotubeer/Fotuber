@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast, Toaster } from "sonner";
-import { Loader2, Send, MessageCircleHeart, Check, X, HelpCircle, Volume2, VolumeX } from "lucide-react";
+import { Loader2, Send, MessageCircleHeart, Check, X, HelpCircle, Volume2, VolumeX, Gift } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
@@ -235,6 +235,14 @@ export default function InvitationView() {
 
           {/* Live photo wall (premium) */}
           {sections.photowall && <PhotoWall slug={slug} t={t} />}
+
+          {inv.venue_gift && (
+            <div data-testid="venue-gift-badge" className="flex items-center justify-center gap-2 mx-auto w-fit rounded-full px-4 py-1.5 text-xs"
+              style={{ background: t.dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)", border: `1px solid ${t.border}`, color: t.sub, fontFamily: "'Montserrat', sans-serif" }}>
+              <Gift className="w-3.5 h-3.5" style={{ color: t.accent }} />
+              <span>Bu davetiye <b style={{ color: t.accent }}>{inv.venue_gift}</b> hediyesidir</span>
+            </div>
+          )}
 
           <div className="text-center text-xs pt-4" style={{ color: t.sub }}>
             <span style={{ fontFamily: t.script, fontSize: "1.4rem", color: t.accent }}>Fotuber</span>

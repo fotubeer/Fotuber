@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Menu, X, Camera, Phone, LogOut, User, Instagram, Youtube, Facebook, Music2, ShieldCheck, LayoutDashboard, Heart, IdCard, ChevronDown, BarChart3 } from "lucide-react";
+import { Menu, X, Camera, Phone, LogOut, User, Instagram, Youtube, Facebook, Music2, ShieldCheck, LayoutDashboard, Heart, IdCard, ChevronDown, BarChart3, Landmark } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
@@ -105,6 +105,11 @@ export const PublicLayout = ({ children }) => {
                 <IdCard className="w-4 h-4" /> Stüdyo Paneli
               </Button>
             </Link>
+            <Link to="/salon">
+              <Button data-testid="cta-salon" variant="outline" className="rounded-full border-rose-400/40 bg-transparent text-rose-300 hover:bg-rose-500/10 font-semibold px-4 gap-1.5 whitespace-nowrap">
+                <Landmark className="w-4 h-4" /> Salon Girişi
+              </Button>
+            </Link>
             <Link to="/randevu">
               <Button data-testid="cta-book-appointment" className="rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-5 xl:px-6 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] transition-shadow duration-300">
                 Randevu Al
@@ -196,6 +201,11 @@ export const PublicLayout = ({ children }) => {
               <Link to="/studyo" onClick={() => setOpen(false)}>
                 <Button data-testid="m-cta-vesikalik-panel" className="w-full rounded-full bg-blue-600 hover:bg-blue-500 text-white font-semibold gap-1.5">
                   <IdCard className="w-4 h-4" /> Stüdyo Paneli
+                </Button>
+              </Link>
+              <Link to="/salon" onClick={() => setOpen(false)}>
+                <Button data-testid="m-cta-salon" variant="outline" className="w-full rounded-full border-rose-400/40 bg-transparent text-rose-300 hover:bg-rose-500/10 font-semibold gap-1.5">
+                  <Landmark className="w-4 h-4" /> Salon Girişi
                 </Button>
               </Link>
               {user && user.role === "admin" && (

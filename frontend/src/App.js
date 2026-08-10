@@ -71,6 +71,7 @@ import AdminMemberships from "@/pages/admin/AdminMemberships";
 import AdminDesignRights from "@/pages/admin/AdminDesignRights";
 import AdminNotifications from "@/pages/admin/AdminNotifications";
 import AdminStudioPlans from "@/pages/admin/AdminStudioPlans";
+import AdminAnnouncements from "@/pages/admin/AdminAnnouncements";
 
 import DiscountCode from "@/pages/DiscountCode";
 import FotuberMedya from "@/pages/FotuberMedya";
@@ -176,6 +177,7 @@ function App() {
               <Route path="/admin/uyelikler" element={<AdminGuard><AdminMemberships /></AdminGuard>} />
               <Route path="/admin/tasarim-haklari" element={<AdminGuard><AdminDesignRights /></AdminGuard>} />
               <Route path="/admin/studyo-fiyatlar" element={<AdminGuard><AdminStudioPlans /></AdminGuard>} />
+              <Route path="/admin/duyurular" element={<AdminGuard><AdminAnnouncements /></AdminGuard>} />
               <Route path="/admin/bildirimler" element={<AdminGuard><AdminNotifications /></AdminGuard>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />

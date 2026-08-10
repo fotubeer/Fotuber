@@ -2759,6 +2759,194 @@ async def admin_update_studio_config(payload: StudioGlobalConfigIn, admin: dict 
     return {"ok": True, "second_module_discount": _second_module_discount()}
 
 
+# ===== Super Admin: FTB Telafi & Kupon Engine =============================
+class CompensateIn(BaseModel):
+    ftb_code: str
+    action: str  # "extend" | "coupon" | "quota"
+    days: int = 0
+    months: int = 0
+    plan: Optional[str] = None
+    discount_pct: int = 0
+    extra_events: int = 0
+    extra_ai: int = 0
+    note: str = ""
+
+
+async def _find_studio_by_ftb(ftb: str):
+    code = (ftb or "").strip().upper()
+    if not code:
+        return None
+    return await db.studio_accounts.find_one({"ftb_code": code})
+
+
+def _studio_summary(acc: dict) -> dict:
+    from routers.studio import _studio_state
+    st = _studio_state(acc)
+    return {
+        "id": acc.get("id"), "ftb_code": acc.get("ftb_code"), "firma_adi": acc.get("firma_adi"),
+        "email": acc.get("email"), "phone": acc.get("phone"),
+        "plan": st["plan"], "plan_name": st["plan_name"], "status": st["status"],
+        "active": st["active"], "until": st["until"], "days_left": st["days_left"],
+        "ai_credits": acc.get("ai_credits", 0), "bonus_events": acc.get("bonus_events", 0),
+        "coupon_pct": acc.get("comp_coupon_pct", 0), "coupon_note": acc.get("comp_coupon_note", ""),
+        "modules": acc.get("modules", {}), "last_seen": acc.get("last_seen"),
+    }
+
+
+@api_router.get("/admin/studio/lookup")
+async def admin_studio_lookup(ftb: str, admin: dict = Depends(require_admin)):
+    acc = await _find_studio_by_ftb(ftb)
+    if not acc:
+        raise HTTPException(status_code=404, detail="Bu FTB kodu ile hesap bulunamadı")
+    return {"account": _studio_summary(acc)}
+
+
+@api_router.post("/admin/studio/compensate")
+async def admin_studio_compensate(payload: CompensateIn, admin: dict = Depends(require_admin)):
+    from routers.studio import PLAN_MAP
+    acc = await _find_studio_by_ftb(payload.ftb_code)
+    if not acc:
+        raise HTTPException(status_code=404, detail="Bu FTB kodu ile hesap bulunamadı")
+    now = datetime.now(timezone.utc)
+    updates = {}
+    label = ""
+    if payload.action == "extend":
+        delta_days = int(payload.days or 0) + int(payload.months or 0) * 30
+        if delta_days <= 0:
+            raise HTTPException(status_code=400, detail="Uzatma için gün/ay girin")
+        cur = None
+        try:
+            cur = datetime.fromisoformat(acc["paid_until"]) if acc.get("paid_until") else None
+        except Exception:
+            cur = None
+        base = cur if (cur and cur > now) else now
+        new_until = base + timedelta(days=delta_days)
+        target_plan = payload.plan if (payload.plan in PLAN_MAP and payload.plan != "trial") else (
+            acc.get("plan") if acc.get("plan") not in (None, "trial") else "basic")
+        updates = {"paid_until": new_until.isoformat(), "plan": target_plan}
+        label = f"+{delta_days} gün ücretsiz kullanım ({target_plan})"
+    elif payload.action == "coupon":
+        if payload.discount_pct not in (10, 20, 50, 100):
+            raise HTTPException(status_code=400, detail="İndirim %10, %20, %50 veya %100 olmalı")
+        updates = {"comp_coupon_pct": payload.discount_pct, "comp_coupon_note": payload.note or ""}
+        label = f"%{payload.discount_pct} indirim kuponu tanımlandı"
+    elif payload.action == "quota":
+        if payload.extra_events <= 0 and payload.extra_ai <= 0:
+            raise HTTPException(status_code=400, detail="Ek etkinlik veya AI hakkı girin")
+        updates = {
+            "bonus_events": int(acc.get("bonus_events", 0)) + int(payload.extra_events or 0),
+            "ai_credits": int(acc.get("ai_credits", 0)) + int(payload.extra_ai or 0),
+        }
+        label = f"+{payload.extra_events} etkinlik, +{payload.extra_ai} AI hakkı yüklendi"
+    else:
+        raise HTTPException(status_code=400, detail="Geçersiz işlem")
+
+    await db.studio_accounts.update_one({"id": acc["id"]}, {"$set": updates})
+    await db.studio_compensation_log.insert_one({
+        "id": new_id(), "studio_id": acc["id"], "ftb_code": acc["ftb_code"],
+        "action": payload.action, "detail": label, "note": payload.note or "",
+        "by": admin.get("email"), "created_at": now.isoformat(),
+    })
+    updated = await db.studio_accounts.find_one({"id": acc["id"]})
+    return {"ok": True, "label": label, "account": _studio_summary(updated)}
+
+
+@api_router.get("/admin/studio/activity")
+async def admin_studio_activity(admin: dict = Depends(require_admin), limit: int = 100):
+    rows = await db.studio_accounts.find({}, {"_id": 0}).sort("last_seen", -1).to_list(limit)
+    return {"accounts": [_studio_summary(r) for r in rows]}
+
+
+# ===== Super Admin: Merkezi Duyuru & Bildirim (broadcast) =================
+class AnnouncementIn(BaseModel):
+    type: str = "update"        # critical | update | celebration | general
+    title: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+    dismissible: bool = True
+    sticky: bool = False        # critical bar stays even after dismiss
+    starts_at: Optional[str] = None
+    ends_at: Optional[str] = None
+    active: bool = True
+
+
+def _ann_out(a: dict) -> dict:
+    return {
+        "id": a["id"], "type": a.get("type", "update"), "title": a.get("title"),
+        "message": a.get("message"), "dismissible": a.get("dismissible", True),
+        "sticky": a.get("sticky", False), "active": a.get("active", True),
+        "starts_at": a.get("starts_at"), "ends_at": a.get("ends_at"),
+        "email_sent": a.get("email_sent", False), "created_at": a.get("created_at"),
+    }
+
+
+@api_router.post("/admin/announcements")
+async def admin_create_announcement(payload: AnnouncementIn, admin: dict = Depends(require_admin)):
+    doc = {"id": new_id(), **payload.dict(), "email_sent": False,
+           "created_at": datetime.now(timezone.utc).isoformat()}
+    await db.studio_announcements.insert_one(doc)
+    return {"ok": True, "announcement": _ann_out(doc)}
+
+
+@api_router.get("/admin/announcements")
+async def admin_list_announcements(admin: dict = Depends(require_admin)):
+    rows = await db.studio_announcements.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return {"announcements": [_ann_out(a) for a in rows]}
+
+
+@api_router.put("/admin/announcements/{aid}")
+async def admin_update_announcement(aid: str, payload: AnnouncementIn, admin: dict = Depends(require_admin)):
+    r = await db.studio_announcements.update_one({"id": aid}, {"$set": payload.dict()})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Duyuru bulunamadı")
+    doc = await db.studio_announcements.find_one({"id": aid}, {"_id": 0})
+    return {"ok": True, "announcement": _ann_out(doc)}
+
+
+@api_router.delete("/admin/announcements/{aid}")
+async def admin_delete_announcement(aid: str, admin: dict = Depends(require_admin)):
+    await db.studio_announcements.delete_one({"id": aid})
+    await db.studio_announcement_acks.delete_many({"announcement_id": aid})
+    return {"ok": True}
+
+
+@api_router.get("/admin/announcements/{aid}/stats")
+async def admin_announcement_stats(aid: str, admin: dict = Depends(require_admin)):
+    total = await db.studio_accounts.count_documents({})
+    acked_ids = await db.studio_announcement_acks.distinct("studio_id", {"announcement_id": aid})
+    acked = len(acked_ids)
+    not_acked = await db.studio_accounts.find(
+        {"id": {"$nin": acked_ids}}, {"_id": 0, "firma_adi": 1, "phone": 1, "ftb_code": 1, "email": 1}).to_list(500)
+    return {"total_members": total, "acked": acked, "not_acked_count": total - acked,
+            "not_acked": not_acked}
+
+
+@api_router.post("/admin/announcements/{aid}/email")
+async def admin_announcement_email(aid: str, admin: dict = Depends(require_admin)):
+    a = await db.studio_announcements.find_one({"id": aid}, {"_id": 0})
+    if not a:
+        raise HTTPException(status_code=404, detail="Duyuru bulunamadı")
+    if not email_service.email_configured():
+        raise HTTPException(status_code=400, detail="Gmail SMTP yapılandırılmamış")
+    accts = await db.studio_accounts.find({"email": {"$nin": [None, ""]}}, {"_id": 0}).to_list(2000)
+    sent = 0
+    for acc in accts:
+        msg = _personalize_announcement(a["message"], acc)
+        title = _personalize_announcement(a["title"], acc)
+        try:
+            await email_service.send_email(acc["email"], title,
+                                           f"<div style='font-family:sans-serif'><h3>{title}</h3><p>{msg}</p></div>", msg)
+            sent += 1
+        except Exception:
+            pass
+    await db.studio_announcements.update_one({"id": aid}, {"$set": {"email_sent": True}})
+    return {"ok": True, "sent": sent, "total": len(accts)}
+
+
+def _personalize_announcement(text: str, acc: dict) -> str:
+    return (text or "").replace("{firma_adi}", acc.get("firma_adi") or "Değerli Üyemiz") \
+                        .replace("{musteri_kodu}", acc.get("ftb_code") or "")
+
+
 class ManualMessageIn(BaseModel):
     body: str
     to_customer: bool = True
@@ -5594,6 +5782,7 @@ def _invite_public(doc: dict, owner: bool = False) -> dict:
         "reveal_style": doc.get("reveal_style") or "",
         "reveal_opts": doc.get("reveal_opts") or {},
         "extended": bool(doc.get("extended")),
+        "venue_gift": doc.get("venue_gift_name") if doc.get("venue_free") else None,
         "created_at": doc.get("created_at"), "expires_at": doc.get("expires_at"),
     }
     if owner:
@@ -5920,6 +6109,7 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
     venue_free = False
     venue_discount_percent = 0
     venue_id = None
+    venue_gift_name = None
     venue_code_val = (payload.venue_code or "").strip().upper()
     if venue_code_val:
         vc = await db.venue_invite_codes.find_one({"code": venue_code_val, "status": "active"}, {"_id": 0})
@@ -5938,6 +6128,7 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
             venue_discount_percent = int(vc.get("discount_percent") or 0)
         else:
             venue_free = True
+            venue_gift_name = vc.get("venue_name")
         pricing = _apply_venue_pricing(pricing, venue_free, venue_discount_percent)
 
     inv_status = "unpaid" if pricing["needs_payment"] else "published"
@@ -5962,6 +6153,7 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
         "paid": granted_by_venue,
         "venue_id": venue_id, "venue_code": venue_code_val or None,
         "venue_free": venue_free, "venue_discount_percent": venue_discount_percent,
+        "venue_gift_name": venue_gift_name,
         "created_at": now, "published_at": (now if inv_status == "published" else None),
         "expires_at": _invite_expires_at(payload.event_date),
     }

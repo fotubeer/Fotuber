@@ -187,7 +187,7 @@ def _studio_state(acc: dict) -> dict:
         "limits": {
             "ai_credits": plan["ai_credits"],
             "storage_gb": plan["storage_gb"],
-            "max_events": plan["max_events"],
+            "max_events": plan["max_events"] + int(acc.get("bonus_events", 0) or 0),
             "max_devices": plan["max_devices"],
             "max_users": plan.get("max_users", 1),
             "link_days": plan.get("link_days", 2),
@@ -195,6 +195,7 @@ def _studio_state(acc: dict) -> dict:
             "watermark_forced": plan["watermark_forced"],
         },
         "ai_credits_remaining": acc.get("ai_credits", plan["ai_credits"]),
+        "coupon_pct": int(acc.get("comp_coupon_pct", 0) or 0),
     }
 
 
@@ -398,7 +399,50 @@ def get_router(db, deps):
     # ---- Me ------------------------------------------------------------------
     @router.get("/me")
     async def studio_me(acc: dict = Depends(get_current_studio)):
+        try:
+            await db.studio_accounts.update_one(
+                {"id": acc["id"]}, {"$set": {"last_seen": datetime.now(timezone.utc).isoformat()}})
+        except Exception:
+            pass
         return {"account": _strip_studio(acc), "plans": effective_plans()}
+
+    # ---- Merkezi Duyuru (broadcast) — studio-facing --------------------------
+    def _personalize(text: str, acc: dict) -> str:
+        return (text or "").replace("{firma_adi}", acc.get("firma_adi") or "Değerli Üyemiz") \
+                            .replace("{musteri_kodu}", acc.get("ftb_code") or "")
+
+    @router.get("/announcements")
+    async def studio_announcements(acc: dict = Depends(get_current_studio)):
+        now = datetime.now(timezone.utc).isoformat()
+        rows = await db.studio_announcements.find({"active": True}, {"_id": 0}).sort("created_at", -1).to_list(50)
+        acked = set(await db.studio_announcement_acks.distinct(
+            "announcement_id", {"studio_id": acc["id"]}))
+        out = []
+        for a in rows:
+            if a.get("starts_at") and a["starts_at"] > now:
+                continue
+            if a.get("ends_at") and a["ends_at"] < now:
+                continue
+            is_acked = a["id"] in acked
+            # dismissed non-sticky announcements are hidden; sticky critical stay
+            if is_acked and not a.get("sticky"):
+                continue
+            out.append({
+                "id": a["id"], "type": a.get("type", "update"),
+                "title": _personalize(a.get("title", ""), acc),
+                "message": _personalize(a.get("message", ""), acc),
+                "dismissible": a.get("dismissible", True), "sticky": a.get("sticky", False),
+                "acked": is_acked, "created_at": a.get("created_at"),
+            })
+        return {"announcements": out}
+
+    @router.post("/announcements/{aid}/ack")
+    async def studio_ack_announcement(aid: str, acc: dict = Depends(get_current_studio)):
+        await db.studio_announcement_acks.update_one(
+            {"announcement_id": aid, "studio_id": acc["id"]},
+            {"$set": {"announcement_id": aid, "studio_id": acc["id"],
+                      "acked_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
+        return {"ok": True}
 
     # ---- AI Design generation (Tasarım Hakkı → Nano Banana) ------------------
     async def _generate_one(user_prompt: str, style: str, idx: int) -> bytes | None:

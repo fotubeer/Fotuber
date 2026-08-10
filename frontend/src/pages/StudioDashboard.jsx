@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { studioApi, clearStudioToken } from "@/lib/studioApi";
+import StudioAnnouncements from "@/components/StudioAnnouncements";
 
 export default function StudioDashboard() {
   const navigate = useNavigate();
@@ -61,6 +62,7 @@ export default function StudioDashboard() {
     <div data-testid="studio-dashboard" className="min-h-screen text-white"
       style={{ background: "radial-gradient(1000px 500px at 85% -10%, #17233d 0%, #070b14 60%, #05070d 100%)" }}>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+        <div className="mb-4"><StudioAnnouncements /></div>
         {/* Top bar */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-300 to-amber-600 grid place-items-center">

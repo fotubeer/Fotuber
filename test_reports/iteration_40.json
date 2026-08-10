@@ -1,0 +1,16 @@
+{
+  "summary": "Tested the two Salon enhancements (venue gift badge on public invitation + QR poster tab in the venue panel) and the header 'Salon Girişi' discoverability CTA. All three items pass end-to-end. Backend GET /api/invitations/public/rozet-test-353349 returns venue_gift='Test Balo Salonu' and ahmet-yasemin-e9385d returns venue_gift=null. Public guest page shows data-testid 'venue-gift-badge' with correct text after clicking the 'Davetiye Aç' reveal button, and the normal free-theme invitation does NOT render the badge. Header cta-salon on /hizmetler navigates to /salon and venue-portal renders. After login (salon1@test.com / Test1234) the 4th tab 'QR Afiş' shows the poster tool: headline defaults to 'Test Balo Salonu', subtitle input present, live preview with QR canvas (150x150, target /davetiye-olustur), and clicking 'Afişi Yazdır / PDF' opens a print popup.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "salon1@test.com / Test1234 (venue portal login)",
+  "seed_data_creation": "None. Used existing rozet-test-353349 (free-code invitation from 'Test Balo Salonu') and ahmet-yasemin-e9385d (normal free-theme invitation).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Reveal animation requires clicking a visible 'Davetiye Aç' (or 'Aç'/'Atla') button before invitation content — including venue-gift-badge — becomes visible. Poster print button opens a real popup; capture with page.on('popup', ...). QR canvas has bounding_box width/height 150.",
+  "rca of the issue": "No issue observed. Enhancement 1 (venue-gift-badge), Enhancement 2 (venue poster QR tab), and Discoverability (cta-salon) all working as specified."
+}

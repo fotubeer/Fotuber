@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, CalendarDays, CalendarClock, Users, Wallet,
   ImageIcon, Camera, LogOut, Menu, X, Package, Settings, Coins, Ticket, Film, KeyRound, ArrowLeftRight,
-  Images, QrCode, Frame, MapPin, Instagram, Bot, Contact, BadgeCheck, Wand2, Bell, SlidersHorizontal,
+  Images, QrCode, Frame, MapPin, Instagram, Bot, Contact, BadgeCheck, Wand2, Bell, SlidersHorizontal, Megaphone,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
@@ -38,6 +38,7 @@ const items = [
   { to: "/admin/vesikalik", label: "Vesikalık Üretici", icon: Camera },
   { to: "/admin/tasarim-haklari", label: "Tasarım Hakkı Paketleri", icon: Wand2, ownerOnly: true },
   { to: "/admin/studyo-fiyatlar", label: "Stüdyo Fiyat & Kota", icon: SlidersHorizontal, ownerOnly: true },
+  { to: "/admin/duyurular", label: "Duyuru & Telafi", icon: Megaphone, ownerOnly: true },
 ];
 
 export const AdminLayout = ({ children }) => {

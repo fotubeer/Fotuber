@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   LogOut, Plus, Copy, Trash2, Ticket, CheckCircle2, Clock, MessageCircle, Gift, Percent, Landmark,
-  FileDown, Send, Users, ListChecks, Megaphone, ArrowLeft,
+  FileDown, Send, Users, ListChecks, Megaphone, ArrowLeft, QrCode, Printer,
 } from "lucide-react";
+import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -134,7 +135,7 @@ export default function VenueDashboard() {
 
         {/* Tabs */}
         <div className="flex gap-1 p-1 rounded-xl bg-white/5 w-fit mb-6">
-          {[["codes", "Kodlar", Ticket], ["report", "Kullanım Raporu", ListChecks], ["campaign", "Toplu Kampanya", Megaphone]].map(([k, label, Icon]) => (
+          {[["codes", "Kodlar", Ticket], ["report", "Kullanım Raporu", ListChecks], ["campaign", "Toplu Kampanya", Megaphone], ["poster", "QR Afiş", QrCode]].map(([k, label, Icon]) => (
             <button key={k} data-testid={`venue-tab-${k}`}
               onClick={() => { setTab(k); if (k === "report") loadReport(); }}
               className={`px-4 h-9 rounded-lg text-sm font-medium flex items-center gap-1.5 ${tab === k ? "bg-white text-neutral-900" : "text-white/60 hover:text-white"}`}>
@@ -145,6 +146,7 @@ export default function VenueDashboard() {
 
         {tab === "report" && <ReportView report={report} reload={loadReport} salon={acc?.salon_adi} />}
         {tab === "campaign" && <CampaignView salon={acc?.salon_adi} onDone={load} />}
+        {tab === "poster" && <PosterView salon={acc?.salon_adi} city={acc?.city} />}
 
         {tab === "codes" && <>
         {/* Generator */}
@@ -405,6 +407,91 @@ function CampaignView({ salon, onDone }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function PosterView({ salon, city }) {
+  const target = `${INVITE_URL}/davetiye-olustur`;
+  const [headline, setHeadline] = useState(salon || "Düğün Salonu");
+  const [subtitle, setSubtitle] = useState("Dijital düğün davetiyenizi ücretsiz oluşturun");
+
+  const printPoster = () => {
+    const canvas = document.getElementById("venue-poster-qr");
+    const qrData = canvas ? canvas.toDataURL("image/png") : "";
+    const w = window.open("", "_blank", "width=900,height=1200");
+    if (!w) { toast.error("Pop-up engellendi. İzin verin."); return; }
+    w.document.write(`<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>QR Afiş</title>
+      <style>
+        @page { size: A4 portrait; margin: 0; }
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body { margin:0; font-family: 'Segoe UI', Arial, sans-serif; }
+        .poster { width:210mm; height:297mm; padding:26mm 20mm; display:flex; flex-direction:column; align-items:center; justify-content:space-between; text-align:center;
+          background:linear-gradient(160deg,#fff 0%,#fff5f7 55%,#ffe9ef 100%); color:#3a1b2a; }
+        .brand { font-size:15pt; letter-spacing:3px; text-transform:uppercase; color:#b03a5b; font-weight:700; }
+        .headline { font-size:34pt; font-weight:800; margin:6mm 0 3mm; line-height:1.1; }
+        .subtitle { font-size:16pt; color:#6b4a55; max-width:150mm; }
+        .qrwrap { background:#fff; border:2px solid #f0c9d4; border-radius:18px; padding:8mm; box-shadow:0 8px 30px rgba(176,58,91,0.15); }
+        .qrwrap img { width:78mm; height:78mm; display:block; }
+        .cta { font-size:18pt; font-weight:700; color:#b03a5b; margin-top:6mm; }
+        .url { font-size:12pt; color:#6b4a55; margin-top:2mm; }
+        .foot { font-size:11pt; color:#9a7b83; }
+      </style></head><body>
+      <div class="poster">
+        <div>
+          <div class="brand">${(headline || "").replace(/</g, "")}</div>
+          <div class="headline">Kare kodu okutun 💍</div>
+          <div class="subtitle">${(subtitle || "").replace(/</g, "")}</div>
+        </div>
+        <div class="qrwrap">${qrData ? `<img src="${qrData}" alt="QR"/>` : ""}</div>
+        <div>
+          <div class="cta">Telefonunuzun kamerasıyla okutun</div>
+          <div class="url">${target}</div>
+          <div class="foot" style="margin-top:10mm;">Fotuber ile hazırlanmıştır · fotuber.com.tr</div>
+        </div>
+      </div>
+      <script>window.onload=function(){setTimeout(function(){window.print();},350);};</script>
+      </body></html>`);
+    w.document.close();
+  };
+
+  return (
+    <div data-testid="venue-poster" className="max-w-3xl">
+      <div className="mb-4">
+        <div className="font-semibold flex items-center gap-2"><QrCode size={16} className="text-rose-300" /> Yazdırılabilir QR Afiş</div>
+        <div className="text-xs text-white/50 mt-0.5">Masalara koyabileceğiniz afiş. Kare kod çiftleri doğrudan davetiye oluşturma sayfasına götürür.</div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-5">
+        {/* Controls */}
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-white/50">Başlık (salon adı)</label>
+            <Input data-testid="venue-poster-headline" value={headline} onChange={(e) => setHeadline(e.target.value)} className="h-10 bg-white/5 border-white/15 text-white" />
+          </div>
+          <div>
+            <label className="text-xs text-white/50">Alt metin</label>
+            <Input data-testid="venue-poster-subtitle" value={subtitle} onChange={(e) => setSubtitle(e.target.value)} className="h-10 bg-white/5 border-white/15 text-white" />
+          </div>
+          <div className="text-[11px] text-white/40">Kare kod hedefi: {target}</div>
+          <Button data-testid="venue-poster-print" onClick={printPoster} className="gap-1.5 bg-rose-500 hover:bg-rose-600 text-white font-semibold"><Printer size={15} /> Afişi Yazdır / PDF</Button>
+        </div>
+
+        {/* Live preview (mini poster) */}
+        <div data-testid="venue-poster-preview" className="rounded-2xl overflow-hidden border border-white/12"
+          style={{ background: "linear-gradient(160deg,#fff 0%,#fff5f7 55%,#ffe9ef 100%)", color: "#3a1b2a" }}>
+          <div className="px-6 py-8 flex flex-col items-center text-center gap-3">
+            <div className="text-[11px] tracking-[3px] uppercase font-bold text-rose-700">{headline}</div>
+            <div className="text-2xl font-extrabold">Kare kodu okutun 💍</div>
+            <div className="text-sm text-rose-900/70 max-w-[240px]">{subtitle}</div>
+            <div className="bg-white rounded-2xl p-3 border-2 border-rose-100 shadow-lg">
+              <QRCodeCanvas id="venue-poster-qr" value={target} size={150} includeMargin data-testid="venue-poster-qr-canvas" />
+            </div>
+            <div className="text-sm font-bold text-rose-700">Telefon kamerasıyla okutun</div>
+            <div className="text-[10px] text-rose-900/50">Fotuber ile hazırlanmıştır · fotuber.com.tr</div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

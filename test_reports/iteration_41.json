@@ -1,0 +1,24 @@
+{
+  "summary": "Tested Super Admin phase: Central Announcement Broadcast, FTB Telafi & Kupon Engine, Live Activity, and Studio-facing Announcement Banner. Found and fixed one blocking compile error in AdminAnnouncements.jsx (SyntaxError: 'await' used inside a non-async setState callback on line 86). After the fix, all flows pass end-to-end. FTB Telafi tab: lookup FTB-P34JX shows account card 'Test Stüdyo'; Extend +10 gün moved days_left 40→50 with toast '+10 gün ücretsiz kullanım (gold)'; Kupon %50 applied (card shows 'Kupon: %50'); Ek Kota +5 etkinlik/+30 AI moved AI 30→60 and Bonus etkinlik 5→10 with toast '+5 etkinlik, +30 AI hakkı yüklendi'. Duyuru Yönetimi: created 'Test Bakım' (Kritik/Uyarı, sticky) and 'Kutlama Test' (Kutlama/Bayram) — both appeared with correct data-testid ids in aa-list and toast 'Duyuru yayınlandı'; aa-stats-{id} shows '1/6 okudu · 5 bekliyor'. Canlı Aktivite: table renders 6 studio rows including Test Stüdyo (FTB-P34JX, Gold, active, son görülme 10.08.2026 16:55:59) with WhatsApp link. Studio side (studio1@test.com/Test1234): studio-announcements banner shows both critical items personalized with 'Test Stüdyo (FTB-P34JX)'; celebration modal (studio-celebration) shows 'Bayramınız kutlu olsun Test Stüdyo!' with a working close button (studio-celebration-close); dismiss on sticky critical converts to 'Okudum' but keeps the banner (per spec).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AdminAnnouncements.jsx had a SyntaxError caused by using `await` inside a non-async arrow callback passed to setStats. Compile-blocking. Fixed by awaiting the API call first then calling setStats. Suggest adding an ESLint 'no-await-in-non-async' guard.",
+    "Two harmless console errors on the app root: '<circle> attribute cx/cy: Expected length, undefined' — indicates an SVG chart is being rendered before its coordinates are computed; not part of this feature but worth cleaning up.",
+    "The composer placeholder shows '{firma_ad}' and '{musteri_kod}' but the personalization engine expects '{firma_adi}' and '{musteri_kodu}'. Consider aligning the placeholder text with the actual template tokens to avoid confusion."
+  ],
+  "updated_files": ["/app/frontend/src/pages/admin/AdminAnnouncements.jsx"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin admin@fotuber.com.tr / FTB.2024; Studio studio1@test.com / Test1234 (FTB-P34JX)",
+  "seed_data_creation": "Created 2 announcements via admin composer: 'Test Bakım' (critical, sticky) and 'Kutlama Test' (celebration). Applied telafi (+10 days, %50 coupon, +5 events / +30 AI) to studio1's account (FTB-P34JX).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "AdminAnnouncements.jsx loadStats was refactored (await promoted out of setState callback). Coupon %select is a shadcn Radix Select — click trigger then click role=option. Studio /studyo login uses data-testid studio-email (accepts owner-email OR employee username) and studio-password. Announcements poll ~25s but appear instantly on first mount. Sticky critical banners persist after dismiss but change to 'Okudum'.",
+  "rca of the issue": "Blocking compile error in AdminAnnouncements.jsx at line 86:44: `setStats((s) => ({ ...s, [a.id]: (await api.get(...)).data }))`. The inner arrow is not `async`, so parser rejected the reserved word 'await'. Reproduction: visit /giris — frontend served the compiler overlay instead of the app. Fix: hoist the await outside the setter — `const r = await api.get(...); setStats((s) => ({ ...s, [a.id]: r.data }));`. After hot reload the page compiled cleanly and all flows in the request passed."
+}
