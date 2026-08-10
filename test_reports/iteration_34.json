@@ -1,0 +1,27 @@
+{
+  "summary": "Phase 1 (Merkezi Stüdyo Paneli + Vesikalık birleştirme) tested end-to-end. Backend: 5/5 pytest passed on /api/vesikalik/ai-credits (admin=role:admin/mode:emergent, studio=role:studio/mode:credits, no-auth=401), /api/studio/me (modules.vesikalik/gallery both true), admin studio-accounts list + POST module toggle (revoke vesikalik → studio ai-credits returns 403, restore → 200). Frontend: studio login at /studyo, welcome toast 'Hoş Geldiniz, Test Stüdyo…' visible non-blocking, FTB badge shows FTB-P34JX and copies to clipboard with 'Müşteri kodu kopyalandı' toast, all 3 module cards (vesikalik/gallery/design) visible. /studyo/vesikalik shell renders (brand='Test Stüdyo', FTB badge, back, logout) and existing editor loads (admin-vesikalik-title, mode-switch, quick-print-btn in single, triple view opens). Module gating: after admin revokes vesikalik, panel hides studio-module-vesikalik card AND direct nav to /studyo/vesikalik redirects to /studyo/panel with the exact 'Vesikalık modülü paketinizde bulunmuyor.' toast. Modules restored after test. Regression: admin login → /admin/vesikalik still loads with title, mode switch, quick print, and triple view.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase1_studio_vesikalik.py",
+    "/app/test_reports/pytest/phase1_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Vesikalık editor logs benign console noise on the preview URL: TF.js WebGL/WASM backends fail to init (WebGL not supported / wasm MIME wrong). Face-detection still works via CPU fallback but adds slow first load; consider preloading tfjs-backend-cpu or hosting the .wasm with correct MIME to speed up load.",
+    "Several 401 console errors observed after studio login while studio pages call main-site endpoints that only accept the main JWT (not the studio_token cookie). Not functional — the required endpoints (/api/studio/me, /api/vesikalik/ai-credits) return 200 with studio cookie — but the noise suggests a shared axios instance calls extra endpoints (e.g., notifications/bell) that don't accept studio auth. Suppress those calls on /studyo/* routes."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase1_studio_vesikalik.py (new)"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (all listed testids present, flows and gating working)"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 ; studio1@test.com / Test1234 (FTB-P34JX)",
+  "seed_data_creation": "None (module toggles were reverted to {vesikalik:true, gallery:true} at end of test)",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 1 fully verified. Only Phase 1 is in scope; Phase 2+ (Etkinlik Galerisi packages, employee mgmt, team chat) are not implemented yet. If backend admin login intermittently returns Cloudflare 1010, include a browser-like User-Agent header on urllib calls. Studio panel emits benign 401 console errors for extra endpoints not gated to studio_token — worth cleaning up but non-blocking."
+}

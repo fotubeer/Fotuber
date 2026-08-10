@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn, ZoomOut, Sparkles, ScanFace, Loader2, Eraser, Paintbrush, Move } from "lucide-react";
 import { toast } from "sonner";
 import { PHOTO_SPECS, PAPER_SIZES, suggestPaper, COUNT_PRESETS } from "@/lib/passportSpecs";
+import { printImageSheet } from "@/lib/printImage";
 import { detectBiometricCrop, loadFaceModels } from "@/lib/faceDetect";
 import { removeBackground, compositeOnColor } from "@/lib/bgRemove";
 import RetouchBrush from "@/components/RetouchBrush";
@@ -626,6 +627,15 @@ const AdminPassportPhoto = () => {
     setCode(next);
   };
 
+  const quickPrint = async () => {
+    if (!image) { toast.error("Önce fotoğraf yükleyin"); return; }
+    await drawSheet();
+    const dataUrl = sheetCanvasRef.current?.toDataURL("image/jpeg", 0.95);
+    const ok = printImageSheet(dataUrl, { widthMm: paper.w, heightMm: paper.h, title: `${code} · ${count}'li Baskı` });
+    if (!ok) { toast.error("Baskı penceresi açılamadı — açılır pencere iznini verin"); return; }
+    toast.success("Baskı penceresi açıldı");
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -734,6 +744,7 @@ const AdminPassportPhoto = () => {
                 </Button>
                 <Button onClick={downloadSingle} disabled={bgProcessing} className="bg-slate-900 hover:bg-slate-800" data-testid="download-single-btn"><Download className="w-4 h-4 mr-2" />Tekli İndir</Button>
                 <Button onClick={downloadSheet} disabled={bgProcessing} className="bg-emerald-600 hover:bg-emerald-700" data-testid="download-sheet-btn"><Printer className="w-4 h-4 mr-2" />Baskıya Hazır İndir</Button>
+                <Button onClick={quickPrint} disabled={bgProcessing} className="bg-blue-600 hover:bg-blue-700" data-testid="quick-print-btn"><Printer className="w-4 h-4 mr-2" />Hızlı Baskı</Button>
               </div>
               {autoDetected && (
                 <div className="mt-3 text-xs text-emerald-700 bg-emerald-50 rounded px-3 py-2 inline-flex items-center gap-2" data-testid="detection-status">

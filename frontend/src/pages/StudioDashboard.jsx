@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   Camera, LogOut, IdCard, Clock, Sparkles, HardDrive, CalendarRange, ShieldAlert,
-  Images, Palette, ScanFace, Check, Crown, Wand2, Bell, Save,
+  Images, Palette, ScanFace, Check, Crown, Wand2, Bell, Save, Copy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,10 +18,24 @@ export default function StudioDashboard() {
 
   useEffect(() => {
     studioApi.get("/studio/me")
-      .then((r) => setData(r.data))
+      .then((r) => {
+        setData(r.data);
+        const acc = r.data?.account;
+        if (acc && !sessionStorage.getItem("fotuber_studio_welcomed")) {
+          sessionStorage.setItem("fotuber_studio_welcomed", "1");
+          toast.success(`Hoş Geldiniz, ${acc.brand_name || acc.firma_adi}. Çalışma Alanınız Hazırlanıyor.`, { duration: 4000 });
+        }
+      })
       .catch(() => navigate("/studyo"))
       .finally(() => setLoading(false));
   }, [navigate]);
+
+  const copyFtb = (code) => {
+    navigator.clipboard?.writeText(code).then(
+      () => toast.success("Müşteri kodu kopyalandı"),
+      () => toast.error("Kopyalanamadı")
+    );
+  };
 
   const logout = async () => {
     try { await studioApi.post("/studio/logout"); } catch {}
@@ -62,7 +76,11 @@ export default function StudioDashboard() {
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
             className="rounded-2xl border border-white/12 p-5 bg-white/5">
             <div className="flex items-center gap-2 text-white/50 text-xs"><IdCard size={15} /> MÜŞTERİ KODU</div>
-            <div data-testid="studio-ftb-code" className="mt-2 text-2xl font-mono font-bold tracking-widest text-amber-300">{acc.ftb_code}</div>
+            <button data-testid="studio-ftb-code" onClick={() => copyFtb(acc.ftb_code)}
+              title="Kopyalamak için tıklayın"
+              className="mt-2 inline-flex items-center gap-2 text-2xl font-mono font-bold tracking-widest text-amber-300 hover:text-amber-200 transition-colors">
+              {acc.ftb_code} <Copy size={16} className="opacity-60" />
+            </button>
             <p className="mt-1 text-xs text-white/40">Destek ve siparişlerde bu kodu kullanın.</p>
           </motion.div>
 
@@ -102,15 +120,24 @@ export default function StudioDashboard() {
         {/* Notification settings */}
         <NotifySettings acc={acc} />
 
-        {/* Modules */}
+        {/* Modules — gated by purchased package */}
         <h2 className="mt-8 mb-3 text-sm font-semibold text-white/60 uppercase tracking-wide">Modüller</h2>
         <div className="grid sm:grid-cols-3 gap-4">
-          <ModuleCard testid="studio-module-vesikalik" icon={ScanFace} title="Vesikalık Stüdyosu"
-            desc="Biyometrik vesikalık üretimi, AI kıyafet, rötuş ve baskı." to="/vesikalik" cta="Aç" />
+          {acc.modules?.vesikalik && (
+            <ModuleCard testid="studio-module-vesikalik" icon={ScanFace} title="Vesikalık Stüdyosu"
+              desc="Biyometrik vesikalık üretimi, AI kıyafet, rötuş ve baskı." to="/studyo/vesikalik" cta="Aç" />
+          )}
+          {acc.modules?.gallery && (
+            <ModuleCard testid="studio-module-gallery" icon={Images} title="Etkinlik Galerisi"
+              desc="Müşteri foto seçimi, albüm, retouch ve sipariş takibi." to="/studyo/galeri" cta="Aç" />
+          )}
           <ModuleCard testid="studio-module-design" icon={Palette} title="Davetiye Tasarım Stüdyosu"
             desc="Canva benzeri sürükle-bırak editör, 50+ font, kişiselleştirme." to="/tasarim-studyosu" cta="Tasarla" accent />
-          <ModuleCard testid="studio-module-gallery" icon={Images} title="Etkinlik Galerisi"
-            desc="Müşteri foto seçimi, albüm, retouch ve sipariş takibi." to="/studyo/galeri" cta="Aç" />
+          {!acc.modules?.vesikalik && !acc.modules?.gallery && (
+            <div data-testid="studio-no-modules" className="sm:col-span-2 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-5 text-sm text-amber-100">
+              Paketinizde aktif modül yok. Vesikalık veya Etkinlik Galerisi paketini satın alın.
+            </div>
+          )}
         </div>
 
         {/* Plans */}

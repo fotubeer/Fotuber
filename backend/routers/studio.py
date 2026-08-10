@@ -158,6 +158,10 @@ def _strip_studio(acc: dict) -> dict:
         "ftb_code": acc.get("ftb_code"),
         "role": "studio",
         "design_rights": acc.get("design_rights", 0),
+        "modules": acc.get("modules") or {"vesikalik": True, "gallery": True},
+        "brand_name": acc.get("brand_name") or acc.get("firma_adi"),
+        "brand_logo_asset_id": acc.get("brand_logo_asset_id"),
+        "ai_credits": acc.get("ai_credits", 0),
         "notify_email": acc.get("notify_email") or acc.get("email"),
         "notify_enabled": acc.get("notify_enabled", True),
         "created_at": acc.get("created_at"),
@@ -256,6 +260,9 @@ def get_router(db, deps):
             "paid_until": None,
             "ai_credits": 0,
             "design_rights": STUDIO_FREE_DESIGN_RIGHTS,
+            "modules": {"vesikalik": True, "gallery": True},
+            "brand_name": payload.firma_adi.strip(),
+            "brand_logo_asset_id": None,
             "notify_email": None,
             "notify_enabled": True,
             "storage_used_bytes": 0,
@@ -470,7 +477,15 @@ def get_router(db, deps):
         fresh = await db.studio_accounts.find_one({"id": acc["id"]}, {"_id": 0})
         return {"account": _strip_studio(fresh)}
 
-    # ---- AI background favorites (studio-scoped) ------------------------
+    # ---- Brand (panel-only display; NOT added to Vesikalık print output) ----
+    @router.put("/settings/brand")
+    async def update_brand(payload: dict, acc: dict = Depends(get_current_studio)):
+        name = (payload.get("brand_name") or "").strip()
+        await db.studio_accounts.update_one(
+            {"id": acc["id"]},
+            {"$set": {"brand_name": name or acc.get("firma_adi")}})
+        fresh = await db.studio_accounts.find_one({"id": acc["id"]}, {"_id": 0})
+        return {"account": _strip_studio(fresh)}
     @router.get("/design/ai-favorites")
     async def list_ai_favorites(acc: dict = Depends(get_current_studio)):
         favs = await db.design_ai_favorites.find({"studio_id": acc["id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)

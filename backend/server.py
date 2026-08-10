@@ -314,15 +314,53 @@ async def _track_feature(user_id: str, feature: str):
         pass
 
 
-async def require_vesikalik_access(user: dict = Depends(get_current_user)) -> dict:
-    role = user.get("role")
-    if role in ("admin", "staff"):
-        return user
-    if role == "member":
-        if not _membership_state(user)["active"]:
-            raise HTTPException(status_code=402, detail="Üyeliğiniz aktif değil. Lütfen abone olun.")
-        return user
-    raise HTTPException(status_code=403, detail="Yetkisiz erişim")
+async def require_vesikalik_access(request: Request) -> dict:
+    """Combined auth for Vesikalık: accepts main-site (admin/staff/member) OR a Studio
+    account token (studio_token cookie / Bearer) that has the 'vesikalik' module.
+    Studio accounts consume their own ai_credits; admin/staff use Emergent balance."""
+    tokens = []
+    ah = request.headers.get("Authorization", "")
+    if ah.startswith("Bearer "):
+        tokens.append(ah[7:])
+    if request.cookies.get("access_token"):
+        tokens.append(request.cookies["access_token"])
+    if request.cookies.get("studio_token"):
+        tokens.append(request.cookies["studio_token"])
+    for tok in tokens:
+        try:
+            payload = jwt.decode(tok, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        except Exception:
+            continue
+        if payload.get("type") != "access":
+            continue
+        role = payload.get("role")
+        sub = payload.get("sub")
+        if role == "studio":
+            acc = await db.studio_accounts.find_one({"id": sub}, {"_id": 0})
+            if not acc:
+                continue
+            mods = acc.get("modules") or {"vesikalik": True, "gallery": True}
+            if not mods.get("vesikalik", True):
+                raise HTTPException(status_code=403, detail="Vesikalık modülü paketinizde bulunmuyor.")
+            acc["role"] = "studio"
+            return acc
+        user = await db.users.find_one({"id": sub}, {"_id": 0})
+        if not user:
+            continue
+        r = user.get("role")
+        if r in ("admin", "staff"):
+            return user
+        if r == "member":
+            if not _membership_state(user)["active"]:
+                raise HTTPException(status_code=402, detail="Üyeliğiniz aktif değil. Lütfen abone olun.")
+            return user
+    raise HTTPException(status_code=401, detail="Kimlik doğrulaması gerekli")
+
+
+async def _deduct_vesikalik_credits(user: dict, new_remaining: int):
+    """Persist remaining AI credits to the correct collection based on account type."""
+    coll = db.studio_accounts if user.get("role") == "studio" else db.users
+    await coll.update_one({"id": user.get("id")}, {"$set": {"ai_credits": int(new_remaining)}})
 
 
 # ---------------------------------------------------------------------------
@@ -2640,6 +2678,28 @@ async def mark_read(admin: dict = Depends(require_admin), notification_id: Optio
     return {"ok": True}
 
 
+class StudioModulesIn(BaseModel):
+    vesikalik: bool = True
+    gallery: bool = True
+
+
+@api_router.get("/admin/studio-accounts")
+async def admin_list_studio_accounts(admin: dict = Depends(require_admin)):
+    docs = await db.studio_accounts.find({}, {"_id": 0, "id": 1, "email": 1, "firma_adi": 1, "ftb_code": 1, "plan": 1, "modules": 1, "ai_credits": 1}).sort("created_at", -1).to_list(500)
+    for d in docs:
+        d["modules"] = d.get("modules") or {"vesikalik": True, "gallery": True}
+    return {"accounts": docs}
+
+
+@api_router.post("/admin/studio-accounts/{sid}/modules")
+async def admin_set_studio_modules(sid: str, payload: StudioModulesIn, admin: dict = Depends(require_admin)):
+    r = await db.studio_accounts.update_one(
+        {"id": sid}, {"$set": {"modules": {"vesikalik": bool(payload.vesikalik), "gallery": bool(payload.gallery)}}})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Stüdyo hesabı bulunamadı")
+    return {"ok": True, "modules": {"vesikalik": bool(payload.vesikalik), "gallery": bool(payload.gallery)}}
+
+
 class ManualMessageIn(BaseModel):
     body: str
     to_customer: bool = True
@@ -4242,7 +4302,7 @@ async def vesikalik_ai_edit(payload: VesikalikAiEditIn, admin: dict = Depends(re
         # Owner's own Emergent balance — no purchasable-credit deduction.
         return {"image_base64": out.get("data", ""), "mime_type": out.get("mime_type", "image/png"), "own_key": False, "emergent": True, "credits_remaining": remaining}
     new_remaining = max(0, remaining - 1)
-    await db.users.update_one({"id": admin.get("id")}, {"$set": {"ai_credits": new_remaining}})
+    await _deduct_vesikalik_credits(admin, new_remaining)
     return {"image_base64": out.get("data", ""), "mime_type": out.get("mime_type", "image/png"), "own_key": False, "credits_remaining": new_remaining}
 
 
@@ -4378,7 +4438,7 @@ async def vesikalik_ai_edit_triple(payload: VesikalikTripleIn, admin: dict = Dep
     credits_remaining = remaining
     if not owner_side and not byok and success > 0:
         credits_remaining = max(0, remaining - success)
-        await db.users.update_one({"id": admin.get("id")}, {"$set": {"ai_credits": credits_remaining}})
+        await _deduct_vesikalik_credits(admin, credits_remaining)
     await _track_feature(admin.get("id"), "ai_kiyafet_triple")
     return {"results": out, "success": success, "total": len(items),
             "credits_remaining": credits_remaining, "own_key": byok, "owner_side": owner_side}

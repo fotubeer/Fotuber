@@ -7,7 +7,7 @@ import {
   Type, Heading, Square, Circle as CircleIcon, Minus, Image as ImageIcon,
   UserSquare, Save, Download, LayoutTemplate, Trash2, Copy, ArrowUp, ArrowDown,
   Bold, Italic, AlignLeft, AlignCenter, AlignRight, ArrowLeft, ZoomIn,
-  Sparkles, Loader2, Wand2, Users, ShoppingCart, RefreshCw, Star,
+  Sparkles, Loader2, Wand2, Users, ShoppingCart, RefreshCw, Star, Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import {
 import { api, formatApiError, API_BASE } from "@/lib/api";
 import { studioApi } from "@/lib/studioApi";
 import { loadGoogleFont, preloadFonts } from "@/lib/designFonts";
+import { printImageSheet } from "@/lib/printImage";
 
 const DEFAULT_W = 1080;
 const DEFAULT_H = 1350;
@@ -347,6 +348,15 @@ export default function DesignStudio() {
     a.href = url; a.download = `${title || "davetiye"}.png`; a.click();
   };
 
+  const quickPrint = () => {
+    const fc = fcRef.current; if (!fc) return;
+    const scale = fc.__displayScale || 1;
+    const url = fc.toDataURL({ format: "png", multiplier: 1 / scale });
+    const ok = printImageSheet(url, { title: title || "Davetiye" });
+    if (!ok) { toast.error("Baskı penceresi açılamadı — açılır pencere iznini verin"); return; }
+    toast.success("Baskı penceresi açıldı");
+  };
+
   // ---- AI design (Tasarım Hakkı) ---------------------------------------
   const openAi = async (open) => {
     setAiOpen(open);
@@ -592,6 +602,9 @@ export default function DesignStudio() {
           </Dialog>
           <Button data-testid="ds-export-btn" variant="outline" size="sm" className="gap-1.5" onClick={exportPng}>
             <Download size={16} /><span className="hidden sm:inline">İndir</span>
+          </Button>
+          <Button data-testid="ds-print-btn" variant="outline" size="sm" className="gap-1.5" onClick={quickPrint}>
+            <Printer size={16} /><span className="hidden sm:inline">Hızlı Baskı</span>
           </Button>
           <Button data-testid="ds-save-btn" size="sm" className="gap-1.5 bg-neutral-900 hover:bg-neutral-800" onClick={doSave} disabled={saving}>
             <Save size={16} />{saving ? "..." : "Kaydet"}
