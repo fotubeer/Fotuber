@@ -448,3 +448,11 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 
 ## KALAN — FAZ C (P0, sonraki tur)
 - **Vesikalık Triple-Processing**: mevcut Vesikalık (MemberVesikalik.jsx + server.py vesikalik/ai-edit) modülüne 3 fotoğrafı aynı anda bağımsız işleyen mod + 20 fotoluk firma arşivi. AI işleme (gemini) kredi tükettiği için test dikkatli yapılacak.
+
+## Session X-7 (Jun 2026) — 3 geliştirme: Bildirim Tercihleri + Şablon Önizleme + Favori AI Sonuçları (self-verified: curl + screenshot)
+- **Bildirim Tercihleri**: studio_accounts'a notify_email + notify_enabled eklendi. PUT `/api/studio/settings/notifications` (studio auth). gallery.py public_select artık notify_enabled kapalıysa mail göndermez, notify_email varsa oraya (yoksa hesap e-postası) gönderir. Frontend: StudioDashboard "Galeri Bildirim Ayarları" kartı (notify-enabled toggle + notify-email + notify-save).
+- **Şablon Önizleme**: Şablon kartına tıklamak artık doğrudan yüklemek yerine büyük önizleme modalı açıyor (template-preview-dialog) → "Bu şablonu kullan" (template-use-btn) ile tuvale getiriyor. Favori yıldızı korunuyor.
+- **Favori AI Sonuçları**: Studio-scoped `db.design_ai_favorites`. Uçlar: GET/POST/DELETE `/api/studio/design/ai-favorites/{asset_id}` (studio auth). Frontend AI dialogunda her sonuçta "Kaydet/Kaydedildi" (ai-fav-*) + üretim yokken de görünen "Kayıtlı Arka Planlar" şeridi (ai-fav-use-*) → tıkla, tuvale arka plan olarak gelsin.
+- Doğrulama: notify set/persist + ai-fav add/list (curl), pano bildirim kartı + şablon önizleme (screenshot), derleme temiz.
+
+## KALAN — FAZ C (P0, sonraki tur): Vesikalık Triple-Processing + 20 fotoluk firma arşivi.

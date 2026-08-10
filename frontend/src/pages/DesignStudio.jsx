@@ -52,6 +52,7 @@ export default function DesignStudio() {
   const [saving, setSaving] = useState(false);
   const [zoomPct, setZoomPct] = useState(100);
   const [tplOpen, setTplOpen] = useState(false);
+  const [previewTpl, setPreviewTpl] = useState(null);
   const [sampleName, setSampleName] = useState("");
 
   // AI design (Tasarım Hakkı → Nano Banana)
@@ -71,6 +72,7 @@ export default function DesignStudio() {
   const [bulkNames, setBulkNames] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(0);
+  const [aiFavs, setAiFavs] = useState([]);
 
   // ---- Fit canvas to container using fabric zoom ------------------------
   const fitCanvas = useCallback(() => {
@@ -353,9 +355,25 @@ export default function DesignStudio() {
     try {
       const { data } = await studioApi.get("/studio/me");
       setAiRights(data.account.design_rights ?? 0);
+      studioApi.get("/studio/design/ai-favorites").then((r) => setAiFavs(r.data.favorites || [])).catch(() => {});
     } catch {
       setAiRights(null); // not logged into studio
     }
+  };
+
+  const isAiFav = (assetId) => aiFavs.some((f) => f.asset_id === assetId);
+  const toggleAiFav = async (im) => {
+    const fav = isAiFav(im.id);
+    try {
+      if (fav) {
+        await studioApi.delete(`/studio/design/ai-favorites/${im.id}`);
+        setAiFavs((f) => f.filter((x) => x.asset_id !== im.id));
+      } else {
+        await studioApi.post(`/studio/design/ai-favorites/${im.id}`);
+        setAiFavs((f) => [{ asset_id: im.id, url: im.url, prompt: "" }, ...f]);
+        toast.success("Arka plan favorilere kaydedildi");
+      }
+    } catch { toast.error("İşlem başarısız"); }
   };
 
   const doAiGenerate = async (promptOverride) => {
@@ -548,7 +566,7 @@ export default function DesignStudio() {
                         <div
                           key={`${cat}-${t.id}`}
                           data-testid={`template-card-${t.id}`}
-                          onClick={() => loadTemplate(t)}
+                          onClick={() => setPreviewTpl(t)}
                           className="relative rounded-xl overflow-hidden border border-neutral-200 hover:border-amber-400 transition-colors text-left cursor-pointer"
                         >
                           <button
@@ -663,6 +681,21 @@ export default function DesignStudio() {
                 <p className="text-xs text-red-500 text-center">Tasarım hakkınız bitti. Aşama 2'de PayTR ile yeni hak alabileceksiniz.</p>
               )}
 
+              {aiImages.length === 0 && aiFavs.length > 0 && (
+                <div data-testid="ai-favs-standalone">
+                  <p className="text-[11px] text-neutral-500 mb-1.5 flex items-center gap-1"><Star size={11} className="fill-amber-500 text-amber-500" /> Kayıtlı Arka Planlar — tıkla, tuvale gelsin</p>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {aiFavs.map((f) => (
+                      <button key={f.asset_id} data-testid={`ai-fav-use-${f.asset_id}`}
+                        onClick={() => addAiBackground(f.url)}
+                        className="shrink-0 w-16 aspect-[4/5] rounded-lg overflow-hidden border-2 border-transparent hover:border-amber-400">
+                        <img src={`${process.env.REACT_APP_BACKEND_URL}${f.url}`} alt="favori" className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {aiImages.length > 0 && (
                 <div>
                   <p className="text-xs text-neutral-500 mb-2">Görsele tıkla → tuvale arka plan olur. "Revize et" ile AI'a değişiklik yaptır (1 hak).</p>
@@ -683,9 +716,30 @@ export default function DesignStudio() {
                         >
                           <RefreshCw size={11} /> Revize et
                         </button>
+                        <button
+                          data-testid={`ai-fav-${i}`}
+                          onClick={() => toggleAiFav(im)}
+                          className={`w-full text-[11px] flex items-center justify-center gap-1 py-1 rounded-md ${isAiFav(im.id) ? "bg-amber-100 text-amber-800" : "bg-neutral-100 hover:bg-neutral-200 text-neutral-700"}`}
+                        >
+                          <Star size={11} className={isAiFav(im.id) ? "fill-amber-500 text-amber-500" : ""} /> {isAiFav(im.id) ? "Kaydedildi" : "Kaydet"}
+                        </button>
                       </div>
                     ))}
                   </div>
+                  {aiFavs.length > 0 && (
+                    <div data-testid="ai-favs-section" className="mt-3">
+                      <p className="text-[11px] text-neutral-500 mb-1.5 flex items-center gap-1"><Star size={11} className="fill-amber-500 text-amber-500" /> Kayıtlı Arka Planlar</p>
+                      <div className="flex gap-2 overflow-x-auto pb-1">
+                        {aiFavs.map((f) => (
+                          <button key={f.asset_id} data-testid={`ai-fav-use-${f.asset_id}`}
+                            onClick={() => addAiBackground(f.url)}
+                            className="shrink-0 w-16 aspect-[4/5] rounded-lg overflow-hidden border-2 border-transparent hover:border-amber-400">
+                            <img src={`${process.env.REACT_APP_BACKEND_URL}${f.url}`} alt="favori" className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {reviseFor && (
                     <div data-testid="ai-revise-panel" className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3 space-y-2">
                       <p className="text-xs text-amber-800 font-medium">Seçilen alternatifi nasıl revize edelim?</p>
@@ -760,6 +814,24 @@ export default function DesignStudio() {
               {bulkBusy ? <><Loader2 size={18} className="animate-spin" /> Üretiliyor… %{bulkProgress}</> : <><Download size={18} /> Üret ve ZIP İndir</>}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Template preview */}
+      <Dialog open={!!previewTpl} onOpenChange={(o) => !o && setPreviewTpl(null)}>
+        <DialogContent data-testid="template-preview-dialog" className="max-w-md text-neutral-900">
+          <DialogHeader>
+            <DialogTitle>{previewTpl?.name}</DialogTitle>
+            <DialogDescription>{previewTpl?.category} · Önizleme</DialogDescription>
+          </DialogHeader>
+          {previewTpl && (
+            <div className="space-y-3">
+              <div className="mx-auto w-full max-w-[260px] aspect-[4/5] rounded-xl overflow-hidden border border-neutral-200 bg-cover bg-center"
+                style={previewTpl.bg_image ? { backgroundImage: `url(${previewTpl.bg_image})` } : { background: previewTpl.thumb_bg || "#eee" }} />
+              <Button data-testid="template-use-btn" onClick={() => { loadTemplate(previewTpl); setPreviewTpl(null); }}
+                className="w-full bg-neutral-900 hover:bg-neutral-800">Bu şablonu kullan</Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

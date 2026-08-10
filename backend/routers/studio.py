@@ -95,6 +95,11 @@ class DesignRightsBuyIn(BaseModel):
     origin_url: str = ""
 
 
+class NotifySettingsIn(BaseModel):
+    notify_email: str = ""
+    notify_enabled: bool = True
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -153,6 +158,8 @@ def _strip_studio(acc: dict) -> dict:
         "ftb_code": acc.get("ftb_code"),
         "role": "studio",
         "design_rights": acc.get("design_rights", 0),
+        "notify_email": acc.get("notify_email") or acc.get("email"),
+        "notify_enabled": acc.get("notify_enabled", True),
         "created_at": acc.get("created_at"),
         "membership": _studio_state(acc),
     }
@@ -249,6 +256,8 @@ def get_router(db, deps):
             "paid_until": None,
             "ai_credits": 0,
             "design_rights": STUDIO_FREE_DESIGN_RIGHTS,
+            "notify_email": None,
+            "notify_enabled": True,
             "storage_used_bytes": 0,
             "kvkk_consent": True,
             "kvkk_consent_at": now.isoformat(),
@@ -440,5 +449,40 @@ def get_router(db, deps):
             fresh = await db.studio_accounts.find_one({"id": acc["id"]}, {"_id": 0, "design_rights": 1})
             resp["design_rights"] = int((fresh or {}).get("design_rights", 0))
         return resp
+
+    # ---- Notification settings ------------------------------------------
+    @router.put("/settings/notifications")
+    async def update_notifications(payload: NotifySettingsIn, acc: dict = Depends(get_current_studio)):
+        await db.studio_accounts.update_one(
+            {"id": acc["id"]},
+            {"$set": {"notify_email": (payload.notify_email or "").strip() or None,
+                      "notify_enabled": bool(payload.notify_enabled)}})
+        fresh = await db.studio_accounts.find_one({"id": acc["id"]}, {"_id": 0})
+        return {"account": _strip_studio(fresh)}
+
+    # ---- AI background favorites (studio-scoped) ------------------------
+    @router.get("/design/ai-favorites")
+    async def list_ai_favorites(acc: dict = Depends(get_current_studio)):
+        favs = await db.design_ai_favorites.find({"studio_id": acc["id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+        return {"favorites": favs}
+
+    @router.post("/design/ai-favorites/{asset_id}")
+    async def add_ai_favorite(asset_id: str, acc: dict = Depends(get_current_studio)):
+        asset = await db.design_assets.find_one({"id": asset_id}, {"_id": 0})
+        if not asset or asset.get("owner_studio_id") != acc["id"]:
+            raise HTTPException(status_code=404, detail="Görsel bulunamadı")
+        await db.design_ai_favorites.update_one(
+            {"studio_id": acc["id"], "asset_id": asset_id},
+            {"$setOnInsert": {"studio_id": acc["id"], "asset_id": asset_id,
+                              "url": f"/api/design/asset/{asset_id}",
+                              "prompt": asset.get("prompt") or asset.get("instruction") or "",
+                              "created_at": now_iso()}},
+            upsert=True)
+        return {"ok": True}
+
+    @router.delete("/design/ai-favorites/{asset_id}")
+    async def remove_ai_favorite(asset_id: str, acc: dict = Depends(get_current_studio)):
+        await db.design_ai_favorites.delete_one({"studio_id": acc["id"], "asset_id": asset_id})
+        return {"ok": True}
 
     return router

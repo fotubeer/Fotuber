@@ -325,9 +325,9 @@ def get_router(db, deps):
         # Notify the studio by email (best-effort; never blocks the client)
         try:
             if send_email and email_configured and email_configured():
-                studio = await db.studio_accounts.find_one({"id": ev["studio_id"]}, {"_id": 0, "email": 1, "firma_adi": 1})
-                to = (studio or {}).get("email")
-                if to:
+                studio = await db.studio_accounts.find_one({"id": ev["studio_id"]}, {"_id": 0, "email": 1, "firma_adi": 1, "notify_email": 1, "notify_enabled": 1})
+                to = (studio or {}).get("notify_email") or (studio or {}).get("email")
+                if to and (studio or {}).get("notify_enabled", True):
                     firma = (studio or {}).get("firma_adi", "Stüdyo")
                     up = "".join(f"<li>{u['name']} — {u['price']}₺</li>" for u in packs) or "<li>-</li>"
                     subject = f"Yeni galeri seçimi: {ev['name']} ({order_no})"

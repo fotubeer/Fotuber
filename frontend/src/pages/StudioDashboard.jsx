@@ -4,9 +4,11 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   Camera, LogOut, IdCard, Clock, Sparkles, HardDrive, CalendarRange, ShieldAlert,
-  Images, Palette, ScanFace, Check, Crown, Wand2,
+  Images, Palette, ScanFace, Check, Crown, Wand2, Bell, Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { studioApi, clearStudioToken } from "@/lib/studioApi";
 
 export default function StudioDashboard() {
@@ -97,6 +99,9 @@ export default function StudioDashboard() {
           <Limit icon={CalendarRange} label="Etkinlik" value={m.limits.max_events} testid="studio-limit-events" />
         </div>
 
+        {/* Notification settings */}
+        <NotifySettings acc={acc} />
+
         {/* Modules */}
         <h2 className="mt-8 mb-3 text-sm font-semibold text-white/60 uppercase tracking-wide">Modüller</h2>
         <div className="grid sm:grid-cols-3 gap-4">
@@ -137,6 +142,38 @@ export default function StudioDashboard() {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function NotifySettings({ acc }) {
+  const [enabled, setEnabled] = React.useState(acc.notify_enabled ?? true);
+  const [email, setEmail] = React.useState(acc.notify_email || "");
+  const [busy, setBusy] = React.useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      await studioApi.put("/studio/settings/notifications", { notify_email: email, notify_enabled: enabled });
+      toast.success("Bildirim ayarları kaydedildi");
+    } catch { toast.error("Kaydedilemedi"); } finally { setBusy(false); }
+  };
+  return (
+    <div data-testid="studio-notify-settings" className="mt-6 rounded-2xl border border-white/12 bg-white/5 p-5">
+      <div className="flex items-center gap-2 text-white/60 text-xs mb-3"><Bell size={15} /> GALERİ BİLDİRİM AYARLARI</div>
+      <div className="flex flex-wrap items-center gap-4">
+        <label className="flex items-center gap-2 text-sm">
+          <Switch data-testid="notify-enabled" checked={enabled} onCheckedChange={setEnabled} />
+          Müşteri seçim gönderince e-posta al
+        </label>
+        <div className="flex-1 min-w-[220px]">
+          <Input data-testid="notify-email" value={email} onChange={(e) => setEmail(e.target.value)}
+            placeholder={`Bildirim e-postası (boş = ${acc.email})`}
+            className="h-9 bg-white/5 border-white/15 text-white placeholder:text-white/30" />
+        </div>
+        <Button data-testid="notify-save" size="sm" onClick={save} disabled={busy} className="gap-1 bg-amber-500 hover:bg-amber-600 text-neutral-900 font-semibold">
+          <Save size={14} /> {busy ? "..." : "Kaydet"}
+        </Button>
       </div>
     </div>
   );
