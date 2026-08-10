@@ -4197,6 +4197,178 @@ async def root():
 
 
 # ---------------------------------------------------------------------------
+# Vesikalık Triple-Processing (3 foto paralel, bağımsız) + 20 fotoluk firma arşivi
+# ---------------------------------------------------------------------------
+def _vesikalik_prompt(gender, garment, collar, color, color_name):
+    gender_tr = "erkek" if gender == "male" else "kadın"
+    garment_labels = {"tshirt": "tişört", "polo": "polo yaka tişört", "shirt": "gömlek",
+                      "blazer": "ceket", "blouse": "bluz", "collared_blouse": "yakalı bluz"}
+    garment_tr = garment_labels.get(garment, garment)
+    collar_bit = ""
+    if collar == "collar":
+        collar_bit = "Yakalı olsun. "
+    elif collar == "no_collar":
+        collar_bit = "Yakasız / bisiklet yaka olsun. "
+    color_bit = color_name or color
+    system_msg = (
+        "Sen profesyonel bir fotoğraf düzenleme aracısın. Verilen fotoğrafta "
+        "SADECE istenen kıyafeti değiştir ve tam çözünürlükte düzenlenmiş "
+        "fotoğrafı geri ver. Yüz, cilt, saç, arka plan hiçbir şekilde değişmemeli."
+    )
+    prompt = (
+        f"Bu bir vesikalık/biyometrik portre fotoğrafıdır. Kişi {gender_tr}. "
+        f"Sadece giydiği kıyafeti değiştir. Yüz, cilt, saç, gözler, kaşlar, "
+        f"kulaklar ve tüm baş bölgesi kesinlikle aynı kalacak. Arka planı da tamamen koru. "
+        f"Yeni kıyafet: {garment_tr}, rengi {color_bit}. {collar_bit}"
+        f"Kumaş dokusu doğal olsun, biyometrik standartlara uygun kalsın."
+    )
+    return system_msg, prompt
+
+
+async def _vesikalik_edit_call(admin, b64, system_msg, prompt):
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+    import uuid as _uuid, asyncio as _asyncio
+    if "," in b64 and b64.startswith("data:"):
+        b64 = b64.split(",", 1)[1]
+    own_key = _user_gemini_key(admin)
+    if own_key:
+        import base64 as _b64m
+        img_bytes = _b64m.b64decode(b64)
+        out_b64, out_mime = await _asyncio.to_thread(
+            _byok_image_edit_sync, own_key, img_bytes, "image/jpeg", f"{system_msg}\n\n{prompt}")
+        if not out_b64:
+            raise RuntimeError("AI görüntü üretmedi")
+        return out_b64, out_mime
+    key = os.environ.get("EMERGENT_LLM_KEY")
+    if not key:
+        raise RuntimeError("AI anahtarı yapılandırılmamış")
+    chat = LlmChat(api_key=key, session_id=f"vesikalik-{_uuid.uuid4()}", system_message=system_msg) \
+        .with_model("gemini", "gemini-2.5-flash-image").with_params(modalities=["image", "text"])
+    _text, images = await chat.send_message_multimodal_response(
+        UserMessage(text=prompt, file_contents=[ImageContent(b64)]))
+    if not images:
+        raise RuntimeError("AI görüntü üretmedi")
+    return images[0].get("data", ""), images[0].get("mime_type", "image/png")
+
+
+async def _vesikalik_archive_save(owner_id, b64, mime):
+    import base64 as _b64m, uuid as _uuid
+    if b64 and "," in b64 and b64.startswith("data:"):
+        b64 = b64.split(",", 1)[1]
+    try:
+        data = _b64m.b64decode(b64) if b64 else b""
+    except Exception:
+        return None
+    if not data:
+        return None
+    aid = str(_uuid.uuid4())
+    path = f"vesikalik/archive/{owner_id}/{aid}.png"
+    put_object(path, data, mime or "image/png")
+    await db.vesikalik_archive.insert_one({
+        "id": aid, "owner_id": owner_id, "path": path,
+        "mime": mime or "image/png", "created_at": now_iso(),
+    })
+    # keep only the last 20
+    docs = await db.vesikalik_archive.find({"owner_id": owner_id}, {"_id": 0, "id": 1, "path": 1}) \
+        .sort("created_at", -1).to_list(1000)
+    for old in docs[20:]:
+        await db.vesikalik_archive.delete_one({"id": old["id"]})
+    return aid
+
+
+class VesikalikTripleItem(BaseModel):
+    image_base64: str
+    gender: str = "male"
+    garment: str = "shirt"
+    collar: str = ""
+    color: str = ""
+    color_name: str = ""
+
+
+class VesikalikTripleIn(BaseModel):
+    items: list[VesikalikTripleItem] = Field(default_factory=list)
+    save_to_archive: bool = True
+
+
+@api_router.post("/vesikalik/ai-edit-triple")
+async def vesikalik_ai_edit_triple(payload: VesikalikTripleIn, admin: dict = Depends(require_vesikalik_access)):
+    """Process up to 3 photos concurrently & independently (one failing won't block others)."""
+    import asyncio as _asyncio
+    items = payload.items[:3]
+    if not items:
+        raise HTTPException(status_code=400, detail="En az bir fotoğraf gerekli")
+    owner_side = admin.get("role") in ("admin", "staff")
+    byok = bool(_user_gemini_key(admin))
+    remaining = _ai_credits_of(admin)
+    if not owner_side and not byok and remaining < len(items):
+        raise HTTPException(status_code=402, detail=f"Yeterli AI krediniz yok (gerekli: {len(items)}, mevcut: {remaining})")
+
+    async def _one(it):
+        system_msg, prompt = _vesikalik_prompt(it.gender, it.garment, it.collar, it.color, it.color_name)
+        out_b64, mime = await _vesikalik_edit_call(admin, it.image_base64, system_msg, prompt)
+        return out_b64, mime
+
+    results = await _asyncio.gather(*[_one(it) for it in items], return_exceptions=True)
+    out, success = [], 0
+    for i, r in enumerate(results):
+        if isinstance(r, Exception):
+            out.append({"index": i, "ok": False, "error": str(r)[:200]})
+        else:
+            success += 1
+            entry = {"index": i, "ok": True, "image_base64": r[0], "mime_type": r[1]}
+            if payload.save_to_archive:
+                entry["archive_id"] = await _vesikalik_archive_save(admin["id"], r[0], r[1])
+            out.append(entry)
+
+    credits_remaining = remaining
+    if not owner_side and not byok and success > 0:
+        credits_remaining = max(0, remaining - success)
+        await db.users.update_one({"id": admin.get("id")}, {"$set": {"ai_credits": credits_remaining}})
+    await _track_feature(admin.get("id"), "ai_kiyafet_triple")
+    return {"results": out, "success": success, "total": len(items),
+            "credits_remaining": credits_remaining, "own_key": byok, "owner_side": owner_side}
+
+
+@api_router.get("/vesikalik/archive")
+async def vesikalik_archive_list(admin: dict = Depends(require_vesikalik_access)):
+    docs = await db.vesikalik_archive.find({"owner_id": admin["id"]}, {"_id": 0}) \
+        .sort("created_at", -1).to_list(30)
+    return [{"id": d["id"], "url": f"/api/vesikalik/archive/{d['id']}/image", "created_at": d.get("created_at")} for d in docs]
+
+
+class VesikalikArchiveSaveIn(BaseModel):
+    image_base64: str
+    mime: str = "image/png"
+
+
+@api_router.post("/vesikalik/archive")
+async def vesikalik_archive_add(payload: VesikalikArchiveSaveIn, admin: dict = Depends(require_vesikalik_access)):
+    aid = await _vesikalik_archive_save(admin["id"], payload.image_base64, payload.mime)
+    if not aid:
+        raise HTTPException(status_code=400, detail="Görsel kaydedilemedi")
+    return {"id": aid, "url": f"/api/vesikalik/archive/{aid}/image"}
+
+
+@api_router.delete("/vesikalik/archive/{aid}")
+async def vesikalik_archive_delete(aid: str, admin: dict = Depends(require_vesikalik_access)):
+    r = await db.vesikalik_archive.delete_one({"id": aid, "owner_id": admin["id"]})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Arşiv görseli bulunamadı")
+    return {"ok": True}
+
+
+@api_router.get("/vesikalik/archive/{aid}/image")
+async def vesikalik_archive_image(aid: str):
+    doc = await db.vesikalik_archive.find_one({"id": aid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Görsel bulunamadı")
+    data, ctype = get_object(doc["path"])
+    from starlette.responses import Response as _Resp
+    return _Resp(content=data, media_type=doc.get("mime") or ctype or "image/png",
+                 headers={"Cache-Control": "private, max-age=3600"})
+
+
+# ---------------------------------------------------------------------------
 # PayTR payment gateway (Turkey) — Link API (Basic)
 # Replaces the earlier DEMO subscribe + credit top-up flows with real payments.
 # We create a per-order payment link; PayTR notifies our callback on success.

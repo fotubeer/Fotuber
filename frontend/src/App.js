@@ -60,7 +60,7 @@ import AdminVenues from "@/pages/admin/AdminVenues";
 import AdminIntroSettings from "@/pages/admin/AdminIntroSettings";
 import AdminInstagramSlideshow from "@/pages/admin/AdminInstagramSlideshow";
 import AdminAIAssistant from "@/pages/admin/AdminAIAssistant";
-import AdminPassportPhoto from "@/pages/admin/AdminPassportPhoto";
+import VesikalikWorkspace from "@/pages/VesikalikWorkspace";
 import AdminContacts from "@/pages/admin/AdminContacts";
 import AdminMemberships from "@/pages/admin/AdminMemberships";
 import AdminDesignRights from "@/pages/admin/AdminDesignRights";
@@ -159,7 +159,7 @@ function App() {
               <Route path="/admin/animasyon-ayarlari" element={<AdminGuard><AdminIntroSettings /></AdminGuard>} />
               <Route path="/admin/instagram-slayt" element={<AdminGuard><AdminInstagramSlideshow /></AdminGuard>} />
               <Route path="/admin/fotuber-asistan" element={<AdminGuard><AdminAIAssistant /></AdminGuard>} />
-              <Route path="/admin/vesikalik" element={<AdminGuard><AdminPassportPhoto /></AdminGuard>} />
+              <Route path="/admin/vesikalik" element={<AdminGuard><VesikalikWorkspace /></AdminGuard>} />
               <Route path="/admin/kisiler" element={<AdminGuard><AdminContacts /></AdminGuard>} />
               <Route path="/admin/uyelikler" element={<AdminGuard><AdminMemberships /></AdminGuard>} />
               <Route path="/admin/tasarim-haklari" element={<AdminGuard><AdminDesignRights /></AdminGuard>} />

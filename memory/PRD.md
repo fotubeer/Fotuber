@@ -456,3 +456,10 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - Doğrulama: notify set/persist + ai-fav add/list (curl), pano bildirim kartı + şablon önizleme (screenshot), derleme temiz.
 
 ## KALAN — FAZ C (P0, sonraki tur): Vesikalık Triple-Processing + 20 fotoluk firma arşivi.
+
+## Session X-8 (Jun 2026) — FAZ C: Vesikalık 3'lü İşleme + Firma Arşivi (TAMAMLANDI, doğrulandı)
+- **3'lü İşleme modu**: `VesikalikTriple.jsx` (zaten yazılıydı) uygulamaya bağlandı. Yeni ortak sarmalayıcı `VesikalikWorkspace.jsx` üst-orta sabit pill toggle ile "Tekli" (AdminPassportPhoto) ↔ "3'lü İşleme" (VesikalikTriple) geçişi sağlar.
+- **Her iki girişte de aktif**: `/vesikalik` (MemberVesikalik aktif üye görünümü) ve `/admin/vesikalik` (admin route) artık VesikalikWorkspace render eder. Mevcut tekli editör (AdminPassportPhoto) hiç bozulmadı.
+- **Backend** (server.py, önceki turda hazırdı): POST `/api/vesikalik/ai-edit-triple` (en fazla 3 foto, asyncio.gather ile PARALEL & bağımsız; biri hata verse diğerleri devam), GET/POST/DELETE `/api/vesikalik/archive`, GET `/api/vesikalik/archive/{id}/image`. Sonuçlar `save_to_archive:true` ile firma arşivine otomatik kaydedilir, son 20 tutulur.
+- **Kredi mantığı**: admin/staff → Emergent bakiyesi (kredi düşmez); BYOK → kendi anahtar; üye → başarı başına 1 kredi. `_track_feature "ai_kiyafet_triple"`.
+- **Doğrulama**: screenshot (admin panelinde toggle görünür, 3'lü mod 3 slot + kontroller + "3'ünü Aynı Anda İşle" + Firma Arşivi 2 foto yüklü), curl (archive list 2 kayıt döndü, image url'leri çalışıyor). AI edit çağrısı gerçek Emergent kredisi harcadığından tetiklenmedi (önceki turda ~8.7s/3 foto doğrulanmıştı).

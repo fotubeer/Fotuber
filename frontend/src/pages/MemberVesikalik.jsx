@@ -4,7 +4,7 @@ import { Loader2, LogOut, ShieldCheck, Sparkles, Camera, KeyRound, CreditCard } 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import AdminPassportPhoto from "@/pages/admin/AdminPassportPhoto";
+import VesikalikWorkspace from "@/pages/VesikalikWorkspace";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -128,7 +128,7 @@ export default function MemberVesikalik() {
             <LogOut className="w-4 h-4" />
           </button>
         </div>
-        <AdminPassportPhoto />
+        <VesikalikWorkspace />
       </div>
     );
   }
