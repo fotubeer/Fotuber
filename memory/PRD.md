@@ -415,3 +415,12 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - **Toplu Kişiselleştirme** (tamamen istemci tarafı, ücretsiz): Editörde "Toplu Üret" (ds-bulk-btn → bulk-dialog). İsimler satır/virgül ile yapıştırılır veya CSV (bulk-csv) yüklenir, max 200. Her isim {isim} alanına yazılıp (taşma korumalı) tam çözünürlükte PNG export edilir; JSZip ile ZIP indirilir. {isim} alanı yoksa uyarı. `applyNameToCanvas` state'siz yardımcıya çıkarıldı.
 - **Deps**: jszip (yarn). server.py ~5893 satır (router'lara bölme backlog'da — testing agent da not düştü).
 - **MOCKED/NOT**: PayTR ödeme tamamlama otomatik test edilemez (barındırmalı sayfa) — yalnızca link oluşturma + pending durumu doğrulandı.
+
+## Session X-4 (Jun 2026) — Tasarım Stüdyosu geliştirmeleri: Kategorili AI Şablon Galerisi + Kına/Nişan AI Setleri (self-verified: screenshot)
+- **AI Şablon Galerisi**: 6 hazır davetiye arka planı image_generation_tool (Nano Banana) ile üretilip cloud'a host edildi. Backend TEMPLATES kataloğu `category` + `bg_image` (URL) alanlarıyla genişletildi: Boş(2), Düğün(2: altın çiçekli, lacivert art-deco), Nişan(pudra), Kına(bordo altın), Doğum Günü(renkli), Sünnet(mavi). Frontend `loadTemplate` arka plan görselini cover olarak yükleyip arkaya gönderiyor, metinler üstte. Şablonlar dialogu kategori başlıklarıyla gruplu + görsel önizlemeli, scrollable.
+- **Kına/Nişan AI Setleri**: `GET /api/design/ai-presets` (10 hazır prompt paketi, event türlerine göre: Düğün/Nişan/Kına/Sünnet/Doğum Günü/Söz). AI dialogunda çip olarak listeleniyor; çipe tıkla → prompt dolar + otomatik üret ("tek tıkla tema"). `doAiGenerate(promptOverride)` imzası eklendi.
+- Doğrulama: screenshot — kategorili galeri gerçek görsel önizlemelerle, Kına Bordo şablonu tuvale metin üstte yüklendi, AI dialogunda 10 preset çipi + "9 hak" görünür.
+
+## KALAN FAZLAR (kullanıcı istedi, ayrı fazlar olarak yapılacak)
+- **Faz B — Etkinlik Galerisi (P0, büyük modül)**: Stüdyo Paneline etkinlik oluştur + parçalı (chunked) foto yükleme + RAW uyarısı; müşteriye özel seçim linki (albüm/kanvas/retouch) + katı albüm limiti; sipariş takibi + PDF; upsell ek hizmet paketleri.
+- **Faz C — Vesikalık Triple-Processing (P0)**: 3 fotoğrafı aynı anda bağımsız işleyen mod + 20 fotoluk firma arşivi (mevcut Vesikalık modülüne eklemeli).

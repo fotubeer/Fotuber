@@ -44,6 +44,7 @@ export default function DesignStudio() {
 
   const [fonts, setFonts] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [aiPresets, setAiPresets] = useState([]);
   const [sel, setSel] = useState(null); // active object snapshot
   const [title, setTitle] = useState("İsimsiz Tasarım");
   const [projectId, setProjectId] = useState(null);
@@ -110,6 +111,15 @@ export default function DesignStudio() {
     designRef.current = { w: tpl.width, h: tpl.height };
     fc.clear();
     fc.backgroundColor = tpl.bg || "#ffffff";
+    if (tpl.bg_image) {
+      try {
+        const bg = await fabric.FabricImage.fromURL(tpl.bg_image, { crossOrigin: "anonymous" });
+        const scale = Math.max(tpl.width / bg.width, tpl.height / bg.height);
+        bg.set({ originX: "center", originY: "center", left: tpl.width / 2, top: tpl.height / 2, scaleX: scale, scaleY: scale });
+        fc.add(bg);
+        fc.sendObjectToBack(bg);
+      } catch { /* ignore bg image failure */ }
+    }
     const used = [...new Set((tpl.objects || []).map((o) => o.fontFamily).filter(Boolean))];
     await preloadFonts(used);
     (tpl.objects || []).forEach((o) => {
@@ -143,10 +153,12 @@ export default function DesignStudio() {
     Promise.all([
       api.get("/design/fonts").then((r) => r.data.fonts).catch(() => []),
       api.get("/design/templates").then((r) => r.data.templates).catch(() => []),
-    ]).then(([fnts, tpls]) => {
+      api.get("/design/ai-presets").then((r) => r.data.presets).catch(() => []),
+    ]).then(([fnts, tpls, presets]) => {
       if (cancelled) return;
       setFonts(fnts);
       setTemplates(tpls);
+      setAiPresets(presets);
       const blank = tpls.find((t) => t.id === "blank-portrait") || tpls[0];
       if (blank) loadTemplate(blank);
       else fitCanvas();
@@ -329,11 +341,12 @@ export default function DesignStudio() {
     }
   };
 
-  const doAiGenerate = async () => {
-    if (!aiPrompt.trim()) { toast.error("Lütfen tasarımınızı tarif edin"); return; }
+  const doAiGenerate = async (promptOverride) => {
+    const p = (promptOverride ?? aiPrompt).trim();
+    if (!p) { toast.error("Lütfen tasarımınızı tarif edin"); return; }
     setAiBusy(true); setAiImages([]);
     try {
-      const { data } = await studioApi.post("/studio/design/ai-generate", { prompt: aiPrompt.trim() });
+      const { data } = await studioApi.post("/studio/design/ai-generate", { prompt: p });
       setAiImages(data.images || []);
       setAiRights(data.rights_remaining);
       toast.success("3 alternatif üretildi · 1 tasarım hakkı kullanıldı");
@@ -499,26 +512,31 @@ export default function DesignStudio() {
                 <LayoutTemplate size={16} /><span className="hidden sm:inline">Şablonlar</span>
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl text-neutral-900">
+            <DialogContent className="max-w-2xl text-neutral-900 max-h-[85vh] overflow-y-auto">
               <DialogHeader><DialogTitle>Şablon Seç</DialogTitle>
-                <DialogDescription>Hazır bir düzenle başla veya boş tuval seç.</DialogDescription>
+                <DialogDescription>Kategoriye göre hazır bir düzenle başla veya boş tuval seç.</DialogDescription>
               </DialogHeader>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {templates.map((t) => (
-                  <button
-                    key={t.id}
-                    data-testid={`template-card-${t.id}`}
-                    onClick={() => loadTemplate(t)}
-                    className="rounded-xl overflow-hidden border border-neutral-200 hover:border-amber-400 transition-colors group"
-                  >
-                    <div className="aspect-[4/5] flex items-center justify-center text-xs text-white/80"
-                      style={{ background: t.thumb_bg || "#eee" }}>
-                      {t.objects?.length ? "Örnek düzen" : "Boş"}
-                    </div>
-                    <div className="px-2 py-1.5 text-xs font-medium text-left">{t.name}</div>
-                  </button>
-                ))}
-              </div>
+              {[...new Set(templates.map((t) => t.category || "Diğer"))].map((cat) => (
+                <div key={cat} className="mb-4">
+                  <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">{cat}</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {templates.filter((t) => (t.category || "Diğer") === cat).map((t) => (
+                      <button
+                        key={t.id}
+                        data-testid={`template-card-${t.id}`}
+                        onClick={() => loadTemplate(t)}
+                        className="rounded-xl overflow-hidden border border-neutral-200 hover:border-amber-400 transition-colors text-left"
+                      >
+                        <div className="aspect-[4/5] flex items-center justify-center text-xs text-white/80 bg-cover bg-center"
+                          style={t.bg_image ? { backgroundImage: `url(${t.bg_image})` } : { background: t.thumb_bg || "#eee" }}>
+                          {!t.bg_image && (t.objects?.length ? "Örnek düzen" : "Boş")}
+                        </div>
+                        <div className="px-2 py-1.5 text-xs font-medium">{t.name}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </DialogContent>
           </Dialog>
           <Button data-testid="ds-export-btn" variant="outline" size="sm" className="gap-1.5" onClick={exportPng}>
@@ -581,9 +599,28 @@ export default function DesignStudio() {
                 rows={3}
                 className="text-neutral-900"
               />
+              {aiPresets.length > 0 && (
+                <div data-testid="ai-presets" className="space-y-1.5">
+                  <p className="text-[11px] text-neutral-500">Hazır temalar — tek tıkla üret (1 hak):</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {aiPresets.map((p) => (
+                      <button
+                        key={p.id}
+                        data-testid={`ai-preset-${p.id}`}
+                        disabled={aiBusy || aiRights === 0}
+                        onClick={() => { setAiPrompt(p.prompt); doAiGenerate(p.prompt); }}
+                        className="text-[11px] px-2.5 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                        title={p.prompt}
+                      >
+                        {p.event} · {p.title}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <Button
                 data-testid="ai-generate-btn"
-                onClick={doAiGenerate}
+                onClick={() => doAiGenerate()}
                 disabled={aiBusy || aiRights === 0}
                 className="w-full gap-2 bg-gradient-to-r from-amber-400 to-amber-600 text-neutral-900 font-semibold hover:from-amber-300 hover:to-amber-500"
               >

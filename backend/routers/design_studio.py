@@ -80,53 +80,121 @@ FONTS: List[dict] = [
 # ---------------------------------------------------------------------------
 TEMPLATES: List[dict] = [
     {
-        "id": "blank-portrait", "name": "Boş Tuval (Dikey)", "width": 1080, "height": 1350,
-        "bg": "#ffffff", "thumb_bg": "#ffffff", "objects": [],
+        "id": "blank-portrait", "name": "Boş Tuval (Dikey)", "category": "Boş",
+        "width": 1080, "height": 1350, "bg": "#ffffff", "thumb_bg": "#ffffff", "objects": [],
     },
     {
-        "id": "blank-square", "name": "Boş Tuval (Kare)", "width": 1080, "height": 1080,
-        "bg": "#faf7f2", "thumb_bg": "#faf7f2", "objects": [],
+        "id": "blank-square", "name": "Boş Tuval (Kare)", "category": "Boş",
+        "width": 1080, "height": 1080, "bg": "#faf7f2", "thumb_bg": "#faf7f2", "objects": [],
     },
     {
-        "id": "wedding-classic", "name": "Klasik Düğün", "width": 1080, "height": 1350,
-        "bg": "#0b1f3a", "thumb_bg": "#0b1f3a",
+        "id": "wedding-gold", "name": "Altın Çiçekli Düğün", "category": "Düğün",
+        "width": 1080, "height": 1350, "bg": "#f7f2e8",
+        "bg_image": "https://static.prod-images.emergentagent.com/jobs/fc76a8ea-b91a-4ba1-bc47-0822af835ee4/images/b87ae60f5163682798cfbae27534e6c46489e165c755721827ea0f7efe489433.jpeg",
         "objects": [
-            {"type": "textbox", "text": "Düğünümüze\nDavetlisiniz", "left": 540, "top": 260,
-             "fontSize": 92, "fontFamily": "Playfair Display", "fill": "#e8c27a",
-             "textAlign": "center", "originX": "center", "width": 900},
-            {"type": "textbox", "text": "Ayşe & Mehmet", "left": 540, "top": 640,
-             "fontSize": 120, "fontFamily": "Great Vibes", "fill": "#ffffff",
-             "textAlign": "center", "originX": "center", "width": 900},
-            {"type": "textbox", "text": "12 Ağustos 2026 · 18:00", "left": 540, "top": 900,
-             "fontSize": 46, "fontFamily": "Montserrat", "fill": "#e8c27a",
-             "textAlign": "center", "originX": "center", "width": 900},
+            {"type": "textbox", "text": "Düğünümüze Davetlisiniz", "left": 540, "top": 470,
+             "fontSize": 60, "fontFamily": "Cormorant Garamond", "fill": "#7a5c2e",
+             "textAlign": "center", "originX": "center", "width": 760},
+            {"type": "textbox", "text": "Ayşe & Mehmet", "left": 540, "top": 650,
+             "fontSize": 120, "fontFamily": "Great Vibes", "fill": "#9a7b3f",
+             "textAlign": "center", "originX": "center", "width": 820},
+            {"type": "textbox", "text": "12 Ağustos 2026 · 18:00", "left": 540, "top": 850,
+             "fontSize": 40, "fontFamily": "Montserrat", "fill": "#7a5c2e",
+             "textAlign": "center", "originX": "center", "width": 760},
         ],
     },
     {
-        "id": "engagement-blush", "name": "Nişan (Pudra)", "width": 1080, "height": 1350,
-        "bg": "#f7e6e6", "thumb_bg": "#f7e6e6",
+        "id": "wedding-navy", "name": "Lacivert Art-Deco Düğün", "category": "Düğün",
+        "width": 1080, "height": 1350, "bg": "#0b1f3a",
+        "bg_image": "https://static.prod-images.emergentagent.com/jobs/fc76a8ea-b91a-4ba1-bc47-0822af835ee4/images/fda66983ac91504f2566b8a0eae14e6b240f70c5290991a6ed9857fce19b2ccc.jpeg",
         "objects": [
-            {"type": "textbox", "text": "Nişan Törenimize\nBekleriz", "left": 540, "top": 300,
-             "fontSize": 80, "fontFamily": "Cormorant Garamond", "fill": "#8a4b52",
-             "textAlign": "center", "originX": "center", "width": 900},
+            {"type": "textbox", "text": "Save the Date", "left": 540, "top": 560,
+             "fontSize": 46, "fontFamily": "Marcellus", "fill": "#e8c27a",
+             "textAlign": "center", "originX": "center", "width": 640},
+            {"type": "textbox", "text": "Elif & Kaan", "left": 540, "top": 680,
+             "fontSize": 104, "fontFamily": "Playfair Display", "fill": "#ffffff",
+             "textAlign": "center", "originX": "center", "width": 700},
+        ],
+    },
+    {
+        "id": "engagement-blush", "name": "Pudra Nişan", "category": "Nişan",
+        "width": 1080, "height": 1350, "bg": "#f7e6e6",
+        "bg_image": "https://static.prod-images.emergentagent.com/jobs/fc76a8ea-b91a-4ba1-bc47-0822af835ee4/images/4c6cba3976f1f826a09aada37bc26e683418384aa32b76e308fcf82c6539f3d2.jpeg",
+        "objects": [
+            {"type": "textbox", "text": "Nişan Törenimize Bekleriz", "left": 540, "top": 560,
+             "fontSize": 54, "fontFamily": "Cormorant Garamond", "fill": "#8a4b52",
+             "textAlign": "center", "originX": "center", "width": 700},
             {"type": "textbox", "text": "Zeynep & Can", "left": 540, "top": 700,
              "fontSize": 110, "fontFamily": "Dancing Script", "fill": "#b06b74",
-             "textAlign": "center", "originX": "center", "width": 900},
+             "textAlign": "center", "originX": "center", "width": 760},
         ],
     },
     {
-        "id": "birthday-fun", "name": "Doğum Günü", "width": 1080, "height": 1080,
-        "bg": "#1a1030", "thumb_bg": "#1a1030",
+        "id": "henna-bordeaux", "name": "Bordo Altın Kına", "category": "Kına",
+        "width": 1080, "height": 1350, "bg": "#5a0f1c",
+        "bg_image": "https://static.prod-images.emergentagent.com/jobs/fc76a8ea-b91a-4ba1-bc47-0822af835ee4/images/781b9d5b2770336e0ffaebc0950e76d0a7aa5bc57331133437ea11a150b3f900.jpeg",
         "objects": [
-            {"type": "textbox", "text": "Doğum Günü Partisi", "left": 540, "top": 280,
-             "fontSize": 90, "fontFamily": "Bebas Neue", "fill": "#ffd166",
-             "textAlign": "center", "originX": "center", "width": 960},
-            {"type": "textbox", "text": "Elif 7 Yaşında!", "left": 540, "top": 560,
-             "fontSize": 70, "fontFamily": "Pacifico", "fill": "#ef476f",
-             "textAlign": "center", "originX": "center", "width": 960},
+            {"type": "textbox", "text": "Kına Gecemize\nDavetlisiniz", "left": 540, "top": 560,
+             "fontSize": 70, "fontFamily": "Marcellus", "fill": "#f0d28a",
+             "textAlign": "center", "originX": "center", "width": 700},
+            {"type": "textbox", "text": "Elif için", "left": 540, "top": 780,
+             "fontSize": 96, "fontFamily": "Great Vibes", "fill": "#ffe9b0",
+             "textAlign": "center", "originX": "center", "width": 700},
+        ],
+    },
+    {
+        "id": "birthday-fun", "name": "Renkli Doğum Günü", "category": "Doğum Günü",
+        "width": 1080, "height": 1350, "bg": "#eef6ff",
+        "bg_image": "https://static.prod-images.emergentagent.com/jobs/fc76a8ea-b91a-4ba1-bc47-0822af835ee4/images/c2972b5db81e28158cdd890543c395b9b66164a16525cbaf764055ab48a75fee.jpeg",
+        "objects": [
+            {"type": "textbox", "text": "Doğum Günü Partisi", "left": 540, "top": 560,
+             "fontSize": 72, "fontFamily": "Bebas Neue", "fill": "#6a3fa0",
+             "textAlign": "center", "originX": "center", "width": 760},
+            {"type": "textbox", "text": "Elif 7 Yaşında!", "left": 540, "top": 700,
+             "fontSize": 80, "fontFamily": "Pacifico", "fill": "#ef476f",
+             "textAlign": "center", "originX": "center", "width": 800},
+        ],
+    },
+    {
+        "id": "sunnet-blue", "name": "Mavi Sünnet", "category": "Sünnet",
+        "width": 1080, "height": 1350, "bg": "#12306b",
+        "bg_image": "https://static.prod-images.emergentagent.com/jobs/fc76a8ea-b91a-4ba1-bc47-0822af835ee4/images/e67d6b18591bfee0ff67b2e36c47b3a6f6b217f5bd6ff6520493577d75cacde9.jpeg",
+        "objects": [
+            {"type": "textbox", "text": "Sünnet Düğünümüze\nDavetlisiniz", "left": 540, "top": 560,
+             "fontSize": 62, "fontFamily": "Marcellus", "fill": "#ffffff",
+             "textAlign": "center", "originX": "center", "width": 720},
+            {"type": "textbox", "text": "Yusuf", "left": 540, "top": 780,
+             "fontSize": 110, "fontFamily": "Great Vibes", "fill": "#dbe6ff",
+             "textAlign": "center", "originX": "center", "width": 700},
         ],
     },
 ]
+
+# AI prompt packs by event type — one-click themes (Kına/Nişan etc.)
+AI_PRESETS: List[dict] = [
+    {"id": "wedding-royal", "event": "Düğün", "title": "Kraliyet Altın",
+     "prompt": "Görkemli düğün davetiyesi arka planı, altın ve fildişi, zarif çiçek ve yaprak süslemeleri, lüks ve romantik"},
+    {"id": "wedding-minimal", "event": "Düğün", "title": "Modern Minimal",
+     "prompt": "Modern minimalist düğün davetiyesi arka planı, krem ve toprak tonları, ince zarif çizgiler, sade şık"},
+    {"id": "engagement-blush", "event": "Nişan", "title": "Pudra Çiçek",
+     "prompt": "Zarif nişan davetiyesi arka planı, pudra pembe ve toz gül suluboya çiçekler, romantik ve yumuşak"},
+    {"id": "engagement-emerald", "event": "Nişan", "title": "Zümrüt & Altın",
+     "prompt": "Nişan davetiyesi arka planı, zümrüt yeşili ve altın botanik motifler, lüks ve zarif"},
+    {"id": "henna-classic", "event": "Kına", "title": "Bordo Kına",
+     "prompt": "Türk kına gecesi davetiyesi arka planı, bordo ve altın, şal ve mehndi desenleri, mum ışığı, sıcak ve festival havası"},
+    {"id": "henna-anatolian", "event": "Kına", "title": "Anadolu Motif",
+     "prompt": "Kına gecesi davetiyesi arka planı, kırmızı ve altın Anadolu kilim ve çini motifleri, geleneksel ve zarif"},
+    {"id": "sunnet-royal", "event": "Sünnet", "title": "Mavi Sultan",
+     "prompt": "Sünnet düğünü davetiyesi arka planı, saray mavisi ve gümüş, ay yıldız motifleri, görkemli ve neşeli"},
+    {"id": "birthday-kids", "event": "Doğum Günü", "title": "Renkli Balon",
+     "prompt": "Neşeli çocuk doğum günü davetiyesi arka planı, renkli balonlar ve konfeti, pastel, eğlenceli"},
+    {"id": "birthday-elegant", "event": "Doğum Günü", "title": "Şık Kutlama",
+     "prompt": "Şık doğum günü davetiyesi arka planı, siyah ve altın, ışıltılı konfeti, zarif kutlama"},
+    {"id": "engagement-soz", "event": "Söz", "title": "Söz Töreni",
+     "prompt": "Söz töreni davetiyesi arka planı, şampanya ve rose gold tonları, ince çiçek detayları, sıcak ve zarif"},
+]
+
+
 
 
 class DesignProjectIn(BaseModel):
@@ -155,6 +223,10 @@ def get_router(db, deps):
     @router.get("/templates")
     async def list_templates():
         return {"templates": TEMPLATES}
+
+    @router.get("/ai-presets")
+    async def list_ai_presets():
+        return {"presets": AI_PRESETS}
 
     # ---- Projects (owner-scoped) --------------------------------------------
     @router.post("/projects")
