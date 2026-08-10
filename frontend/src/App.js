@@ -28,6 +28,8 @@ import StudioVesikalik from "@/pages/StudioVesikalik";
 import StudioTeam from "@/pages/StudioTeam";
 import StudioPackages from "@/pages/StudioPackages";
 import StudioGallery from "@/pages/StudioGallery";
+import VenuePortal from "@/pages/VenuePortal";
+import VenueDashboard from "@/pages/VenueDashboard";
 import GallerySelect from "@/pages/GallerySelect";
 
 import Home from "@/pages/Home";
@@ -68,6 +70,7 @@ import AdminContacts from "@/pages/admin/AdminContacts";
 import AdminMemberships from "@/pages/admin/AdminMemberships";
 import AdminDesignRights from "@/pages/admin/AdminDesignRights";
 import AdminNotifications from "@/pages/admin/AdminNotifications";
+import AdminStudioPlans from "@/pages/admin/AdminStudioPlans";
 
 import DiscountCode from "@/pages/DiscountCode";
 import FotuberMedya from "@/pages/FotuberMedya";
@@ -130,6 +133,8 @@ function App() {
               <Route path="/studyo/paketler" element={<StudioPackages />} />
               <Route path="/studyo/galeri" element={<StudioGallery />} />
               <Route path="/galeri/:token" element={<GallerySelect />} />
+              <Route path="/salon" element={<VenuePortal />} />
+              <Route path="/salon/panel" element={<VenueDashboard />} />
 
               <Route
                 path="/randevularim"
@@ -170,6 +175,7 @@ function App() {
               <Route path="/admin/kisiler" element={<AdminGuard><AdminContacts /></AdminGuard>} />
               <Route path="/admin/uyelikler" element={<AdminGuard><AdminMemberships /></AdminGuard>} />
               <Route path="/admin/tasarim-haklari" element={<AdminGuard><AdminDesignRights /></AdminGuard>} />
+              <Route path="/admin/studyo-fiyatlar" element={<AdminGuard><AdminStudioPlans /></AdminGuard>} />
               <Route path="/admin/bildirimler" element={<AdminGuard><AdminNotifications /></AdminGuard>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />

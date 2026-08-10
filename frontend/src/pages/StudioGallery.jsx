@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Plus, Upload, Trash2, Copy, Image as ImageIcon, Package, ClipboardList,
   FileDown, Link2, Loader2, AlertTriangle, X, Settings as SettingsIcon,
+  BellRing, MessageCircle, MailCheck, Clock, ArrowUpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,9 +22,29 @@ const ORDER_STATUS = { new: "İnceleniyor", preparing: "Hazırlanıyor", printin
   processing: "Hazırlanıyor", ready: "Baskıda", delivered: "Tamamlandı" };
 const ORDER_STATUS_OPTIONS = { new: "İnceleniyor", preparing: "Hazırlanıyor", printing: "Baskıda", shipping: "Kargoda", completed: "Tamamlandı" };
 const fmtDate = (iso) => { if (!iso) return "—"; try { return new Date(iso).toLocaleDateString("tr-TR"); } catch { return "—"; } };
+const fmtDateTime = (iso) => { if (!iso) return "—"; try { return new Date(iso).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); } catch { return "—"; } };
+
+// Detect a 402 [UPGRADE] quota error and route the studio to the packages page.
+export function makeQuotaHandler(navigate) {
+  return (e) => {
+    const status = e?.response?.status;
+    const detail = e?.response?.data?.detail || "";
+    if (status === 402 && typeof detail === "string" && detail.includes("[UPGRADE]")) {
+      const msg = detail.replace("[UPGRADE]", "").trim();
+      toast.error(msg || "Paket limitine ulaştınız.", {
+        duration: 6000,
+        action: { label: "Paketi Yükselt", onClick: () => navigate("/studyo/paketler") },
+      });
+      setTimeout(() => navigate("/studyo/paketler"), 1800);
+      return true;
+    }
+    return false;
+  };
+}
 
 export default function StudioGallery() {
   const navigate = useNavigate();
+  const onQuota = useCallback(makeQuotaHandler(navigate), [navigate]);
   const [tab, setTab] = useState("events");
   const [events, setEvents] = useState([]);
   const [active, setActive] = useState(null); // event detail
@@ -31,7 +52,13 @@ export default function StudioGallery() {
   const [orders, setOrders] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [isOwner, setIsOwner] = useState(true);
+  const [reminders, setReminders] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const loadReminders = useCallback(async () => {
+    try { setReminders((await studioApi.get("/studio/gallery/reminders")).data?.reminders || []); }
+    catch { /* silent */ }
+  }, []);
 
   const loadEvents = useCallback(async () => {
     try { setEvents((await studioApi.get("/studio/gallery/events")).data); }
@@ -45,8 +72,8 @@ export default function StudioGallery() {
       .then((r) => setIsOwner(r.data?.account?.current_user?.is_owner !== false))
       .catch(() => navigate("/studyo"));
     studioApi.get("/studio/employees").then((r) => setEmployees(r.data?.employees || [])).catch(() => {});
-    Promise.all([loadEvents(), loadPacks(), loadOrders()]).finally(() => setLoading(false));
-  }, [navigate, loadEvents, loadPacks, loadOrders]);
+    Promise.all([loadEvents(), loadPacks(), loadOrders(), loadReminders()]).finally(() => setLoading(false));
+  }, [navigate, loadEvents, loadPacks, loadOrders, loadReminders]);
 
   const copyLink = async (token) => {
     const link = `${window.location.origin}/galeri/${token}`;
@@ -63,6 +90,7 @@ export default function StudioGallery() {
     if (k === "events") loadEvents();
     else if (k === "packs") loadPacks();
     else if (k === "orders") loadOrders();
+    else if (k === "reminders") loadReminders();
   };
 
   return (
@@ -75,20 +103,24 @@ export default function StudioGallery() {
         </div>
 
         <div className="flex gap-1 p-1 rounded-xl bg-white/5 w-fit mb-6">
-          {[["events", "Etkinlikler", ImageIcon], ["packs", "Servis Paketleri", Package], ["orders", "Siparişler", ClipboardList], ["settings", "Ayarlar", SettingsIcon]].map(([k, label, Icon]) => (
+          {[["events", "Etkinlikler", ImageIcon], ["packs", "Servis Paketleri", Package], ["orders", "Siparişler", ClipboardList], ["reminders", "Hatırlatmalar", BellRing], ["settings", "Ayarlar", SettingsIcon]].map(([k, label, Icon]) => (
             <button key={k} data-testid={`sg-tab-${k}`} onClick={() => switchTab(k)}
-              className={`px-4 h-9 rounded-lg text-sm font-medium flex items-center gap-1.5 ${tab === k ? "bg-white text-neutral-900" : "text-white/60 hover:text-white"}`}>
+              className={`px-4 h-9 rounded-lg text-sm font-medium flex items-center gap-1.5 relative ${tab === k ? "bg-white text-neutral-900" : "text-white/60 hover:text-white"}`}>
               <Icon size={15} /> {label}
+              {k === "reminders" && reminders.length > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{reminders.length}</span>
+              )}
             </button>
           ))}
         </div>
 
         {loading ? <p className="text-white/50">Yükleniyor…</p> : (
           <>
-            {tab === "events" && !active && <EventsList events={events} onOpen={setActive} onCopy={copyLink} onCreated={loadEvents} onDeleted={loadEvents} />}
-            {tab === "events" && active && <EventDetail eventId={active.id} onBack={() => { setActive(null); loadEvents(); }} onCopy={copyLink} />}
+            {tab === "events" && !active && <EventsList events={events} onOpen={setActive} onCopy={copyLink} onCreated={loadEvents} onDeleted={loadEvents} onQuota={onQuota} />}
+            {tab === "events" && active && <EventDetail eventId={active.id} onBack={() => { setActive(null); loadEvents(); }} onCopy={copyLink} onQuota={onQuota} />}
             {tab === "packs" && <PacksTab packs={packs} reload={loadPacks} />}
             {tab === "orders" && <OrdersTab orders={orders} reload={loadOrders} employees={employees} isOwner={isOwner} />}
+            {tab === "reminders" && <RemindersTab reminders={reminders} reload={loadReminders} />}
             {tab === "settings" && <SettingsTab />}
           </>
         )}
@@ -97,9 +129,9 @@ export default function StudioGallery() {
   );
 }
 
-function EventsList({ events, onOpen, onCopy, onCreated, onDeleted }) {
+function EventsList({ events, onOpen, onCopy, onCreated, onDeleted, onQuota }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", client_name: "", event_date: "", album_limit: 0, canvas_limit: 0, retouch_limit: 0 });
+  const [form, setForm] = useState({ name: "", client_name: "", client_phone: "", client_email: "", event_date: "", album_limit: 0, canvas_limit: 0, retouch_limit: 0 });
   const [busy, setBusy] = useState(false);
 
   const onExtend = async (ev) => {
@@ -119,9 +151,9 @@ function EventsList({ events, onOpen, onCopy, onCreated, onDeleted }) {
         ...form, album_limit: +form.album_limit || 0, canvas_limit: +form.canvas_limit || 0, retouch_limit: +form.retouch_limit || 0,
       });
       toast.success("Etkinlik oluşturuldu"); setOpen(false);
-      setForm({ name: "", client_name: "", event_date: "", album_limit: 0, canvas_limit: 0, retouch_limit: 0 });
+      setForm({ name: "", client_name: "", client_phone: "", client_email: "", event_date: "", album_limit: 0, canvas_limit: 0, retouch_limit: 0 });
       onCreated();
-    } catch (e) { toast.error(formatApiError(e, "Oluşturulamadı")); } finally { setBusy(false); }
+    } catch (e) { if (!(onQuota && onQuota(e))) toast.error(formatApiError(e, "Oluşturulamadı")); } finally { setBusy(false); }
   };
   const del = async (ev) => {
     if (!window.confirm(`"${ev.name}" ve tüm fotoğrafları silinsin mi?`)) return;
@@ -141,6 +173,8 @@ function EventsList({ events, onOpen, onCopy, onCreated, onDeleted }) {
           <div className="space-y-3">
             <Input data-testid="sg-event-name" placeholder="Etkinlik adı (örn. Ayşe & Mehmet Düğün)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             <Input data-testid="sg-event-client" placeholder="Müşteri adı" value={form.client_name} onChange={(e) => setForm({ ...form, client_name: e.target.value })} />
+            <Input data-testid="sg-event-phone" placeholder="Müşteri telefonu (WhatsApp hatırlatma için · örn. 0532...)" value={form.client_phone} onChange={(e) => setForm({ ...form, client_phone: e.target.value })} />
+            <Input data-testid="sg-event-email" type="email" placeholder="Müşteri e-postası (süre bitiş bildirimi için)" value={form.client_email} onChange={(e) => setForm({ ...form, client_email: e.target.value })} />
             <Input data-testid="sg-event-date" type="date" value={form.event_date} onChange={(e) => setForm({ ...form, event_date: e.target.value })} />
             <div className="grid grid-cols-3 gap-2">
               <div><label className="text-xs text-neutral-500">Albüm limiti</label><Input data-testid="sg-event-albumlimit" type="number" value={form.album_limit} onChange={(e) => setForm({ ...form, album_limit: e.target.value })} /></div>
@@ -184,7 +218,7 @@ function EventsList({ events, onOpen, onCopy, onCreated, onDeleted }) {
   );
 }
 
-function EventDetail({ eventId, onBack, onCopy }) {
+function EventDetail({ eventId, onBack, onCopy, onQuota }) {
   const [data, setData] = useState(null);
   const [uploads, setUploads] = useState([]); // {name, pct, raw}
   const fileRef = useRef(null);
@@ -219,6 +253,10 @@ function EventDetail({ eventId, onBack, onCopy }) {
       setUploads((u) => u.filter((x) => x.key !== key));
       await load();
     } catch (e) {
+      if (onQuota && onQuota(e)) {
+        setUploads((u) => u.filter((x) => x.key !== key));
+        return;
+      }
       toast.error(`${file.name}: ${formatApiError(e, "yüklenemedi")}`);
       setUploads((u) => u.filter((x) => x.key !== key));
     }
@@ -350,6 +388,65 @@ function OrdersTab({ orders, reload, employees, isOwner }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function RemindersTab({ reminders, reload }) {
+  const openWa = (r) => {
+    if (r.whatsapp_url) { window.open(r.whatsapp_url, "_blank"); return; }
+    if (r.whatsapp_message) {
+      navigator.clipboard?.writeText(r.whatsapp_message).then(
+        () => toast.success("Numara yok — mesaj panoya kopyalandı"),
+        () => toast.error("Müşteri telefonu kayıtlı değil"),
+      );
+    } else { toast.error("Müşteri telefonu kayıtlı değil"); }
+  };
+  return (
+    <div data-testid="sg-reminders" className="max-w-3xl">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <div className="font-semibold flex items-center gap-2"><BellRing size={16} className="text-amber-300" /> Süre Bitiş Hatırlatmaları</div>
+          <div className="text-xs text-white/50 mt-0.5">İndirme/silinme süresine 24 saatten az kalan etkinlikler. Müşteriye e-posta otomatik gider; WhatsApp ile tek tıkla hatırlatın.</div>
+        </div>
+        <Button data-testid="sg-reminders-refresh" size="sm" variant="outline" onClick={reload} className="bg-transparent border-white/15 text-white hover:bg-white/10">Yenile</Button>
+      </div>
+      {reminders.length === 0 ? (
+        <div className="rounded-2xl border border-white/12 bg-white/5 p-8 text-center text-white/40">
+          <Clock size={26} className="mx-auto mb-2 opacity-60" />
+          Şu an yaklaşan süre bitişi yok.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {reminders.map((r) => (
+            <div key={r.id} data-testid={`sg-reminder-${r.id}`}
+              className={`rounded-2xl border p-4 ${r.overdue ? "border-red-500/40 bg-red-500/10" : "border-amber-400/25 bg-amber-500/5"}`}>
+              <div className="flex items-start gap-3 flex-wrap">
+                <div className="flex-1 min-w-[180px]">
+                  <div className="font-semibold flex items-center gap-2">
+                    {r.name}
+                    {r.overdue
+                      ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/30 text-red-200">Süresi doldu</span>
+                      : <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/25 text-amber-200">24 saatten az</span>}
+                  </div>
+                  <div className="text-xs text-white/60 mt-1">{r.client_name || "Müşteri"} {r.client_phone ? `· ${r.client_phone}` : ""}</div>
+                  <div className="text-[11px] text-white/45 mt-0.5 flex items-center gap-1"><Clock size={11} /> Silinme: {fmtDateTime(r.originals_delete_at)}</div>
+                  <div className="text-[11px] mt-0.5 flex items-center gap-1">
+                    <MailCheck size={11} className={r.reminder_sent ? "text-emerald-400" : "text-white/40"} />
+                    {r.client_email
+                      ? (r.reminder_sent ? <span className="text-emerald-300">E-posta gönderildi ({r.client_email})</span> : <span className="text-white/50">E-posta bekliyor ({r.client_email})</span>)
+                      : <span className="text-white/40">E-posta kayıtlı değil</span>}
+                  </div>
+                </div>
+                <Button data-testid={`sg-reminder-wa-${r.id}`} size="sm" onClick={() => openWa(r)}
+                  className="gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold">
+                  <MessageCircle size={14} /> WhatsApp ile Hatırlat
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

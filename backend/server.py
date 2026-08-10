@@ -561,6 +561,13 @@ async def on_startup():
     await db.invitation_guests.create_index("guest_token")
     init_storage()
 
+    # Load editable Studio plan overrides (Super Admin price panel) into memory
+    try:
+        from routers.studio import load_plan_overrides
+        await load_plan_overrides(db)
+    except Exception as _e:
+        logging.warning(f"studio plan overrides load failed: {_e}")
+
     # Start background cleanup task (deletes expired guest uploads once an hour)
     asyncio.create_task(_cleanup_expired_uploads())
     # Start membership expiry reminder loop (7 & 3 days before expiry / trial end)
@@ -2698,6 +2705,58 @@ async def admin_set_studio_modules(sid: str, payload: StudioModulesIn, admin: di
     if r.matched_count == 0:
         raise HTTPException(status_code=404, detail="Stüdyo hesabı bulunamadı")
     return {"ok": True, "modules": {"vesikalik": bool(payload.vesikalik), "gallery": bool(payload.gallery)}}
+
+
+# ---- Super Admin: Stüdyo Fiyat/Kota Paneli --------------------------------
+class StudioPlanOverrideIn(BaseModel):
+    price: Optional[float] = None
+    price_yearly: Optional[float] = None
+    ai_credits: Optional[int] = None
+    storage_gb: Optional[int] = None
+    max_events: Optional[int] = None
+    max_users: Optional[int] = None
+    max_devices: Optional[int] = None
+    link_days: Optional[int] = None
+    del_days: Optional[int] = None
+
+
+class StudioGlobalConfigIn(BaseModel):
+    second_module_discount: int = Field(ge=0, le=90)
+
+
+@api_router.get("/admin/studio-plans")
+async def admin_get_studio_plans(admin: dict = Depends(require_admin)):
+    from routers.studio import effective_plans, _second_module_discount, STUDIO_TRIAL_DAYS
+    return {
+        "plans": effective_plans(),
+        "second_module_discount": _second_module_discount(),
+        "trial_days": STUDIO_TRIAL_DAYS,
+        "editable_fields": ["price", "price_yearly", "ai_credits", "storage_gb",
+                            "max_events", "max_users", "max_devices", "link_days", "del_days"],
+    }
+
+
+@api_router.put("/admin/studio-plans/{plan_id}")
+async def admin_update_studio_plan(plan_id: str, payload: StudioPlanOverrideIn, admin: dict = Depends(require_admin)):
+    from routers.studio import PLAN_MAP, apply_plan_override, effective_plans
+    if plan_id not in PLAN_MAP:
+        raise HTTPException(status_code=404, detail="Plan bulunamadı")
+    data = {k: v for k, v in payload.dict().items() if v is not None}
+    if not data:
+        raise HTTPException(status_code=400, detail="Güncellenecek alan yok")
+    apply_plan_override(plan_id, data)
+    await db.studio_plan_config.update_one({"id": plan_id}, {"$set": {"id": plan_id, **data}}, upsert=True)
+    plans = effective_plans()
+    return {"ok": True, "plan": next((p for p in plans if p["id"] == plan_id), None)}
+
+
+@api_router.put("/admin/studio-config")
+async def admin_update_studio_config(payload: StudioGlobalConfigIn, admin: dict = Depends(require_admin)):
+    from routers.studio import set_global_config, _second_module_discount
+    set_global_config({"second_module_discount": payload.second_module_discount})
+    await db.studio_plan_config.update_one(
+        {"id": "_global"}, {"$set": {"id": "_global", "second_module_discount": payload.second_module_discount}}, upsert=True)
+    return {"ok": True, "second_module_discount": _second_module_discount()}
 
 
 class ManualMessageIn(BaseModel):
@@ -5483,6 +5542,20 @@ def _invitation_pricing(theme: str, sections: dict) -> dict:
             "currency": "TRY"}
 
 
+def _apply_venue_pricing(pricing: dict, venue_free: bool, venue_discount_percent: int) -> dict:
+    """Apply a redeemed venue code to server-computed pricing (free or % discount)."""
+    p = {**pricing}
+    if venue_free:
+        p["price"] = 0.0
+        p["needs_payment"] = False
+        p["venue_free"] = True
+    elif venue_discount_percent:
+        p["price"] = round(p["price"] * (1 - venue_discount_percent / 100.0), 2)
+        p["needs_payment"] = p["price"] > 0
+        p["venue_discount_percent"] = venue_discount_percent
+    return p
+
+
 def _slugify(text: str) -> str:
     tr = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
     s = (text or "").translate(tr)
@@ -5551,6 +5624,7 @@ class InvitationIn(BaseModel):
     checkin_enabled: bool = False
     sections: Optional[dict] = None
     gift: Optional[dict] = None
+    venue_code: Optional[str] = ""
 
 
 class RsvpIn(BaseModel):
@@ -5841,7 +5915,33 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
     theme = payload.theme if payload.theme in INVITE_THEMES else "romantic"
     sections = {**default_sections, **(payload.sections or {})}
     pricing = _invitation_pricing(theme, sections)
+
+    # --- Salon (venue) invitation code redemption (atomic claim) ---
+    venue_free = False
+    venue_discount_percent = 0
+    venue_id = None
+    venue_code_val = (payload.venue_code or "").strip().upper()
+    if venue_code_val:
+        vc = await db.venue_invite_codes.find_one({"code": venue_code_val, "status": "active"}, {"_id": 0})
+        if not vc:
+            raise HTTPException(status_code=400, detail="Salon davet kodu geçersiz veya kullanılmış")
+        # Atomically claim the code so it can't be used twice
+        claim = await db.venue_invite_codes.update_one(
+            {"code": venue_code_val, "status": "active"},
+            {"$set": {"status": "used", "used_at": now, "used_invitation_id": iid,
+                      "used_slug": slug, "used_by_user": user.get("id"),
+                      "couple_name": vc.get("couple_name") or f"{payload.person1} {payload.person2}".strip()}})
+        if claim.modified_count == 0:
+            raise HTTPException(status_code=400, detail="Salon davet kodu az önce kullanıldı")
+        venue_id = vc.get("venue_id")
+        if vc.get("code_type") == "discount":
+            venue_discount_percent = int(vc.get("discount_percent") or 0)
+        else:
+            venue_free = True
+        pricing = _apply_venue_pricing(pricing, venue_free, venue_discount_percent)
+
     inv_status = "unpaid" if pricing["needs_payment"] else "published"
+    granted_by_venue = bool(venue_id) and not pricing["needs_payment"]
     doc = {
         "id": iid, "slug": slug, "owner_user_id": user.get("id"), "status": inv_status,
         "event_type": payload.event_type, "title": payload.title,
@@ -5857,7 +5957,11 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
         "reveal_opts": payload.reveal_opts or {},
         "sections": sections,
         "gift": payload.gift or {},
-        "is_premium": pricing["needs_payment"], "price": pricing["price"],
+        "is_premium": bool(pricing.get("premium_theme") or pricing.get("photowall")),
+        "price": pricing["price"],
+        "paid": granted_by_venue,
+        "venue_id": venue_id, "venue_code": venue_code_val or None,
+        "venue_free": venue_free, "venue_discount_percent": venue_discount_percent,
         "created_at": now, "published_at": (now if inv_status == "published" else None),
         "expires_at": _invite_expires_at(payload.event_date),
     }
@@ -5904,10 +6008,21 @@ async def update_invitation(iid: str, payload: InvitationIn, user: dict = Depend
     upd["theme"] = upd["theme"] if upd["theme"] in INVITE_THEMES else "romantic"
     upd["sections"] = {**(d.get("sections") or {}), **(payload.sections or {})}
     new_pricing = _invitation_pricing(upd["theme"], upd["sections"])
+    # Preserve a previously redeemed venue code (free / discount)
+    venue_free = bool(d.get("venue_free"))
+    venue_discount_percent = int(d.get("venue_discount_percent") or 0)
+    if venue_free or venue_discount_percent:
+        new_pricing = _apply_venue_pricing(new_pricing, venue_free, venue_discount_percent)
     already_paid = bool(d.get("paid"))
-    upd["is_premium"] = new_pricing["needs_payment"]
+    upd["is_premium"] = bool(new_pricing.get("premium_theme") or new_pricing.get("photowall"))
     upd["price"] = new_pricing["price"]
     upd["status"] = "published" if (not new_pricing["needs_payment"] or already_paid) else "unpaid"
+    # keep venue fields (payload.dict() would otherwise drop them)
+    upd["venue_id"] = d.get("venue_id")
+    upd["venue_code"] = d.get("venue_code")
+    upd["venue_free"] = venue_free
+    upd["venue_discount_percent"] = venue_discount_percent
+    upd["paid"] = already_paid
     upd["extended"] = bool(d.get("extended"))
     upd["expires_at"] = _invite_expires_at(payload.event_date, extended=bool(d.get("extended")))
     upd["updated_at"] = now_iso()
@@ -6256,6 +6371,7 @@ app.include_router(api_router)
 from routers import design_studio as _design_studio
 from routers import studio as _studio
 from routers import gallery as _gallery
+from routers import venue as _venue
 
 _module_deps = {
     "hash_password": hash_password,
@@ -6279,6 +6395,7 @@ _module_deps = {
 app.include_router(_design_studio.get_router(db, _module_deps))
 app.include_router(_studio.get_router(db, _module_deps))
 app.include_router(_gallery.get_router(db, _module_deps))
+app.include_router(_venue.get_router(db, _module_deps))
 
 
 # CORS - allow credentials with reflected origin

@@ -32,37 +32,85 @@ STUDIO_TRIAL_MAX_EVENTS = int(os.environ.get("STUDIO_TRIAL_MAX_EVENTS", "2"))
 # Subscription plans. Prices in TRY; PayTR handles the actual charge later.
 STUDIO_PLANS = [
     {
-        "id": "trial", "max_users": 1, "name": "Ücretsiz Deneme", "price": 0, "period": "3 gün",
+        "id": "trial", "link_days": 2, "del_days": 4, "max_users": 1, "name": "Ücretsiz Deneme", "price": 0, "period": "3 gün",
         "ai_credits": 0, "storage_gb": STUDIO_TRIAL_STORAGE_GB, "max_events": STUDIO_TRIAL_MAX_EVENTS,
         "max_devices": 1, "watermark_forced": True,
         "highlights": ["3 gün tam erişim", "Fotuber filigranı zorunlu", "0 AI kredisi"],
     },
     {
-        "id": "basic", "max_users": 1, "name": "Basic", "price": 499, "period": "aylık",
+        "id": "basic", "link_days": 2, "del_days": 4, "max_users": 1, "name": "Basic", "price": 499, "period": "aylık",
         "ai_credits": 50, "storage_gb": 50, "max_events": 10,
         "max_devices": 1, "watermark_forced": False,
         "highlights": ["50 AI kredisi", "50 GB depolama", "Filigtransız"],
     },
     {
-        "id": "bronze", "max_users": 3, "name": "Bronze", "price": 899, "period": "aylık",
+        "id": "bronze", "link_days": 4, "del_days": 8, "max_users": 3, "name": "Bronze", "price": 899, "period": "aylık",
         "ai_credits": 150, "storage_gb": 150, "max_events": 30,
         "max_devices": 2, "watermark_forced": False,
         "highlights": ["150 AI kredisi", "150 GB depolama", "2 cihaz"],
     },
     {
-        "id": "silver", "max_users": 5, "name": "Silver", "price": 1499, "period": "aylık",
+        "id": "silver", "link_days": 5, "del_days": 10, "max_users": 5, "name": "Silver", "price": 1499, "period": "aylık",
         "ai_credits": 400, "storage_gb": 400, "max_events": 100,
         "max_devices": 4, "watermark_forced": False,
         "highlights": ["400 AI kredisi", "400 GB depolama", "4 cihaz"],
     },
     {
-        "id": "gold", "max_users": 10, "name": "Gold", "price": 2499, "period": "aylık",
+        "id": "gold", "link_days": 7, "del_days": 14, "max_users": 10, "name": "Gold", "price": 2499, "period": "aylık",
         "ai_credits": 1200, "storage_gb": 1024, "max_events": 500,
         "max_devices": 8, "watermark_forced": False,
         "highlights": ["1200 AI kredisi", "1 TB depolama", "8 cihaz"],
     },
 ]
 PLAN_MAP = {p["id"]: p for p in STUDIO_PLANS}
+
+# ---- Editable plan overrides (Super Admin) --------------------------------
+_PLAN_OVERRIDES: dict = {}
+SECOND_MODULE_DISCOUNT_DEFAULT = 20
+_GLOBAL_CONFIG = {"second_module_discount": SECOND_MODULE_DISCOUNT_DEFAULT}
+_OVERRIDABLE = {"price", "price_yearly", "ai_credits", "storage_gb", "max_events",
+                "max_users", "max_devices", "link_days", "del_days"}
+
+
+def _merged_plan(plan_id: str) -> dict:
+    base = dict(PLAN_MAP.get(plan_id) or PLAN_MAP["trial"])
+    ov = _PLAN_OVERRIDES.get(plan_id) or {}
+    for k, v in ov.items():
+        if k in _OVERRIDABLE and v is not None:
+            base[k] = v
+    return base
+
+
+def _second_module_discount() -> int:
+    return int(_GLOBAL_CONFIG.get("second_module_discount", SECOND_MODULE_DISCOUNT_DEFAULT))
+
+
+async def load_plan_overrides(db):
+    """Load persisted plan overrides + global config into memory (call on startup)."""
+    try:
+        async for row in db.studio_plan_config.find({}, {"_id": 0}):
+            if row.get("id") == "_global":
+                _GLOBAL_CONFIG.update({k: v for k, v in row.items() if k != "id"})
+            else:
+                _PLAN_OVERRIDES[row["id"]] = {k: v for k, v in row.items() if k in _OVERRIDABLE}
+    except Exception:
+        pass
+
+
+def apply_plan_override(plan_id: str, data: dict):
+    _PLAN_OVERRIDES.setdefault(plan_id, {})
+    for k, v in data.items():
+        if k in _OVERRIDABLE:
+            _PLAN_OVERRIDES[plan_id][k] = v
+
+
+def set_global_config(data: dict):
+    if "second_module_discount" in data:
+        _GLOBAL_CONFIG["second_module_discount"] = int(data["second_module_discount"])
+
+
+def effective_plans() -> list:
+    return [_merged_plan(p["id"]) for p in STUDIO_PLANS]
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +162,7 @@ def _studio_state(acc: dict) -> dict:
     """Compute live trial/subscription state + effective limits."""
     now = datetime.now(timezone.utc)
     plan_id = acc.get("plan") or "trial"
-    plan = PLAN_MAP.get(plan_id, PLAN_MAP["trial"])
+    plan = _merged_plan(plan_id)
     trial_end = _parse(acc.get("trial_end"))
     paid_until = _parse(acc.get("paid_until"))
 
@@ -142,6 +190,8 @@ def _studio_state(acc: dict) -> dict:
             "max_events": plan["max_events"],
             "max_devices": plan["max_devices"],
             "max_users": plan.get("max_users", 1),
+            "link_days": plan.get("link_days", 2),
+            "del_days": plan.get("del_days", 4),
             "watermark_forced": plan["watermark_forced"],
         },
         "ai_credits_remaining": acc.get("ai_credits", plan["ai_credits"]),
@@ -252,7 +302,7 @@ def get_router(db, deps):
     # ---- Public: plan catalog ------------------------------------------------
     @router.get("/plans")
     async def list_plans():
-        return {"plans": STUDIO_PLANS, "trial_days": STUDIO_TRIAL_DAYS}
+        return {"plans": effective_plans(), "trial_days": STUDIO_TRIAL_DAYS}
 
     # ---- Register ------------------------------------------------------------
     @router.post("/register")
@@ -348,7 +398,7 @@ def get_router(db, deps):
     # ---- Me ------------------------------------------------------------------
     @router.get("/me")
     async def studio_me(acc: dict = Depends(get_current_studio)):
-        return {"account": _strip_studio(acc), "plans": STUDIO_PLANS}
+        return {"account": _strip_studio(acc), "plans": effective_plans()}
 
     # ---- AI Design generation (Tasarım Hakkı → Nano Banana) ------------------
     async def _generate_one(user_prompt: str, style: str, idx: int) -> bytes | None:
@@ -517,13 +567,16 @@ def get_router(db, deps):
         origin_url: str = ""
 
     def _module_price(mod: str, plan_id: str, mods: dict):
-        plan = next((p for p in STUDIO_PLANS if p["id"] == plan_id and p["id"] != "trial"), None)
-        if not plan or mod not in ("vesikalik", "gallery"):
+        if plan_id == "trial" or mod not in ("vesikalik", "gallery"):
+            return None
+        plan = _merged_plan(plan_id)
+        if plan.get("id") != plan_id:
             return None
         owns_other = bool((mods or {}).get("gallery" if mod == "vesikalik" else "vesikalik", False))
         base = float(plan["price"])
-        price = round(base * 0.8, 2) if owns_other else base
-        return {"plan": plan, "base": base, "price": price, "discount": 20 if owns_other else 0}
+        disc = _second_module_discount()
+        price = round(base * (1 - disc / 100.0), 2) if owns_other else base
+        return {"plan": plan, "base": base, "price": price, "discount": disc if owns_other else 0}
 
     @router.get("/modules/pricing")
     async def modules_pricing(acc: dict = Depends(get_current_studio)):
@@ -537,7 +590,7 @@ def get_router(db, deps):
                 out.append({"module": m, "plan": p["id"], "plan_name": p["name"],
                             "base_price": info["base"], "price": info["price"], "discount": info["discount"]})
         return {"pricing": out, "modules": mods,
-                "note": "İkinci modülde otomatik %20 indirim uygulanır."}
+                "note": f"İkinci modülde otomatik %{_second_module_discount()} indirim uygulanır."}
 
     @router.post("/payments/module/create")
     async def buy_module(payload: ModuleBuyIn, request: Request, acc: dict = Depends(get_current_studio)):

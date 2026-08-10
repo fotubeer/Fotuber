@@ -9,12 +9,18 @@ import io
 import os
 import secrets
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request
 from pydantic import BaseModel, Field
 from starlette.responses import Response as StarletteResponse, StreamingResponse
 
-from routers.studio import build_get_current_studio, _studio_state
+from routers.studio import build_get_current_studio, _studio_state, _merged_plan
+
+
+def _gallery_durations(plan):
+    mp = _merged_plan(plan or "trial")
+    return (mp.get("link_days", 2), mp.get("del_days", 4))
 
 
 def _quota_error(message: str):
@@ -23,11 +29,7 @@ def _quota_error(message: str):
 
 RAW_EXTS = {"cr2", "cr3", "nef", "arw", "dng", "raf", "orf", "rw2", "sr2", "pef", "raw"}
 
-# Package-based durations: (client-link days, originals-deletion days)
-GALLERY_DURATIONS = {"trial": (2, 4), "basic": (2, 4), "bronze": (4, 8), "silver": (5, 10), "gold": (7, 14)}
-
-def _gallery_durations(plan):
-    return GALLERY_DURATIONS.get(plan or "trial", (2, 4))
+# Package-based durations now come from the (editable) plan config via _merged_plan.
 
 # Order lifecycle (client-visible). Keys are stored; labels shown to client.
 ORDER_FLOW = ["new", "preparing", "printing", "shipping", "completed"]
@@ -42,6 +44,7 @@ class EventIn(BaseModel):
     name: str = Field(min_length=1)
     client_name: str = ""
     client_phone: str = ""
+    client_email: str = ""
     event_date: str = ""
     album_limit: int = 0     # 0 = sınırsız
     canvas_limit: int = 0
@@ -95,6 +98,7 @@ def get_router(db, deps):
         return {
             "id": ev["id"], "name": ev["name"], "client_name": ev.get("client_name", ""),
             "client_phone": ev.get("client_phone", ""),
+            "client_email": ev.get("client_email", ""),
             "event_date": ev.get("event_date", ""), "album_limit": ev.get("album_limit", 0),
             "canvas_limit": ev.get("canvas_limit", 0), "retouch_limit": ev.get("retouch_limit", 0),
             "share_token": ev["share_token"], "status": ev.get("status", "open"),
@@ -156,6 +160,7 @@ def get_router(db, deps):
         doc = {
             "id": new_id(), "studio_id": acc["id"], "name": payload.name,
             "client_name": payload.client_name, "client_phone": (payload.client_phone or "").strip(),
+            "client_email": (payload.client_email or "").strip(),
             "event_date": payload.event_date,
             "album_limit": payload.album_limit, "canvas_limit": payload.canvas_limit,
             "retouch_limit": payload.retouch_limit,
@@ -230,6 +235,17 @@ def get_router(db, deps):
         ev = await db.gallery_events.find_one({"id": event_id, "studio_id": acc["id"]})
         if not ev:
             raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+        # Per-event storage quota (package-based, e.g. trial 10 GB/event)
+        limits = _studio_state(acc)["limits"]
+        cap_bytes = int(limits.get("storage_gb", 0)) * 1024 * 1024 * 1024
+        if cap_bytes:
+            agg = await db.gallery_photos.aggregate([
+                {"$match": {"event_id": event_id}},
+                {"$group": {"_id": None, "total": {"$sum": "$size"}}},
+            ]).to_list(1)
+            used = (agg[0]["total"] if agg else 0) or 0
+            if used + max(0, size) > cap_bytes:
+                raise _quota_error(f"Etkinlik yükleme limitine ulaştınız ({limits.get('storage_gb')} GB). Daha fazlası için paketinizi yükseltin.")
         upload_id = new_id()
         ext = (filename.rsplit(".", 1)[-1] if "." in filename else "").lower()
         _UPLOADS[upload_id] = {
@@ -387,6 +403,54 @@ def get_router(db, deps):
             await db.studio_accounts.update_one({"id": acc["id"]}, {"$set": upd})
         trial = (acc.get("plan") or "trial") == "trial"
         return {"ok": True, "watermark_forced": trial}
+
+    # ==================== STUDIO: EXPIRY REMINDERS (24h before deletion) ====================
+    @router.get("/studio/gallery/reminders")
+    async def gallery_reminders(acc: dict = Depends(get_current_studio)):
+        from datetime import timedelta
+        now = datetime.now(timezone.utc)
+        horizon = now + timedelta(hours=24)
+        evs = await db.gallery_events.find(
+            {"studio_id": acc["id"], "originals_purged": {"$ne": True}}, {"_id": 0}
+        ).to_list(500)
+        firma = acc.get("firma_adi", "Stüdyo")
+        out = []
+        for ev in evs:
+            dstr = ev.get("originals_delete_at")
+            if not dstr:
+                continue
+            try:
+                dt = datetime.fromisoformat(dstr)
+            except Exception:
+                continue
+            if dt > horizon:  # not within the next 24h yet
+                continue
+            msg = (f"Merhaba, {ev.get('name')} etkinliği fotoğraflarınızın indirme süresi yakında sona erecek. "
+                   f"Fotoğraflarınızı indirmediyseniz lütfen süre bitmeden işleminizi tamamlayın. "
+                   f"Süreyi uzatmak için paket satın alabilirsiniz. — {firma}")
+            digits = "".join(ch for ch in (ev.get("client_phone") or "") if ch.isdigit())
+            wa = None
+            if digits:
+                num = digits if digits.startswith("90") else "90" + digits.lstrip("0")
+                wa = f"https://wa.me/{num}?text={quote(msg)}"
+            emailed = ev.get("reminder_sent", False)
+            if not emailed and ev.get("client_email") and send_email and email_configured and email_configured():
+                try:
+                    await send_email(ev["client_email"], f"İndirme süreniz sona eriyor — {ev.get('name')}",
+                                     f"<p>Merhaba,</p><p>{msg}</p>", msg)
+                    await db.gallery_events.update_one({"id": ev["id"]}, {"$set": {"reminder_sent": True}})
+                    emailed = True
+                except Exception:
+                    pass
+            out.append({
+                "id": ev["id"], "name": ev.get("name"), "client_name": ev.get("client_name", ""),
+                "client_phone": ev.get("client_phone", ""), "client_email": ev.get("client_email", ""),
+                "originals_delete_at": dstr, "reminder_sent": emailed,
+                "whatsapp_url": wa, "whatsapp_message": msg, "overdue": dt < now,
+            })
+        out.sort(key=lambda x: x["originals_delete_at"])
+        return {"reminders": out}
+
 
     @router.get("/studio/gallery/orders/{order_id}/pdf")
     async def order_pdf(order_id: str, acc: dict = Depends(get_current_studio)):

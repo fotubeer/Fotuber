@@ -28,6 +28,7 @@ export default function InvitationCreate() {
     primary_color: "", cover_image_id: "", music_url: "", reveal_style: "", reveal_opts: {},
     gift: { full_name: "", bank_name: "", iban: "", note: "" },
     sections: { countdown: true, map: true, memories: true, rsvp: true, gift: true, music: false },
+    venue_code: "",
   });
   const [gate, setGate] = useState(false); // membership gate at the end
   const [authTab, setAuthTab] = useState("register");
@@ -42,6 +43,22 @@ export default function InvitationCreate() {
   const [tplOpen, setTplOpen] = useState(false);
   const [previewTpl, setPreviewTpl] = useState(null); // theme key being inspected fullscreen
   const [mobilePrev, setMobilePrev] = useState(false);
+  const [venueInfo, setVenueInfo] = useState(null); // { valid, code_type, discount_percent, venue_name }
+  const [venueChecking, setVenueChecking] = useState(false);
+
+  const checkVenueCode = async () => {
+    const code = (data.venue_code || "").trim().toUpperCase();
+    if (!code) { setVenueInfo(null); return; }
+    setVenueChecking(true);
+    try {
+      const r = await api(`/venue/code/${encodeURIComponent(code)}`);
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setVenueInfo(null); toast.error(d.detail || "Kod geçersiz"); return; }
+      setVenueInfo(d);
+      toast.success(d.code_type === "free" ? `${d.venue_name}: ücretsiz davetiye kodu geçerli!` : `${d.venue_name}: %${d.discount_percent} indirim kodu geçerli!`);
+    } catch { setVenueInfo(null); toast.error("Kod doğrulanamadı"); }
+    finally { setVenueChecking(false); }
+  };
 
   const set = (k, v) => setData((d) => ({ ...d, [k]: v }));
   const setGift = (k, v) => setData((d) => ({ ...d, gift: { ...d.gift, [k]: v } }));
@@ -66,6 +83,9 @@ export default function InvitationCreate() {
   const isPremiumTheme = INVITATION_THEMES[data.theme]?.premium;
   const hasPhotowall = !!data.sections.photowall;
   const invPrice = (isPremiumTheme ? 250 : 0) + (hasPhotowall ? 500 : 0);
+  const effPrice = venueInfo
+    ? (venueInfo.code_type === "free" ? 0 : Math.round(invPrice * (1 - (venueInfo.discount_percent || 0) / 100)))
+    : invPrice;
   const shareUrl = useMemo(() => (published ? `${window.location.origin}/davetiye/${published.slug}` : ""), [published]);
 
   const uploadCover = async (file) => {
@@ -348,16 +368,42 @@ export default function InvitationCreate() {
             </button>
             <p className="text-[11px] text-slate-400 text-center -mt-1">Etkinlik türüne göre açılış: düğün/nikah kapı, kına mum & kına eli, sünnet perde, doğum günü balon, nişan tül.</p>
 
+            <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-3" data-testid="venue-code-box">
+              <label className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-rose-500" /> Salon Davet Kodu (varsa)
+              </label>
+              <p className="text-[11px] text-slate-500 mb-2">Düğün salonunuzdan aldığınız kodu girin — premium davetiyeniz ücretsiz veya indirimli olabilir.</p>
+              <div className="flex gap-2">
+                <input data-testid="venue-code-input" value={data.venue_code}
+                  onChange={(e) => { set("venue_code", e.target.value.toUpperCase()); setVenueInfo(null); }}
+                  placeholder="SALON-XXXXXX"
+                  className="flex-1 h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-900 uppercase" />
+                <Button type="button" data-testid="venue-code-apply" onClick={checkVenueCode} disabled={venueChecking || !data.venue_code.trim()}
+                  className="h-10 bg-rose-500 hover:bg-rose-600 text-white">
+                  {venueChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : "Uygula"}
+                </Button>
+              </div>
+              {venueInfo && (
+                <div data-testid="venue-code-applied" className="mt-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+                  ✓ {venueInfo.venue_name} · {venueInfo.code_type === "free" ? "Ücretsiz davetiye" : `%${venueInfo.discount_percent} indirim`} uygulandı.
+                </div>
+              )}
+            </div>
+
             {invPrice > 0 && (
               <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 flex items-start gap-2" data-testid="premium-price-note">
                 <Lock className="w-4 h-4 mt-0.5 shrink-0" />
-                <span>Toplam: <b>{invPrice}₺</b>{isPremiumTheme && " · premium şablon 250₺"}{hasPhotowall && " · foto/video duvarı 500₺"} — yayınlarken PayTR ile tek seferlik ödenir.</span>
+                <span>
+                  {venueInfo
+                    ? <>Salon kodu ile toplam: <b>{effPrice}₺</b>{venueInfo.code_type !== "free" && <> (normal {invPrice}₺)</>}{effPrice === 0 && " — ücretsiz yayınlanır."}</>
+                    : <>Toplam: <b>{invPrice}₺</b>{isPremiumTheme && " · premium şablon 250₺"}{hasPhotowall && " · foto/video duvarı 500₺"} — yayınlarken PayTR ile tek seferlik ödenir.</>}
+                </span>
               </div>
             )}
 
             <Button onClick={startPublish} disabled={!canPublish || busy} className="w-full bg-indigo-600 hover:bg-indigo-700 h-12 text-base" data-testid="publish-btn">
               {busy ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Sparkles className="w-5 h-5 mr-2" />}
-              {invPrice > 0 ? `Yayınla ve Öde · ${invPrice}₺` : "Davetiyeyi Yayınla"}
+              {effPrice > 0 ? `Yayınla ve Öde · ${effPrice}₺` : "Davetiyeyi Yayınla"}
             </Button>
 
             <button onClick={downloadPrintPdf} type="button" data-testid="wizard-print-pdf"
