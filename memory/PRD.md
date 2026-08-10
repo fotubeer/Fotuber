@@ -439,3 +439,12 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - **Faz C — Vesikalık Triple-Processing (P0)**: 3 fotoğrafı aynı anda bağımsız işleyen mod + 20 fotoluk firma arşivi.
 - **Daha Fazla AI Şablon**: Söz/Mevlüt/Açılış kategorileri.
 - **Şablonu Favorile**: sık kullanılan şablonları kaydet.
+
+## Session X-6 (Jun 2026) — 3 geliştirme: Ek AI Şablonlar + Şablon Favorileme + Galeri E-posta Bildirimi (self-verified: curl + screenshot)
+- **Ek AI Şablonlar**: Söz (rose gold), Mevlüt (yeşil arabesk), Açılış (siyah-altın) için 3 yeni hazır davetiye arka planı üretilip host edildi ve TEMPLATES kataloğuna eklendi (artık 11 şablon / 9 kategori). AI_PRESETS'e Söz/Mevlüt/Açılış prompt paketleri eklendi (12 preset).
+- **Şablon Favorileme**: `db.design_favorites` (user_id, template_id). Uçlar: GET/POST/DELETE `/api/design/favorites/{template_id}` (get_current_user). Frontend: her şablon kartında yıldız (template-fav-*), üstte "Favoriler" kategorisi; giriş yoksa uyarı, optimistic update.
+- **Galeri E-posta Bildirimi**: Müşteri seçim gönderince (public /select) stüdyonun e-postasına best-effort Gmail SMTP bildirimi (etkinlik, sipariş no, albüm/kanvas/rötuş sayıları, upsell, not). deps'e email_service.send_email + email_configured eklendi; try/except ile akışı asla bloklamaz.
+- Doğrulama: 11 şablon/9 kategori + 12 preset (curl), favori add/list/401 (curl), şablon dialogu yeni kategoriler + yıldız (screenshot), seçim gönderimi bildirimle 200 SIP-*.
+
+## KALAN — FAZ C (P0, sonraki tur)
+- **Vesikalık Triple-Processing**: mevcut Vesikalık (MemberVesikalik.jsx + server.py vesikalik/ai-edit) modülüne 3 fotoğrafı aynı anda bağımsız işleyen mod + 20 fotoluk firma arşivi. AI işleme (gemini) kredi tükettiği için test dikkatli yapılacak.

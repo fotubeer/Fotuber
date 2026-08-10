@@ -71,6 +71,8 @@ def get_router(db, deps):
     now_iso = deps["now_iso"]
     put_object = deps["put_object"]
     get_object = deps["get_object"]
+    send_email = deps.get("send_email")
+    email_configured = deps.get("email_configured")
 
     def _event_out(ev, counts=None):
         return {
@@ -319,6 +321,30 @@ def get_router(db, deps):
         await db.gallery_orders.insert_one(order)
         await db.gallery_events.update_one({"id": ev["id"]}, {"$set": {"submitted": True, "order_status": "new"}})
         order.pop("_id", None)
+
+        # Notify the studio by email (best-effort; never blocks the client)
+        try:
+            if send_email and email_configured and email_configured():
+                studio = await db.studio_accounts.find_one({"id": ev["studio_id"]}, {"_id": 0, "email": 1, "firma_adi": 1})
+                to = (studio or {}).get("email")
+                if to:
+                    firma = (studio or {}).get("firma_adi", "Stüdyo")
+                    up = "".join(f"<li>{u['name']} — {u['price']}₺</li>" for u in packs) or "<li>-</li>"
+                    subject = f"Yeni galeri seçimi: {ev['name']} ({order_no})"
+                    html = (
+                        f"<h2>Yeni müşteri seçimi geldi</h2>"
+                        f"<p><b>{firma}</b> · Etkinlik: <b>{ev['name']}</b></p>"
+                        f"<p>Müşteri: {ev.get('client_name','-')}<br/>Sipariş No: <b>{order_no}</b></p>"
+                        f"<ul><li>Albüm: {album_n}</li><li>Kanvas: {canvas_n}</li><li>Rötuş: {retouch_n}</li></ul>"
+                        f"<p>Ek Hizmetler:</p><ul>{up}</ul>"
+                        f"<p>Not: {payload.note or '-'}</p>"
+                        f"<p>Fotuber Stüdyo Paneli</p>"
+                    )
+                    text = f"Yeni seçim: {ev['name']} ({order_no}) - Albüm {album_n}, Kanvas {canvas_n}, Rötuş {retouch_n}"
+                    await send_email(to, subject, html, text)
+        except Exception:
+            pass
+
         return {"ok": True, "order_no": order_no}
 
     # ==================== PUBLIC: PHOTO SERVING ====================

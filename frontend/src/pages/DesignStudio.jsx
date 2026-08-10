@@ -7,7 +7,7 @@ import {
   Type, Heading, Square, Circle as CircleIcon, Minus, Image as ImageIcon,
   UserSquare, Save, Download, LayoutTemplate, Trash2, Copy, ArrowUp, ArrowDown,
   Bold, Italic, AlignLeft, AlignCenter, AlignRight, ArrowLeft, ZoomIn,
-  Sparkles, Loader2, Wand2, Users, ShoppingCart, RefreshCw,
+  Sparkles, Loader2, Wand2, Users, ShoppingCart, RefreshCw, Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +45,7 @@ export default function DesignStudio() {
   const [fonts, setFonts] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [aiPresets, setAiPresets] = useState([]);
+  const [favorites, setFavorites] = useState([]);
   const [sel, setSel] = useState(null); // active object snapshot
   const [title, setTitle] = useState("İsimsiz Tasarım");
   const [projectId, setProjectId] = useState(null);
@@ -154,11 +155,13 @@ export default function DesignStudio() {
       api.get("/design/fonts").then((r) => r.data.fonts).catch(() => []),
       api.get("/design/templates").then((r) => r.data.templates).catch(() => []),
       api.get("/design/ai-presets").then((r) => r.data.presets).catch(() => []),
-    ]).then(([fnts, tpls, presets]) => {
+      api.get("/design/favorites").then((r) => r.data.favorites).catch(() => []),
+    ]).then(([fnts, tpls, presets, favs]) => {
       if (cancelled) return;
       setFonts(fnts);
       setTemplates(tpls);
       setAiPresets(presets);
+      setFavorites(favs || []);
       const blank = tpls.find((t) => t.id === "blank-portrait") || tpls[0];
       if (blank) loadTemplate(blank);
       else fitCanvas();
@@ -236,6 +239,20 @@ export default function DesignStudio() {
     return found;
   };
   const applySample = (name) => { setSampleName(name); applyNameToCanvas(name); };
+
+  const toggleFavorite = async (templateId, e) => {
+    e?.stopPropagation?.();
+    const isFav = favorites.includes(templateId);
+    setFavorites((f) => isFav ? f.filter((x) => x !== templateId) : [...f, templateId]);
+    try {
+      if (isFav) await api.delete(`/design/favorites/${templateId}`);
+      else await api.post(`/design/favorites/${templateId}`);
+    } catch (err) {
+      setFavorites((f) => isFav ? [...f, templateId] : f.filter((x) => x !== templateId));
+      if (err?.response?.status === 401) toast.error("Favorilere eklemek için üye girişi gerekli");
+      else toast.error("İşlem başarısız");
+    }
+  };
 
   const uploadImage = async (e) => {
     const file = e.target.files?.[0];
@@ -516,27 +533,43 @@ export default function DesignStudio() {
               <DialogHeader><DialogTitle>Şablon Seç</DialogTitle>
                 <DialogDescription>Kategoriye göre hazır bir düzenle başla veya boş tuval seç.</DialogDescription>
               </DialogHeader>
-              {[...new Set(templates.map((t) => t.category || "Diğer"))].map((cat) => (
-                <div key={cat} className="mb-4">
-                  <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">{cat}</div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {templates.filter((t) => (t.category || "Diğer") === cat).map((t) => (
-                      <button
-                        key={t.id}
-                        data-testid={`template-card-${t.id}`}
-                        onClick={() => loadTemplate(t)}
-                        className="rounded-xl overflow-hidden border border-neutral-200 hover:border-amber-400 transition-colors text-left"
-                      >
-                        <div className="aspect-[4/5] flex items-center justify-center text-xs text-white/80 bg-cover bg-center"
-                          style={t.bg_image ? { backgroundImage: `url(${t.bg_image})` } : { background: t.thumb_bg || "#eee" }}>
-                          {!t.bg_image && (t.objects?.length ? "Örnek düzen" : "Boş")}
+              {(favorites.length ? ["Favoriler", ...new Set(templates.map((t) => t.category || "Diğer"))] : [...new Set(templates.map((t) => t.category || "Diğer"))]).map((cat) => {
+                const list = cat === "Favoriler"
+                  ? templates.filter((t) => favorites.includes(t.id))
+                  : templates.filter((t) => (t.category || "Diğer") === cat);
+                if (list.length === 0) return null;
+                return (
+                  <div key={cat} className="mb-4">
+                    <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+                      {cat === "Favoriler" && <Star size={12} className="text-amber-500 fill-amber-500" />}{cat}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {list.map((t) => (
+                        <div
+                          key={`${cat}-${t.id}`}
+                          data-testid={`template-card-${t.id}`}
+                          onClick={() => loadTemplate(t)}
+                          className="relative rounded-xl overflow-hidden border border-neutral-200 hover:border-amber-400 transition-colors text-left cursor-pointer"
+                        >
+                          <button
+                            data-testid={`template-fav-${t.id}`}
+                            onClick={(e) => toggleFavorite(t.id, e)}
+                            className="absolute top-1.5 right-1.5 z-10 bg-black/40 hover:bg-black/60 rounded-full p-1.5"
+                            title="Favori"
+                          >
+                            <Star size={14} className={favorites.includes(t.id) ? "text-amber-400 fill-amber-400" : "text-white"} />
+                          </button>
+                          <div className="aspect-[4/5] flex items-center justify-center text-xs text-white/80 bg-cover bg-center"
+                            style={t.bg_image ? { backgroundImage: `url(${t.bg_image})` } : { background: t.thumb_bg || "#eee" }}>
+                            {!t.bg_image && (t.objects?.length ? "Örnek düzen" : "Boş")}
+                          </div>
+                          <div className="px-2 py-1.5 text-xs font-medium">{t.name}</div>
                         </div>
-                        <div className="px-2 py-1.5 text-xs font-medium">{t.name}</div>
-                      </button>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </DialogContent>
           </Dialog>
           <Button data-testid="ds-export-btn" variant="outline" size="sm" className="gap-1.5" onClick={exportPng}>

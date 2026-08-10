@@ -5871,6 +5871,8 @@ _module_deps = {
     "put_object": put_object,
     "get_object": get_object,
     "create_paytr_order": _create_paytr_order,
+    "send_email": email_service.send_email,
+    "email_configured": email_service.email_configured,
     "JWT_SECRET": JWT_SECRET,
     "JWT_ALGORITHM": JWT_ALGORITHM,
 }

@@ -168,6 +168,45 @@ TEMPLATES: List[dict] = [
              "textAlign": "center", "originX": "center", "width": 700},
         ],
     },
+    {
+        "id": "soz-rosegold", "name": "Rose Gold Söz", "category": "Söz",
+        "width": 1080, "height": 1350, "bg": "#f3e9e0",
+        "bg_image": "https://static.prod-images.emergentagent.com/jobs/fc76a8ea-b91a-4ba1-bc47-0822af835ee4/images/69b1683782720256360c420b328b3ff1cb1c7f2b4fe28960547cbf6c708841a1.jpeg",
+        "objects": [
+            {"type": "textbox", "text": "Söz Törenimize\nBekleriz", "left": 540, "top": 560,
+             "fontSize": 60, "fontFamily": "Cormorant Garamond", "fill": "#8a6a3f",
+             "textAlign": "center", "originX": "center", "width": 700},
+            {"type": "textbox", "text": "Elif & Kaan", "left": 540, "top": 760,
+             "fontSize": 100, "fontFamily": "Great Vibes", "fill": "#b08a5f",
+             "textAlign": "center", "originX": "center", "width": 720},
+        ],
+    },
+    {
+        "id": "mevlut-green", "name": "Zarif Mevlüt", "category": "Mevlüt",
+        "width": 1080, "height": 1350, "bg": "#eef2e6",
+        "bg_image": "https://static.prod-images.emergentagent.com/jobs/fc76a8ea-b91a-4ba1-bc47-0822af835ee4/images/08bc89d9a3442a45307e27766eaf28769682a4f57a740f3df455aa8150e9394e.jpeg",
+        "objects": [
+            {"type": "textbox", "text": "Mevlid-i Şerif\nOkutulacaktır", "left": 540, "top": 580,
+             "fontSize": 58, "fontFamily": "Marcellus", "fill": "#3f5a3f",
+             "textAlign": "center", "originX": "center", "width": 680},
+            {"type": "textbox", "text": "Teşrifleriniz rica olunur", "left": 540, "top": 780,
+             "fontSize": 38, "fontFamily": "Cormorant Garamond", "fill": "#5a7a5a",
+             "textAlign": "center", "originX": "center", "width": 680},
+        ],
+    },
+    {
+        "id": "opening-gold", "name": "Görkemli Açılış", "category": "Açılış",
+        "width": 1080, "height": 1350, "bg": "#0a0a0a",
+        "bg_image": "https://static.prod-images.emergentagent.com/jobs/fc76a8ea-b91a-4ba1-bc47-0822af835ee4/images/c8d2ac702cda46c4597357a8b3ef514038b82138c843d6ec588929c8e1deeabb.jpeg",
+        "objects": [
+            {"type": "textbox", "text": "Açılışımıza\nDavetlisiniz", "left": 540, "top": 560,
+             "fontSize": 66, "fontFamily": "Marcellus", "fill": "#e8c27a",
+             "textAlign": "center", "originX": "center", "width": 720},
+            {"type": "textbox", "text": "Büyük Açılış · 20 Eylül", "left": 540, "top": 780,
+             "fontSize": 40, "fontFamily": "Montserrat", "fill": "#ffffff",
+             "textAlign": "center", "originX": "center", "width": 720},
+        ],
+    },
 ]
 
 # AI prompt packs by event type — one-click themes (Kına/Nişan etc.)
@@ -192,6 +231,10 @@ AI_PRESETS: List[dict] = [
      "prompt": "Şık doğum günü davetiyesi arka planı, siyah ve altın, ışıltılı konfeti, zarif kutlama"},
     {"id": "engagement-soz", "event": "Söz", "title": "Söz Töreni",
      "prompt": "Söz töreni davetiyesi arka planı, şampanya ve rose gold tonları, ince çiçek detayları, sıcak ve zarif"},
+    {"id": "mevlut-classic", "event": "Mevlüt", "title": "Huzurlu Mevlüt",
+     "prompt": "Mevlüt davetiyesi arka planı, krem ve yeşil, ince İslami arabesk ve geometrik bordür, huzurlu ve zarif"},
+    {"id": "opening-lux", "event": "Açılış", "title": "Lüks Açılış",
+     "prompt": "İşyeri açılış davetiyesi arka planı, siyah ve altın, kurdele ve konfeti detayları, kurumsal ve görkemli"},
 ]
 
 
@@ -227,6 +270,25 @@ def get_router(db, deps):
     @router.get("/ai-presets")
     async def list_ai_presets():
         return {"presets": AI_PRESETS}
+
+    # ---- Favorite templates (per user) --------------------------------------
+    @router.get("/favorites")
+    async def list_favorites(user: dict = Depends(get_current_user)):
+        favs = await db.design_favorites.find({"user_id": user["id"]}, {"_id": 0, "template_id": 1}).to_list(200)
+        return {"favorites": [f["template_id"] for f in favs]}
+
+    @router.post("/favorites/{template_id}")
+    async def add_favorite(template_id: str, user: dict = Depends(get_current_user)):
+        await db.design_favorites.update_one(
+            {"user_id": user["id"], "template_id": template_id},
+            {"$setOnInsert": {"user_id": user["id"], "template_id": template_id, "created_at": now_iso()}},
+            upsert=True)
+        return {"ok": True}
+
+    @router.delete("/favorites/{template_id}")
+    async def remove_favorite(template_id: str, user: dict = Depends(get_current_user)):
+        await db.design_favorites.delete_one({"user_id": user["id"], "template_id": template_id})
+        return {"ok": True}
 
     # ---- Projects (owner-scoped) --------------------------------------------
     @router.post("/projects")
