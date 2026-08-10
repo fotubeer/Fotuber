@@ -1,27 +1,35 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import JSZip from "jszip";
-import { Loader2, Upload, Sparkles, Trash2, Images, X, Download, FolderDown, Printer, User } from "lucide-react";
+import { Loader2, Upload, Sparkles, Trash2, Images, X, Download, FolderDown, Printer, User, Wand2, SlidersHorizontal, CheckCircle2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { api, formatApiError } from "@/lib/api";
 import { PHOTO_SPECS } from "@/lib/passportSpecs";
+import { autoProcessPassport } from "@/lib/passportAuto";
 import { printMultiSheet, tilePhotoToSheets } from "@/lib/printImage";
 
 const BE = process.env.REACT_APP_BACKEND_URL;
 const GARMENTS = [["shirt", "Gömlek"], ["tshirt", "Tişört"], ["polo", "Polo"], ["blouse", "Bluz"], ["blazer", "Ceket"]];
 const COUNTS = [1, 2, 4, 6, 8];
 const specByLabel = (label) => PHOTO_SPECS.find((p) => p.label === label);
+const specByCode = (code) => PHOTO_SPECS.find((p) => p.code === code) || PHOTO_SPECS[0];
 
-const emptySlot = () => ({ file: null, preview: null, base64: null, gender: "male", garment: "shirt", color_name: "Lacivert", spec: "tr-bio", count: 4 });
+const emptySlot = () => ({
+  file: null, preview: null, base64: null,
+  spec: "tr-bio", count: 4,
+  useAi: false, gender: "male", garment: "shirt", color_name: "Lacivert",
+  status: "idle", // idle | processing | done | error
+});
 
-export default function VesikalikTriple() {
+export default function VesikalikTriple({ onFineTune }) {
   const [slots, setSlots] = useState([emptySlot(), emptySlot(), emptySlot()]);
   const [busy, setBusy] = useState(false);
-  const [results, setResults] = useState([]);
+  const [results, setResults] = useState([null, null, null]);
   const [archive, setArchive] = useState([]);
   const [zipBusy, setZipBusy] = useState(false);
   const [printBusy, setPrintBusy] = useState(false);
@@ -32,54 +40,81 @@ export default function VesikalikTriple() {
   useEffect(() => { loadArchive(); }, [loadArchive]);
 
   const setSlot = (i, patch) => setSlots((s) => s.map((x, idx) => idx === i ? { ...x, ...patch } : x));
+  const setResult = (i, val) => setResults((r) => r.map((x, idx) => idx === i ? val : x));
 
   const pick = (i) => (e) => {
     const f = e.target.files?.[0]; e.target.value = "";
     if (!f) return;
     const reader = new FileReader();
-    reader.onload = () => setSlot(i, { file: f, preview: reader.result, base64: reader.result });
+    reader.onload = () => { setSlot(i, { file: f, preview: reader.result, base64: reader.result, status: "idle" }); setResult(i, null); };
     reader.readAsDataURL(f);
   };
 
-  const process = async () => {
-    const items = slots.filter((s) => s.base64).map((s) => {
-      const spec = PHOTO_SPECS.find((p) => p.code === s.spec);
-      return {
-        image_base64: s.base64, gender: s.gender, garment: s.garment, color_name: s.color_name,
-        photo_type: spec?.label || "", print_pref: `${s.count}'li`,
-      };
-    });
-    if (items.length === 0) { toast.error("En az bir fotoğraf yükleyin"); return; }
-    setBusy(true); setResults([]);
+  // Process one slot: (optional AI garment) → automatic vesikalık (bg + crop)
+  const processSlot = async (i) => {
+    const s = slots[i];
+    if (!s.base64) return;
+    const spec = specByCode(s.spec);
+    setSlot(i, { status: "processing" });
     try {
-      const { data } = await api.post("/vesikalik/ai-edit-triple", { items, save_to_archive: true });
-      setResults(data.results || []);
-      toast.success(`${data.success}/${data.total} fotoğraf işlendi (paralel)`);
-      loadArchive();
+      let src = s.base64;
+      if (s.useAi) {
+        const { data } = await api.post("/vesikalik/ai-edit-triple", {
+          items: [{ image_base64: s.base64, gender: s.gender, garment: s.garment, color_name: s.color_name, photo_type: spec.label, print_pref: `${s.count}'li` }],
+          save_to_archive: false,
+        });
+        const r = data.results?.[0];
+        if (!r?.ok) throw new Error(r?.error || "AI kıyafet başarısız");
+        src = `data:${r.mime_type};base64,${r.image_base64}`;
+      }
+      const { dataUrl } = await autoProcessPassport(src, spec, { removeBg: true });
+      let archive_id = null;
+      try {
+        const b64 = dataUrl.split(",")[1];
+        const res = await api.post("/vesikalik/archive", { image_base64: b64, mime: "image/jpeg", photo_type: spec.label, print_pref: `${s.count}'li` });
+        archive_id = res.data.id;
+      } catch {}
+      setResult(i, { ok: true, dataUrl, archive_id });
+      setSlot(i, { status: "done" });
+      return true;
     } catch (e) {
-      toast.error(formatApiError(e, "İşleme başarısız"));
-    } finally { setBusy(false); }
+      setResult(i, { ok: false, error: formatApiError(e, "İşleme başarısız") });
+      setSlot(i, { status: "error" });
+      return false;
+    }
   };
 
-  const delArchive = async (id) => {
-    await api.delete(`/vesikalik/archive/${id}`); loadArchive();
+  const process = async () => {
+    const idxs = slots.map((s, i) => (s.base64 ? i : -1)).filter((i) => i >= 0);
+    if (idxs.length === 0) { toast.error("En az bir fotoğraf yükleyin"); return; }
+    setBusy(true);
+    let ok = 0;
+    for (const i of idxs) {
+      // eslint-disable-next-line no-await-in-loop
+      if (await processSlot(i)) ok += 1;
+    }
+    setBusy(false);
+    toast[ok ? "success" : "error"](`${ok}/${idxs.length} fotoğraf otomatik işlendi`);
+    loadArchive();
   };
 
-  const dl = (dataUrl, name) => {
-    const a = document.createElement("a"); a.href = dataUrl; a.download = name; a.click();
+  const fineTune = (i) => {
+    const r = results[i];
+    if (!r?.ok || !onFineTune) return;
+    onFineTune(r.dataUrl, slots[i].spec);
+    toast.info("Tekli editöre aktarıldı — ince ayar yapabilirsiniz");
   };
 
-  // Build tiled sheets for a processed result using its slot's spec + count
+  const delArchive = async (id) => { await api.delete(`/vesikalik/archive/${id}`); loadArchive(); };
+  const dl = (dataUrl, name) => { const a = document.createElement("a"); a.href = dataUrl; a.download = name; a.click(); };
+
   const sheetsForResult = async (idx) => {
     const r = results[idx]; const s = slots[idx];
     if (!r?.ok) return [];
-    const spec = PHOTO_SPECS.find((p) => p.code === s.spec) || PHOTO_SPECS[0];
-    return tilePhotoToSheets(`data:${r.mime_type};base64,${r.image_base64}`, {
-      photoWmm: spec.w, photoHmm: spec.h, count: s.count,
-    });
+    const spec = specByCode(s.spec);
+    return tilePhotoToSheets(r.dataUrl, { photoWmm: spec.w, photoHmm: spec.h, count: s.count });
   };
 
-  // Batch print: one combined multi-page job with every person's sheets
   const printBatch = async () => {
     const ok = results.filter((r) => r?.ok);
     if (!ok.length) { toast.error("Baskıya hazır sonuç yok"); return; }
@@ -95,7 +130,6 @@ export default function VesikalikTriple() {
     } finally { setPrintBusy(false); }
   };
 
-  // Per-person print: separate print dialog for a single result
   const printPerson = async (idx) => {
     setPrintBusy(true);
     try {
@@ -105,7 +139,6 @@ export default function VesikalikTriple() {
     } finally { setPrintBusy(false); }
   };
 
-  // Reprint an archived photo (Tekrar Baskı)
   const reprintArchive = async (a) => {
     setPrintBusy(true);
     try {
@@ -155,7 +188,7 @@ export default function VesikalikTriple() {
           <Sparkles className="text-amber-400" size={24} />
           <h1 className="text-2xl font-semibold">3'lü İşleme</h1>
         </div>
-        <p className="text-sm text-slate-400 mb-6">3 fotoğrafı aynı anda, birbirinden bağımsız işleyin. Her fotoğraf için ayrı tür ve baskı adedi seçin. Sonuçlar firma arşivine otomatik kaydedilir (son 20).</p>
+        <p className="text-sm text-slate-400 mb-6">3 fotoğrafı aynı anda, tekli paneldeki gibi <b>otomatik işleyin</b> (arka plan temizleme + biyometrik yüz çerçeveleme). İsterseniz AI kıyafet değişimini de açabilirsiniz. Ardından her fotoğrafı <b>İnce Ayar</b> ile tekli editörde tek tek düzenleyebilirsiniz. Sonuçlar firma arşivine kaydedilir.</p>
 
         <div className="grid sm:grid-cols-3 gap-4">
           {slots.map((s, i) => (
@@ -164,7 +197,12 @@ export default function VesikalikTriple() {
                 {s.preview
                   ? <img src={s.preview} alt="" className="w-full h-full object-cover" />
                   : <span className="text-slate-500 text-xs">Fotoğraf {i + 1}</span>}
-                {s.preview && <button data-testid={`vt-clear-${i}`} onClick={() => setSlot(i, emptySlot())} className="absolute top-1 right-1 bg-black/60 rounded-full p-1"><X size={13} /></button>}
+                {s.preview && <button data-testid={`vt-clear-${i}`} onClick={() => { setSlot(i, emptySlot()); setResult(i, null); }} className="absolute top-1 right-1 bg-black/60 rounded-full p-1"><X size={13} /></button>}
+                {s.status === "processing" && (
+                  <div className="absolute inset-0 bg-black/60 grid place-items-center">
+                    <div className="flex flex-col items-center gap-2 text-xs"><Loader2 className="animate-spin text-amber-400" size={22} /> İşleniyor…</div>
+                  </div>
+                )}
               </div>
               <label className="block">
                 <input data-testid={`vt-upload-${i}`} type="file" accept="image/*" hidden onChange={pick(i)} />
@@ -181,28 +219,43 @@ export default function VesikalikTriple() {
                   <SelectContent>{COUNTS.map((c) => <SelectItem key={c} value={String(c)}>{c} adet</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                <Select value={s.gender} onValueChange={(v) => setSlot(i, { gender: v })}>
-                  <SelectTrigger data-testid={`vt-gender-${i}`} className="h-8 text-xs bg-slate-800 border-slate-700"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="male">Erkek</SelectItem><SelectItem value="female">Kadın</SelectItem></SelectContent>
-                </Select>
-                <Select value={s.garment} onValueChange={(v) => setSlot(i, { garment: v })}>
-                  <SelectTrigger data-testid={`vt-garment-${i}`} className="h-8 text-xs bg-slate-800 border-slate-700"><SelectValue /></SelectTrigger>
-                  <SelectContent>{GARMENTS.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
-                </Select>
+              {/* AI garment toggle — only this reveals the AI controls */}
+              <div className="flex items-center justify-between rounded-lg bg-slate-800/60 px-2.5 py-1.5">
+                <span className="flex items-center gap-1.5 text-xs text-slate-300"><Wand2 size={13} className="text-violet-400" /> AI Kıyafet <span className="text-[10px] text-amber-400">(Ücretli)</span></span>
+                <Switch data-testid={`vt-ai-toggle-${i}`} checked={s.useAi} onCheckedChange={(v) => setSlot(i, { useAi: v })} />
               </div>
-              <Input data-testid={`vt-color-${i}`} value={s.color_name} onChange={(e) => setSlot(i, { color_name: e.target.value })} placeholder="Renk (örn. Lacivert)" className="h-8 text-xs bg-slate-800 border-slate-700" />
+              {s.useAi && (
+                <>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <Select value={s.gender} onValueChange={(v) => setSlot(i, { gender: v })}>
+                      <SelectTrigger data-testid={`vt-gender-${i}`} className="h-8 text-xs bg-slate-800 border-slate-700"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="male">Erkek</SelectItem><SelectItem value="female">Kadın</SelectItem></SelectContent>
+                    </Select>
+                    <Select value={s.garment} onValueChange={(v) => setSlot(i, { garment: v })}>
+                      <SelectTrigger data-testid={`vt-garment-${i}`} className="h-8 text-xs bg-slate-800 border-slate-700"><SelectValue /></SelectTrigger>
+                      <SelectContent>{GARMENTS.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <Input data-testid={`vt-color-${i}`} value={s.color_name} onChange={(e) => setSlot(i, { color_name: e.target.value })} placeholder="Renk (örn. Lacivert)" className="h-8 text-xs bg-slate-800 border-slate-700" />
+                </>
+              )}
               {results[i] && (
                 <div className={`rounded-lg overflow-hidden ${results[i].ok ? "" : "border border-red-500/40"}`}>
                   {results[i].ok
-                    ? <div className="relative">
-                        <img src={`data:${results[i].mime_type};base64,${results[i].image_base64}`} alt="sonuç" className="w-full" />
-                        <div className="absolute bottom-1 right-1 flex gap-1">
-                          <button data-testid={`vt-print-${i}`} title="Kişi bazlı baskı" onClick={() => printPerson(i)} className="bg-black/60 rounded-full p-1.5"><Printer size={13} /></button>
-                          <button data-testid={`vt-dl-${i}`} onClick={() => dl(`data:${results[i].mime_type};base64,${results[i].image_base64}`, `vesikalik-${i + 1}.png`)} className="bg-black/60 rounded-full p-1.5"><Download size={13} /></button>
+                    ? <div className="space-y-1.5">
+                        <div className="relative">
+                          <img src={results[i].dataUrl} alt="sonuç" className="w-full" />
+                          <div className="absolute bottom-1 right-1 flex gap-1">
+                            <button data-testid={`vt-print-${i}`} title="Kişi bazlı baskı" onClick={() => printPerson(i)} className="bg-black/60 rounded-full p-1.5"><Printer size={13} /></button>
+                            <button data-testid={`vt-dl-${i}`} onClick={() => dl(results[i].dataUrl, `vesikalik-${i + 1}.png`)} className="bg-black/60 rounded-full p-1.5"><Download size={13} /></button>
+                          </div>
+                          <span className="absolute top-1 left-1 flex items-center gap-1 text-[10px] bg-emerald-600/90 rounded-full px-1.5 py-0.5"><CheckCircle2 size={11} /> Hazır</span>
                         </div>
+                        <Button data-testid={`vt-finetune-${i}`} onClick={() => fineTune(i)} size="sm" className="w-full h-8 gap-1.5 text-xs bg-slate-100 hover:bg-white text-slate-900 font-semibold">
+                          <SlidersHorizontal size={13} /> İnce Ayar (Tekli Editörde Aç)
+                        </Button>
                       </div>
-                    : <div className="text-[11px] text-red-300 p-2">Hata: {results[i].error}</div>}
+                    : <div className="text-[11px] text-red-300 p-2 flex items-start gap-1.5"><AlertCircle size={13} className="shrink-0 mt-0.5" /> {results[i].error}</div>}
                 </div>
               )}
             </div>

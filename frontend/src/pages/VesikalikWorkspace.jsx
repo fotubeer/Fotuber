@@ -5,6 +5,13 @@ import VesikalikTriple from "@/pages/VesikalikTriple";
 
 export default function VesikalikWorkspace() {
   const [mode, setMode] = useState("single");
+  const [injected, setInjected] = useState(null); // {src, specCode, key}
+
+  const handleFineTune = (src, specCode) => {
+    setInjected({ src, specCode, key: Date.now() });
+    setMode("single");
+  };
+
   return (
     <div className="relative">
       <div
@@ -30,7 +37,9 @@ export default function VesikalikWorkspace() {
           <Layers className="w-3.5 h-3.5" /> 3'lü İşleme
         </button>
       </div>
-      {mode === "single" ? <AdminPassportPhoto /> : <VesikalikTriple />}
+      {mode === "single"
+        ? <AdminPassportPhoto injected={injected} />
+        : <VesikalikTriple onFineTune={handleFineTune} />}
     </div>
   );
 }

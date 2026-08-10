@@ -7,6 +7,7 @@ import { api, formatApiError } from "@/lib/api";
 
 const FIELDS = [
   { key: "price", label: "Aylık Fiyat (₺)" },
+  { key: "price_yearly", label: "Yıllık Fiyat (₺)" },
   { key: "ai_credits", label: "AI Kredisi" },
   { key: "storage_gb", label: "Depolama (GB)" },
   { key: "max_events", label: "Maks. Etkinlik" },
@@ -44,7 +45,7 @@ export default function AdminStudioPlans() {
     const body = {};
     FIELDS.forEach(({ key }) => {
       const v = plan[key];
-      if (v !== "" && v != null) body[key] = key === "price" ? parseFloat(v) : parseInt(v, 10);
+      if (v !== "" && v != null) body[key] = (key === "price" || key === "price_yearly") ? parseFloat(v) : parseInt(v, 10);
     });
     try {
       await api.put(`/admin/studio-plans/${plan.id}`, body);

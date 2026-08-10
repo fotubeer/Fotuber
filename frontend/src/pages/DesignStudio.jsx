@@ -87,6 +87,10 @@ export default function DesignStudio() {
   const [bulkNames, setBulkNames] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(0);
+  const [printCap, setPrintCap] = useState(null);
+  const loadPrintCap = async () => {
+    try { setPrintCap((await api.get("/design/print-capacity")).data); } catch { setPrintCap(null); }
+  };
   const [aiFavs, setAiFavs] = useState([]);
 
   // ---- Fit canvas to container using fabric zoom ------------------------
@@ -551,6 +555,20 @@ export default function DesignStudio() {
       toast.error("Önce tuvale {isim} kişiselleştirme alanı ekleyin");
       return;
     }
+    // Enforce purchased personalized-print capacity
+    try {
+      const { data } = await api.post("/design/print-consume", { count: names.length });
+      setPrintCap((p) => ({ ...(p || {}), used: data.used, remaining: data.remaining, capacity: data.capacity }));
+    } catch (err) {
+      if (err?.response?.status === 402) {
+        toast.error(err.response.data.detail.replace("[CAPACITY]", "").trim(), { duration: 7000 });
+      } else if (err?.response?.status === 401) {
+        toast.error("Toplu baskı için üye girişi gerekli"); navigate("/giris");
+      } else {
+        toast.error(formatApiError(err, "Kapasite kontrolü başarısız"));
+      }
+      return;
+    }
     setBulkBusy(true); setBulkProgress(0);
     const savedName = sampleName;
     try {
@@ -669,7 +687,7 @@ export default function DesignStudio() {
         <Tool testid="ds-add-image" icon={ImageIcon} label="Görsel" onClick={() => fileInputRef.current?.click()} />
         <Tool testid="ds-add-personalize" icon={UserSquare} label="{isim}" onClick={addPersonalize} accent />
         <Tool testid="ds-ai-btn" icon={Sparkles} label="AI Tasarla" onClick={() => openAi(true)} accent />
-        <Tool testid="ds-bulk-btn" icon={Users} label="Toplu Üret" onClick={() => setBulkOpen(true)} accent />
+        <Tool testid="ds-bulk-btn" icon={Users} label="Toplu Üret" onClick={() => { setBulkOpen(true); loadPrintCap(); }} accent />
         <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={uploadImage} />
       </div>
 
@@ -873,13 +891,22 @@ export default function DesignStudio() {
       </Dialog>
 
       {/* Bulk personalization dialog */}
-      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+      <Dialog open={bulkOpen} onOpenChange={(o) => { setBulkOpen(o); if (o) loadPrintCap(); }}>
         <DialogContent data-testid="bulk-dialog" className="max-w-lg text-neutral-900">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Users size={18} className="text-amber-500" /> Toplu Kişiselleştirme</DialogTitle>
-            <DialogDescription>Her isim için ayrı, isme özel davetiye üretilir ve ZIP olarak indirilir. Tuvalde {"{isim}"} alanı olmalı. En fazla 200 isim.</DialogDescription>
+            <DialogDescription>Her isim için ayrı, isme özel davetiye üretilir ve ZIP olarak indirilir. Tuvalde {"{isim}"} alanı olmalı.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {printCap && (
+              <div data-testid="bulk-capacity" className={`rounded-lg border p-2.5 text-sm flex items-center justify-between ${printCap.remaining > 0 ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
+                <span>Kişiye özel baskı kapasitesi</span>
+                <span className="font-semibold">{printCap.remaining} / {printCap.capacity} kaldı</span>
+              </div>
+            )}
+            {printCap && printCap.capacity === 0 && (
+              <div className="text-xs text-amber-700">Kapasiteniz 0. Yönetici size kapasite tanımlamalı ya da kapasite paketi (200–1500) satın alınmalı.</div>
+            )}
             <Textarea data-testid="bulk-names" value={bulkNames} onChange={(e) => setBulkNames(e.target.value)}
               placeholder={"Her satıra bir isim:\nAyşe Yılmaz\nMehmet Demir\nZeynep Kaya"} rows={6} className="text-neutral-900" />
             <div className="flex items-center justify-between">

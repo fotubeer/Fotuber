@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast, Toaster } from "sonner";
-import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, MessageCircleHeart, Calendar, Images, Eye, EyeOff, Presentation, QrCode, MessageCircle, Copy, Send, Clock, Check, LogOut, Mail, Lock, ArrowRight, Sparkles, Heart } from "lucide-react";
+import { Loader2, Plus, ExternalLink, BarChart3, Download, Trash2, Users, MessageCircleHeart, Calendar, Images, Eye, EyeOff, Presentation, QrCode, MessageCircle, Copy, Send, Clock, Check, LogOut, Mail, Lock, ArrowRight, Sparkles, Heart, Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,6 +33,8 @@ export default function MyInvitations() {
   const [photoMod, setPhotoMod] = useState(null);
   const [modPhotos, setModPhotos] = useState([]);
   const [modStorage, setModStorage] = useState(null);
+  const [modMeta, setModMeta] = useState(null); // { tier, tierLabel, tableQr, spamCount }
+  const [modTab, setModTab] = useState("photos"); // photos | spam
   const [modLoading, setModLoading] = useState(false);
   const [paying, setPaying] = useState(false);
   const [waInvite, setWaInvite] = useState(null);
@@ -115,15 +117,29 @@ export default function MyInvitations() {
   };
 
   const openPhotoWall = async (inv) => {
-    setPhotoMod(inv); setModLoading(true); setModPhotos([]); setModStorage(null);
+    setPhotoMod(inv); setModLoading(true); setModPhotos([]); setModStorage(null); setModMeta(null); setModTab("photos");
     try {
       const r = await api(`/invitations/${inv.id}/photos/manage`);
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Yüklenemedi");
       setModPhotos(d.photos || []);
       setModStorage({ used: d.storage_used || 0, limit: d.storage_limit || 0, gb: d.storage_limit_gb });
+      setModMeta({ tier: d.tier, tierLabel: d.tier_label, tableQr: !!d.table_qr, spamCount: d.spam_count || 0 });
     } catch (e) { toast.error(e.message); }
     finally { setModLoading(false); }
+  };
+
+  const downloadTableQr = async (inv) => {
+    toast.message("Masa QR Kartları hazırlanıyor…");
+    try {
+      const r = await api(`/invitations/${inv.id}/table-qr.pdf`);
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || "İndirilemedi"); }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = `masa-qr-${inv.slug}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Masa QR Kartları indirildi (A4, 6 kart)");
+    } catch (e) { toast.error(e.message); }
   };
 
   const extendInvitation = async (inv) => {
@@ -185,6 +201,18 @@ export default function MyInvitations() {
       setModPhotos((x) => x.filter((p) => p.id !== pid));
       toast.success("Silindi");
     } catch (e) { toast.error("Silinemedi"); }
+  };
+
+  const toggleSpam = async (pid, spam) => {
+    try {
+      const r = await api(`/invitations/${photoMod.id}/photos/${pid}/spam`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spam }),
+      });
+      if (!r.ok) throw new Error();
+      setModPhotos((x) => x.map((p) => (p.id === pid ? { ...p, spam } : p)));
+      setModMeta((m) => m ? { ...m, spamCount: Math.max(0, (m.spamCount || 0) + (spam ? 1 : -1)) } : m);
+      toast.success(spam ? "Spam kutusuna taşındı" : "Spam kutusundan çıkarıldı");
+    } catch (e) { toast.error("İşlem başarısız"); }
   };
 
   const openWhatsApp = (inv) => {
@@ -470,14 +498,23 @@ export default function MyInvitations() {
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto" data-testid="photowall-dialog">
           {photoMod && (<>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2"><Images className="w-5 h-5" /> Foto Duvarı — {photoMod.person2 ? `${photoMod.person1} & ${photoMod.person2}` : photoMod.person1}</DialogTitle>
-              <DialogDescription>Uygunsuz fotoğrafları gizleyin veya silin. Gizlenenler davetiyede ve slaytta görünmez.</DialogDescription>
+              <DialogTitle className="flex items-center gap-2"><Images className="w-5 h-5" /> Anı Duvarı — {photoMod.person2 ? `${photoMod.person1} & ${photoMod.person2}` : photoMod.person1}
+                {modMeta?.tierLabel && <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${modMeta.tier === "gold" ? "bg-amber-400 text-amber-950" : "bg-slate-300 text-slate-700"}`}>{modMeta.tierLabel}</span>}
+              </DialogTitle>
+              <DialogDescription>İstenmeyen fotoğrafları gizleyin, Spam kutusuna taşıyın veya silin. Gizli/spam fotoğraflar davetiyede ve slaytta görünmez.</DialogDescription>
             </DialogHeader>
-            <a href={`/davetiye/${photoMod.slug}/duvar`} target="_blank" rel="noreferrer">
-              <Button className="w-full bg-slate-900 hover:bg-slate-800 mb-3" data-testid="photowall-slideshow-link">
-                <Presentation className="w-4 h-4 mr-2" /> Tam Ekran Slayt Aç (projeksiyon için)
-              </Button>
-            </a>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <a href={`/davetiye/${photoMod.slug}/duvar`} target="_blank" rel="noreferrer" className="flex-1 min-w-[180px]">
+                <Button className="w-full bg-slate-900 hover:bg-slate-800" data-testid="photowall-slideshow-link">
+                  <Presentation className="w-4 h-4 mr-2" /> Tam Ekran Slayt Aç
+                </Button>
+              </a>
+              {modMeta?.tableQr && (
+                <Button onClick={() => downloadTableQr(photoMod)} className="flex-1 min-w-[180px] bg-amber-500 hover:bg-amber-600 text-amber-950" data-testid="photowall-table-qr">
+                  <QrCode className="w-4 h-4 mr-2" /> Masa QR Kartları (PDF)
+                </Button>
+              )}
+            </div>
             {modStorage && modStorage.limit > 0 && (
               <div className="mb-3" data-testid="photowall-storage">
                 <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
@@ -489,24 +526,50 @@ export default function MyInvitations() {
                 </div>
               </div>
             )}
+            {/* Tab switch: Fotoğraflar / Spam Kutusu */}
+            <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 mb-3 text-sm" data-testid="photowall-tabs">
+              <button onClick={() => setModTab("photos")} data-testid="photowall-tab-photos"
+                className={`flex-1 py-1.5 rounded-md transition-colors ${modTab === "photos" ? "bg-white shadow font-semibold text-slate-900" : "text-slate-500"}`}>
+                Fotoğraflar ({modPhotos.filter((p) => !p.spam).length})
+              </button>
+              <button onClick={() => setModTab("spam")} data-testid="photowall-tab-spam"
+                className={`flex-1 py-1.5 rounded-md transition-colors ${modTab === "spam" ? "bg-white shadow font-semibold text-rose-600" : "text-slate-500"}`}>
+                Spam Kutusu ({modMeta?.spamCount ?? modPhotos.filter((p) => p.spam).length})
+              </button>
+            </div>
             {modLoading ? (
               <div className="py-10 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-slate-400" /></div>
-            ) : modPhotos.length === 0 ? (
-              <div className="py-10 text-center text-slate-400 text-sm">Henüz misafir fotoğrafı yok.</div>
-            ) : (
+            ) : (() => {
+              const shown = modPhotos.filter((p) => modTab === "spam" ? p.spam : !p.spam);
+              if (shown.length === 0) {
+                return <div className="py-10 text-center text-slate-400 text-sm">{modTab === "spam" ? "Spam kutusu boş." : "Henüz misafir fotoğrafı yok."}</div>;
+              }
+              return (
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                {modPhotos.map((p) => (
-                  <div key={p.id} className={`relative rounded-lg overflow-hidden border ${p.hidden ? "border-rose-300 opacity-60" : "border-slate-200"}`} data-testid={`mod-photo-${p.id}`}>
+                {shown.map((p) => (
+                  <div key={p.id} className={`relative rounded-lg overflow-hidden border ${p.spam ? "border-rose-400 opacity-70" : p.hidden ? "border-amber-300 opacity-70" : "border-slate-200"}`} data-testid={`mod-photo-${p.id}`}>
                     {p.kind === "video"
                       ? <video src={`${API}/api/invitations/photo/${p.id}`} className="w-full aspect-square object-cover" muted playsInline controls />
                       : <img src={`${API}/api/invitations/photo/${p.id}`} alt={p.uploader_name || "Anı"} className="w-full aspect-square object-cover" loading="lazy" />}
                     {p.kind === "video" && <div className="absolute top-1 left-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded">Video</div>}
-                    {p.hidden && <div className="absolute top-1 left-1 bg-rose-600 text-white text-[9px] px-1.5 py-0.5 rounded">Gizli</div>}
+                    {p.spam && <div className="absolute top-1 left-1 bg-rose-600 text-white text-[9px] px-1.5 py-0.5 rounded">Spam</div>}
+                    {!p.spam && p.hidden && <div className="absolute top-1 left-1 bg-amber-500 text-white text-[9px] px-1.5 py-0.5 rounded">Gizli</div>}
                     {p.uploader_name && <div className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] px-1 py-0.5 truncate">{p.uploader_name}</div>}
                     <div className="absolute top-1 right-1 flex gap-1">
-                      <button onClick={() => toggleHide(p.id, !p.hidden)} title={p.hidden ? "Göster" : "Gizle"} className="w-6 h-6 rounded bg-white/90 grid place-items-center hover:bg-white" data-testid={`mod-hide-${p.id}`}>
-                        {p.hidden ? <Eye className="w-3.5 h-3.5 text-emerald-600" /> : <EyeOff className="w-3.5 h-3.5 text-slate-700" />}
-                      </button>
+                      {modTab === "spam" ? (
+                        <button onClick={() => toggleSpam(p.id, false)} title="Geri al" className="w-6 h-6 rounded bg-white/90 grid place-items-center hover:bg-white" data-testid={`mod-restore-${p.id}`}>
+                          <ArrowRight className="w-3.5 h-3.5 text-emerald-600 rotate-180" />
+                        </button>
+                      ) : (
+                        <>
+                          <button onClick={() => toggleHide(p.id, !p.hidden)} title={p.hidden ? "Göster" : "Gizle"} className="w-6 h-6 rounded bg-white/90 grid place-items-center hover:bg-white" data-testid={`mod-hide-${p.id}`}>
+                            {p.hidden ? <Eye className="w-3.5 h-3.5 text-emerald-600" /> : <EyeOff className="w-3.5 h-3.5 text-slate-700" />}
+                          </button>
+                          <button onClick={() => toggleSpam(p.id, true)} title="Spam'e taşı" className="w-6 h-6 rounded bg-white/90 grid place-items-center hover:bg-white" data-testid={`mod-spam-${p.id}`}>
+                            <Ban className="w-3.5 h-3.5 text-rose-600" />
+                          </button>
+                        </>
+                      )}
                       <button onClick={() => delPhoto(p.id)} title="Sil" className="w-6 h-6 rounded bg-white/90 grid place-items-center hover:bg-white" data-testid={`mod-del-${p.id}`}>
                         <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                       </button>
@@ -514,7 +577,8 @@ export default function MyInvitations() {
                   </div>
                 ))}
               </div>
-            )}
+              );
+            })()}
           </>)}
         </DialogContent>
       </Dialog>

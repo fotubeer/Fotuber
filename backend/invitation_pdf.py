@@ -291,3 +291,57 @@ def render_invitation_pdf(data: dict) -> bytes:
     c.showPage()
     c.save()
     return buf.getvalue()
+
+
+
+def render_table_qr_pdf(data: dict) -> bytes:
+    """Gold-tier 'Masa QR Kartları': one A4 page with a 2×3 = 6 card grid.
+    Each card carries the couple's name, a QR pointing to the photo upload page
+    and a call-to-action, so guests at each table can scan and upload photos."""
+    from reportlab.lib.pagesizes import A4
+    buf = io.BytesIO()
+    pw, ph = A4
+    c = canvas.Canvas(buf, pagesize=(pw, ph))
+    couple = (data.get("couple") or "").strip()
+    subtitle = (data.get("subtitle") or "Anı Duvarı").strip()
+    cta = (data.get("cta") or "Fotoğraflarını Yükle").strip()
+    hint = (data.get("hint") or "QR kodu telefonunla okut, fotoğraf ve videolarını bizimle paylaş.").strip()
+    url = (data.get("qr_url") or "https://fotuber.com.tr").strip()
+    accent = _hex(data.get("accent_color") or "#B76E79", "#B76E79")
+    text_c = _hex(data.get("text_color") or "#3a2a2c", "#3a2a2c")
+    cols, rows = 2, 3
+    margin = 12 * MM
+    gap = 6 * MM
+    cw = (pw - 2 * margin - (cols - 1) * gap) / cols
+    chh = (ph - 2 * margin - (rows - 1) * gap) / rows
+    for r in range(rows):
+        for col in range(cols):
+            x = margin + col * (cw + gap)
+            y = ph - margin - (r + 1) * chh - r * gap
+            c.setLineWidth(0.8)
+            c.setStrokeColor(accent)
+            c.roundRect(x, y, cw, chh, 6 * MM, stroke=1, fill=0)
+            cx = x + cw / 2.0
+            c.setFont(_SERIF_BOLD, 10)
+            c.setFillColor(accent)
+            c.drawCentredString(cx, y + chh - 13 * MM, _tr_upper(subtitle))
+            if couple:
+                c.setFont(_SCRIPT, 22)
+                c.setFillColor(text_c)
+                c.drawCentredString(cx, y + chh - 25 * MM, couple)
+            qsize = min(cw, chh) * 0.40
+            _draw_qr(c, url, cx, y + chh * 0.32, qsize)
+            c.setFont(_SERIF_BOLD, 12)
+            c.setFillColor(accent)
+            c.drawCentredString(cx, y + 15 * MM, cta)
+            c.setFont(_SERIF, 8)
+            c.setFillColor(text_c)
+            lines = _wrap(c, hint, _SERIF, 8, cw - 10 * MM)[:2]
+            ly = y + 10 * MM
+            for ln in lines:
+                c.drawCentredString(cx, ly, ln)
+                ly -= 3.4 * MM
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.getvalue()

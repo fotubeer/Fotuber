@@ -38,25 +38,25 @@ STUDIO_PLANS = [
         "highlights": ["3 gün tam erişim", "Fotuber filigranı zorunlu", "0 AI kredisi"],
     },
     {
-        "id": "basic", "link_days": 2, "del_days": 4, "max_users": 1, "name": "Basic", "price": 499, "period": "aylık",
+        "id": "basic", "link_days": 2, "del_days": 4, "max_users": 1, "name": "Basic", "price": 499, "price_yearly": 4990, "period": "aylık",
         "ai_credits": 50, "storage_gb": 50, "max_events": 10,
         "max_devices": 1, "watermark_forced": False,
         "highlights": ["50 AI kredisi", "50 GB depolama", "Filigtransız"],
     },
     {
-        "id": "bronze", "link_days": 4, "del_days": 8, "max_users": 3, "name": "Bronze", "price": 899, "period": "aylık",
+        "id": "bronze", "link_days": 4, "del_days": 8, "max_users": 3, "name": "Bronze", "price": 899, "price_yearly": 8990, "period": "aylık",
         "ai_credits": 150, "storage_gb": 150, "max_events": 30,
         "max_devices": 2, "watermark_forced": False,
         "highlights": ["150 AI kredisi", "150 GB depolama", "2 cihaz"],
     },
     {
-        "id": "silver", "link_days": 5, "del_days": 10, "max_users": 5, "name": "Silver", "price": 1499, "period": "aylık",
+        "id": "silver", "link_days": 5, "del_days": 10, "max_users": 5, "name": "Silver", "price": 1499, "price_yearly": 14990, "period": "aylık",
         "ai_credits": 400, "storage_gb": 400, "max_events": 100,
         "max_devices": 4, "watermark_forced": False,
         "highlights": ["400 AI kredisi", "400 GB depolama", "4 cihaz"],
     },
     {
-        "id": "gold", "link_days": 7, "del_days": 14, "max_users": 10, "name": "Gold", "price": 2499, "period": "aylık",
+        "id": "gold", "link_days": 7, "del_days": 14, "max_users": 10, "name": "Gold", "price": 2499, "price_yearly": 24990, "period": "aylık",
         "ai_credits": 1200, "storage_gb": 1024, "max_events": 500,
         "max_devices": 8, "watermark_forced": False,
         "highlights": ["1200 AI kredisi", "1 TB depolama", "8 cihaz"],
@@ -231,17 +231,59 @@ def _strip_studio(acc: dict) -> dict:
 # ---------------------------------------------------------------------------
 def build_get_current_studio(db, JWT_SECRET, JWT_ALGORITHM):
     """Module-level factory so other routers (e.g. gallery) can reuse studio auth."""
+    async def _ensure_admin_studio(sub: str, email: str) -> dict:
+        """Get-or-create a persistent full-access studio account for the site admin.
+        Gives every module, Gold plan, unlimited quotas and free everything so the
+        admin uses ALL studio features without a separate signup or payment."""
+        aid = f"admin-{sub}"
+        acc = await db.studio_accounts.find_one({"id": aid}, {"_id": 0})
+        if not acc:
+            far = (datetime.now(timezone.utc) + timedelta(days=3650)).isoformat()
+            acc = {
+                "id": aid, "role": "studio", "is_admin_super": True,
+                "email": email or "admin@fotuber.com.tr",
+                "firma_adi": "Fotuber Yönetim", "brand_name": "Fotuber Yönetim",
+                "ftb_code": "FTB-ADMIN", "plan": "gold", "paid_until": far,
+                "modules": {"vesikalik": True, "gallery": True},
+                "design_rights": 10_000_000, "ai_credits": 10_000_000,
+                "bonus_events": 1_000_000,
+                "gallery_watermark": False, "gallery_allow_originals": True,
+                "notify_enabled": False,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.studio_accounts.update_one({"id": aid}, {"$setOnInsert": acc}, upsert=True)
+            acc = await db.studio_accounts.find_one({"id": aid}, {"_id": 0})
+        # Keep the admin account topped up so deductions never block it.
+        if int(acc.get("design_rights", 0) or 0) < 1000 or int(acc.get("ai_credits", 0) or 0) < 1000:
+            await db.studio_accounts.update_one({"id": aid}, {"$set": {"design_rights": 10_000_000, "ai_credits": 10_000_000}})
+            acc["design_rights"] = 10_000_000
+            acc["ai_credits"] = 10_000_000
+        acc["_emp_id"] = None
+        acc["_emp_name"] = acc.get("firma_adi")
+        acc["_is_owner"] = True
+        return acc
+
     async def get_current_studio(request: Request) -> dict:
         token = request.cookies.get("studio_token") or request.cookies.get("access_token")
         if not token:
             auth = request.headers.get("Authorization", "")
             if auth.startswith("Bearer "):
                 token = auth[7:]
+        # Site admin/staff main-site token → full-access "super" studio account
+        # (all modules, unlimited quotas, everything free). No separate signup.
+        main_token = request.cookies.get("fotuber_token") or request.cookies.get("token")
+        if not token and main_token:
+            token = main_token
         if not token:
             raise HTTPException(status_code=401, detail="Stüdyo girişi gerekli")
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-            if payload.get("type") != "access" or payload.get("role") != "studio":
+            if payload.get("type") != "access":
+                raise HTTPException(status_code=401, detail="Geçersiz stüdyo oturumu")
+            role = payload.get("role")
+            if role in ("admin", "staff"):
+                return await _ensure_admin_studio(payload.get("sub"), payload.get("email"))
+            if role != "studio":
                 raise HTTPException(status_code=401, detail="Geçersiz stüdyo oturumu")
             acc = await db.studio_accounts.find_one({"id": payload["sub"]}, {"_id": 0})
             if not acc:
@@ -609,18 +651,21 @@ def get_router(db, deps):
         module: str
         plan: str
         origin_url: str = ""
+        period: str = "monthly"
 
-    def _module_price(mod: str, plan_id: str, mods: dict):
+    def _module_price(mod: str, plan_id: str, mods: dict, period: str = "monthly"):
         if plan_id == "trial" or mod not in ("vesikalik", "gallery"):
             return None
         plan = _merged_plan(plan_id)
         if plan.get("id") != plan_id:
             return None
         owns_other = bool((mods or {}).get("gallery" if mod == "vesikalik" else "vesikalik", False))
-        base = float(plan["price"])
+        yearly = period == "yearly"
+        base = float(plan.get("price_yearly") or (float(plan["price"]) * 10)) if yearly else float(plan["price"])
         disc = _second_module_discount()
         price = round(base * (1 - disc / 100.0), 2) if owns_other else base
-        return {"plan": plan, "base": base, "price": price, "discount": disc if owns_other else 0}
+        return {"plan": plan, "base": base, "price": price, "discount": disc if owns_other else 0,
+                "period": period, "price_yearly": float(plan.get("price_yearly") or (float(plan["price"]) * 10))}
 
     @router.get("/modules/pricing")
     async def modules_pricing(acc: dict = Depends(get_current_studio)):
@@ -631,23 +676,26 @@ def get_router(db, deps):
                 if p["id"] == "trial":
                     continue
                 info = _module_price(m, p["id"], mods)
+                info_y = _module_price(m, p["id"], mods, "yearly")
                 out.append({"module": m, "plan": p["id"], "plan_name": p["name"],
-                            "base_price": info["base"], "price": info["price"], "discount": info["discount"]})
+                            "base_price": info["base"], "price": info["price"], "discount": info["discount"],
+                            "price_yearly": info_y["price"], "base_yearly": info_y["base"]})
         return {"pricing": out, "modules": mods,
                 "note": f"İkinci modülde otomatik %{_second_module_discount()} indirim uygulanır."}
 
     @router.post("/payments/module/create")
     async def buy_module(payload: ModuleBuyIn, request: Request, acc: dict = Depends(get_current_studio)):
-        info = _module_price(payload.module, payload.plan, acc.get("modules") or {})
+        period = "yearly" if getattr(payload, "period", "monthly") == "yearly" else "monthly"
+        info = _module_price(payload.module, payload.plan, acc.get("modules") or {}, period)
         if not info:
             raise HTTPException(status_code=400, detail="Geçersiz modül veya plan")
         mlabel = "Vesikalık" if payload.module == "vesikalik" else "Etkinlik Galerisi"
-        title = f"Fotuber {mlabel} {info['plan']['name']}"
+        title = f"Fotuber {mlabel} {info['plan']['name']} ({'Yıllık' if period == 'yearly' else 'Aylık'})"
         return await create_paytr_order(
             title=title, price=info["price"], origin_url=payload.origin_url,
             request_base_url=request.base_url,
             order_extra={"kind": "studio_module", "studio_id": acc["id"], "module": payload.module,
-                         "plan": info["plan"]["id"], "discount": info["discount"]},
+                         "plan": info["plan"]["id"], "discount": info["discount"], "period": period},
         )
 
     # ---- Notification settings ------------------------------------------

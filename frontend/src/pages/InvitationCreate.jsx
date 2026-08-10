@@ -48,6 +48,11 @@ export default function InvitationCreate() {
   const [mobilePrev, setMobilePrev] = useState(false);
   const [venueInfo, setVenueInfo] = useState(null); // { valid, code_type, discount_percent, venue_name }
   const [venueChecking, setVenueChecking] = useState(false);
+  const [pwTiers, setPwTiers] = useState(null); // { silver:{price,storage_gb}, gold:{...} }
+
+  useEffect(() => {
+    api("/invitations/photowall-tiers").then((r) => r.json()).then((d) => setPwTiers(d.tiers || null)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (data.font_family) { try { loadGoogleFont(data.font_family); } catch { /* ignore */ } }
@@ -88,8 +93,10 @@ export default function InvitationCreate() {
 
   const canPublish = data.person1.trim() && data.event_date;
   const isPremiumTheme = INVITATION_THEMES[data.theme]?.premium;
-  const hasPhotowall = !!data.sections.photowall;
-  const invPrice = (isPremiumTheme ? 250 : 0) + (hasPhotowall ? 500 : 0);
+  const pwTier = data.sections.photowall_tier || "";
+  const hasPhotowall = !!pwTier;
+  const pwPrice = (pwTiers && pwTier && pwTiers[pwTier]) ? Number(pwTiers[pwTier].price) : 0;
+  const invPrice = (isPremiumTheme ? 250 : 0) + pwPrice;
   const effPrice = venueInfo
     ? (venueInfo.code_type === "free" ? 0 : Math.round(invPrice * (1 - (venueInfo.discount_percent || 0) / 100)))
     : invPrice;
@@ -111,9 +118,9 @@ export default function InvitationCreate() {
 
   const startPublish = async () => {
     if (!canPublish) { toast.error("İsim ve tarih zorunludur"); return; }
-    // Check if already a logged-in member; if so publish directly, else open gate.
+    // Check if already a logged-in member/admin; if so publish directly, else open gate.
     const me = await api("/member/me");
-    if (me.ok) { const d = await me.json(); if (d.user?.role === "member") { return doPublish(); } }
+    if (me.ok) { const d = await me.json(); if (["member", "admin", "staff"].includes(d.user?.role)) { return doPublish(); } }
     setGate(true);
   };
 
@@ -345,12 +352,32 @@ export default function InvitationCreate() {
 
             <div className="rounded-xl border border-slate-200 p-4 space-y-3">
               <div className="font-medium text-sm">Özellikler</div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-slate-700"><Images className="w-4 h-4 text-indigo-600" /> Foto & Video Duvarı <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950">+500₺</span></div>
-                <Switch checked={data.sections.photowall} onCheckedChange={(v) => setSection("photowall", v)} data-testid="toggle-photowall" />
+              <div>
+                <div className="flex items-center gap-2 text-sm text-slate-700 mb-2"><Images className="w-4 h-4 text-indigo-600" /> Anı Duvarı (Foto & Video Duvarı)</div>
+                <p className="text-[11px] text-slate-500 mb-2">QR ile misafirler fotoğraf ve video yükler, canlı akar. Sahibi tümünü ZIP indirebilir. Paket seçin:</p>
+                <div className="grid grid-cols-3 gap-2" data-testid="photowall-tier-grid">
+                  {[
+                    { key: "", label: "Kapalı", desc: "Anı duvarı yok", price: null },
+                    { key: "silver", label: "Silver", desc: `${pwTiers?.silver?.storage_gb || 10} GB depolama`, price: pwTiers?.silver?.price ?? 500 },
+                    { key: "gold", label: "Gold", desc: `${pwTiers?.gold?.storage_gb || 50} GB + Masa QR Kartları`, price: pwTiers?.gold?.price ?? 900 },
+                  ].map((t) => {
+                    const active = (data.sections.photowall_tier || "") === t.key;
+                    return (
+                      <button key={t.key || "none"} type="button" data-testid={`photowall-tier-${t.key || "none"}`}
+                        onClick={() => setData((d) => ({ ...d, sections: { ...d.sections, photowall_tier: t.key, photowall: !!t.key } }))}
+                        className={`text-left rounded-xl border p-2.5 transition-all ${active ? "border-indigo-500 ring-2 ring-indigo-200 bg-indigo-50" : "border-slate-200 hover:border-slate-300"}`}>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-sm font-semibold ${t.key === "gold" ? "text-amber-600" : t.key === "silver" ? "text-slate-600" : "text-slate-500"}`}>{t.label}</span>
+                          {active && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">{t.desc}</div>
+                        {t.price != null && <div className="text-[11px] font-bold text-amber-950 bg-amber-300 rounded px-1.5 py-0.5 mt-1 inline-block">+{t.price}₺</div>}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <p className="text-[11px] text-slate-500 -mt-1">QR ile misafirler fotoğraf ve video yükler (75 GB'a kadar), canlı akar. Sahibi tümünü ZIP indirebilir.</p>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between pt-1">
                 <div className="flex items-center gap-2 text-sm text-slate-700"><QrCode className="w-4 h-4 text-indigo-600" /> QR ile Kapıda Giriş</div>
                 <Switch checked={data.checkin_enabled} onCheckedChange={(v) => set("checkin_enabled", v)} data-testid="toggle-checkin" />
               </div>

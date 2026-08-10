@@ -15,6 +15,7 @@ export default function StudioPackages() {
   const [pricing, setPricing] = useState([]);
   const [mods, setMods] = useState({});
   const [busy, setBusy] = useState(null);
+  const [period, setPeriod] = useState("monthly");
 
   useEffect(() => {
     studioApi.get("/studio/modules/pricing")
@@ -26,7 +27,7 @@ export default function StudioPackages() {
     setBusy(`${module}-${plan}`);
     try {
       const { data } = await studioApi.post("/studio/payments/module/create", {
-        module, plan, origin_url: window.location.origin + "/studyo/panel",
+        module, plan, period, origin_url: window.location.origin + "/studyo/panel",
       });
       const url = data.payment_url || data.url || data.link;
       if (url) { window.location.href = url; return; }
@@ -45,7 +46,14 @@ export default function StudioPackages() {
           <button data-testid="pkg-back" onClick={() => navigate("/studyo/panel")} className="inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white"><ArrowLeft className="w-4 h-4" /> Panel</button>
           <h1 className="text-xl font-semibold ml-1">Paketler & Satın Al</h1>
         </div>
-        <p className="text-sm text-white/50 mb-6 flex items-center gap-2"><Tag className="w-4 h-4 text-amber-400" /> İkinci modülü satın aldığınızda otomatik <b className="text-amber-300">%20 indirim</b> uygulanır.</p>
+        <p className="text-sm text-white/50 mb-4 flex items-center gap-2"><Tag className="w-4 h-4 text-amber-400" /> İkinci modülü satın aldığınızda otomatik <b className="text-amber-300">%20 indirim</b> uygulanır.</p>
+
+        <div className="inline-flex items-center gap-1 p-1 rounded-full bg-white/5 mb-6" data-testid="pkg-period-toggle">
+          {[["monthly", "Aylık"], ["yearly", "Yıllık · ~2 ay bedava"]].map(([k, l]) => (
+            <button key={k} data-testid={`pkg-period-${k}`} onClick={() => setPeriod(k)}
+              className={`px-4 h-8 rounded-full text-sm font-medium ${period === k ? "bg-amber-500 text-neutral-900" : "text-white/60 hover:text-white"}`}>{l}</button>
+          ))}
+        </div>
 
         <div className="grid lg:grid-cols-2 gap-6">
           {Object.entries(MODULES).map(([mkey, m]) => {
@@ -67,8 +75,11 @@ export default function StudioPackages() {
                         {p.discount > 0 && <div className="text-[11px] text-amber-300">%{p.discount} indirim uygulandı</div>}
                       </div>
                       <div className="ml-auto text-right">
-                        {p.discount > 0 && <div className="text-[11px] text-white/40 line-through">{p.base_price}₺</div>}
-                        <div className="font-semibold text-amber-300">{p.price}₺<span className="text-[10px] text-white/40">/ay</span></div>
+                        {period === "monthly"
+                          ? <>{p.discount > 0 && <div className="text-[11px] text-white/40 line-through">{p.base_price}₺</div>}
+                              <div className="font-semibold text-amber-300">{p.price}₺<span className="text-[10px] text-white/40">/ay</span></div></>
+                          : <>{p.discount > 0 && <div className="text-[11px] text-white/40 line-through">{p.base_yearly}₺</div>}
+                              <div className="font-semibold text-amber-300">{p.price_yearly}₺<span className="text-[10px] text-white/40">/yıl</span></div></>}
                       </div>
                       <Button data-testid={`pkg-buy-${mkey}-${p.plan}`} size="sm" onClick={() => buy(mkey, p.plan)} disabled={busy === `${mkey}-${p.plan}`}
                         className="gap-1 bg-amber-500 hover:bg-amber-600 text-neutral-900 font-semibold">

@@ -271,6 +271,31 @@ def get_router(db, deps):
     async def list_ai_presets():
         return {"presets": AI_PRESETS}
 
+    # ---- Personalized print capacity (bulk named invitations) ---------------
+    @router.get("/print-capacity")
+    async def get_print_capacity(user: dict = Depends(get_current_user)):
+        u = await db.users.find_one({"id": user["id"]}, {"_id": 0, "print_capacity": 1, "print_used": 1})
+        cap = int((u or {}).get("print_capacity", 0) or 0)
+        used = int((u or {}).get("print_used", 0) or 0)
+        return {"capacity": cap, "used": used, "remaining": max(0, cap - used),
+                "packages": [200, 300, 400, 500, 750, 1000, 1500], "addons": [100, 200]}
+
+    @router.post("/print-consume")
+    async def consume_print_capacity(payload: dict, user: dict = Depends(get_current_user)):
+        count = int(payload.get("count", 0) or 0)
+        if count <= 0:
+            raise HTTPException(status_code=400, detail="Geçersiz adet")
+        u = await db.users.find_one({"id": user["id"]}, {"_id": 0, "print_capacity": 1, "print_used": 1})
+        cap = int((u or {}).get("print_capacity", 0) or 0)
+        used = int((u or {}).get("print_used", 0) or 0)
+        remaining = max(0, cap - used)
+        if count > remaining:
+            raise HTTPException(status_code=402,
+                                detail=f"[CAPACITY] Kişiselleştirilmiş baskı kapasiteniz yetersiz. Kalan: {remaining}, istenen: {count}. Ek kapasite satın alın.")
+        await db.users.update_one({"id": user["id"]}, {"$set": {"print_used": used + count}})
+        return {"ok": True, "used": used + count, "remaining": remaining - count, "capacity": cap}
+
+
     # ---- Favorite templates (per user) --------------------------------------
     @router.get("/favorites")
     async def list_favorites(user: dict = Depends(get_current_user)):

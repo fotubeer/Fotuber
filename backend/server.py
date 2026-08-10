@@ -568,6 +568,16 @@ async def on_startup():
     except Exception as _e:
         logging.warning(f"studio plan overrides load failed: {_e}")
 
+    # Load Anı Duvarı (photo wall) package price/storage overrides + migrate
+    # legacy paid photo walls to the Gold tier so they keep their storage.
+    try:
+        await load_photowall_config(db)
+        await db.invitations.update_many(
+            {"sections.photowall": True, "sections.photowall_tier": {"$exists": False}},
+            {"$set": {"sections.photowall_tier": "gold"}})
+    except Exception as _e:
+        logging.warning(f"photowall config load failed: {_e}")
+
     # Start background cleanup task (deletes expired guest uploads once an hour)
     asyncio.create_task(_cleanup_expired_uploads())
     # Start membership expiry reminder loop (7 & 3 days before expiry / trial end)
@@ -2947,6 +2957,106 @@ def _personalize_announcement(text: str, acc: dict) -> str:
                         .replace("{musteri_kodu}", acc.get("ftb_code") or "")
 
 
+# ===== Super Admin: Canlı Gmail Gelen Kutusu (IMAP) ======================
+def _imap_fetch(limit: int = 25):
+    import imaplib, email as _email
+    from email.header import decode_header, make_header
+    user = os.environ.get("GMAIL_USER")
+    pw = os.environ.get("GMAIL_APP_PASSWORD")
+    if not user or not pw:
+        raise RuntimeError("Gmail IMAP kimlik bilgisi yok")
+    box = imaplib.IMAP4_SSL("imap.gmail.com")
+    try:
+        box.login(user, (pw or "").replace(" ", ""))
+        box.select("INBOX")
+        typ, data = box.search(None, "ALL")
+        ids = data[0].split()
+        latest = ids[-limit:][::-1] if ids else []
+        out = []
+        for num in latest:
+            typ, msg_data = box.fetch(num, "(RFC822)")
+            if not msg_data or not msg_data[0]:
+                continue
+            msg = _email.message_from_bytes(msg_data[0][1])
+            def _hdr(h):
+                try:
+                    return str(make_header(decode_header(msg.get(h, ""))))
+                except Exception:
+                    return msg.get(h, "")
+            body = ""
+            if msg.is_multipart():
+                for part in msg.walk():
+                    if part.get_content_type() == "text/plain" and "attachment" not in str(part.get("Content-Disposition")):
+                        try:
+                            body = part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8", "ignore")
+                            break
+                        except Exception:
+                            pass
+            else:
+                try:
+                    body = msg.get_payload(decode=True).decode(msg.get_content_charset() or "utf-8", "ignore")
+                except Exception:
+                    body = ""
+            out.append({
+                "uid": num.decode() if isinstance(num, bytes) else str(num),
+                "from": _hdr("From"), "subject": _hdr("Subject") or "(konu yok)",
+                "date": _hdr("Date"), "message_id": _hdr("Message-ID"),
+                "snippet": (body or "").strip()[:240], "body": (body or "").strip()[:5000],
+            })
+        return out
+    finally:
+        try:
+            box.logout()
+        except Exception:
+            pass
+
+
+@api_router.get("/admin/inbox")
+async def admin_inbox(admin: dict = Depends(require_admin), limit: int = 25):
+    try:
+        msgs = await asyncio.to_thread(_imap_fetch, min(max(limit, 1), 50))
+        return {"messages": msgs, "account": os.environ.get("GMAIL_USER")}
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Gmail bağlantısı başarısız: {e}")
+
+
+class InboxReplyIn(BaseModel):
+    to: EmailStr
+    subject: str
+    body: str
+
+
+@api_router.post("/admin/inbox/reply")
+async def admin_inbox_reply(payload: InboxReplyIn, admin: dict = Depends(require_admin)):
+    if not email_service.email_configured():
+        raise HTTPException(status_code=400, detail="Gmail SMTP yapılandırılmamış")
+    subj = payload.subject if payload.subject.lower().startswith("re:") else f"Re: {payload.subject}"
+    html = f"<div style='font-family:sans-serif;white-space:pre-wrap'>{payload.body}</div>"
+    await email_service.send_email(payload.to, subj, html, payload.body)
+    return {"ok": True}
+
+
+# ===== Super Admin: Kişiye Özel Baskı Kapasitesi (üye) ===================
+class PrintCapacityIn(BaseModel):
+    email: EmailStr
+    capacity: int = Field(ge=0)
+    mode: str = "add"  # "add" | "set"
+
+
+@api_router.post("/admin/print-capacity")
+async def admin_set_print_capacity(payload: PrintCapacityIn, admin: dict = Depends(require_admin)):
+    u = await db.users.find_one({"email": payload.email.lower().strip()})
+    if not u:
+        raise HTTPException(status_code=404, detail="Bu e-posta ile üye bulunamadı")
+    cur = int(u.get("print_capacity", 0) or 0)
+    new_cap = payload.capacity if payload.mode == "set" else cur + payload.capacity
+    await db.users.update_one({"id": u["id"]}, {"$set": {"print_capacity": new_cap}})
+    return {"ok": True, "email": u["email"], "capacity": new_cap,
+            "used": int(u.get("print_used", 0) or 0)}
+
+
 class ManualMessageIn(BaseModel):
     body: str
     to_customer: bool = True
@@ -4871,11 +4981,12 @@ async def _grant_paid_order(order: dict):
             acc = await db.studio_accounts.find_one({"id": sid}, {"_id": 0, "modules": 1})
             mods = (acc or {}).get("modules") or {"vesikalik": False, "gallery": False}
             mods[mod] = True
-            paid_until = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+            paid_days = 365 if order.get("period") == "yearly" else 30
+            paid_until = (datetime.now(timezone.utc) + timedelta(days=paid_days)).isoformat()
             await db.studio_accounts.update_one({"id": sid}, {"$set": {"modules": mods, "plan": plan, "paid_until": paid_until}})
             await db.studio_module_purchases.insert_one({
                 "studio_id": sid, "module": mod, "plan": plan, "price": order.get("price"),
-                "discount": order.get("discount", 0), "currency": "TRY",
+                "discount": order.get("discount", 0), "period": order.get("period", "monthly"), "currency": "TRY",
                 "callback_id": order.get("callback_id"),
                 "created_at": datetime.now(timezone.utc).isoformat(),
             })
@@ -5710,23 +5821,81 @@ INVITE_EXTEND_PRICE = float(os.environ.get("INVITE_EXTEND_PRICE", "99"))
 INVITE_PHOTOWALL_MAX_GB = float(os.environ.get("INVITE_PHOTOWALL_MAX_GB", "75"))
 INVITE_PHOTOWALL_MAX_BYTES = int(INVITE_PHOTOWALL_MAX_GB * 1024 * 1024 * 1024)
 
+# Anı Duvarı (guest photo/video wall) packages — Silver / Gold. Prices & storage
+# are admin-editable via /api/admin/photowall-config (persisted in db.meta).
+PHOTOWALL_TIERS = {
+    "silver": {"label": "Silver", "price": float(os.environ.get("PHOTOWALL_SILVER_PRICE", "500")),
+               "storage_gb": float(os.environ.get("PHOTOWALL_SILVER_GB", "10")), "table_qr": False},
+    "gold": {"label": "Gold", "price": float(os.environ.get("PHOTOWALL_GOLD_PRICE", "900")),
+             "storage_gb": float(os.environ.get("PHOTOWALL_GOLD_GB", "50")), "table_qr": True},
+}
+
+
+async def load_photowall_config(db_):
+    """Load admin overrides for Anı Duvarı package prices / storage into memory."""
+    try:
+        doc = await db_.meta.find_one({"id": "photowall_config"}, {"_id": 0})
+    except Exception:
+        doc = None
+    if doc and isinstance(doc.get("tiers"), dict):
+        for k in ("silver", "gold"):
+            t = doc["tiers"].get(k) or {}
+            if "price" in t:
+                PHOTOWALL_TIERS[k]["price"] = float(t["price"])
+            if "storage_gb" in t:
+                PHOTOWALL_TIERS[k]["storage_gb"] = float(t["storage_gb"])
+
+
+def _photowall_tier_of(inv: dict):
+    sec = (inv or {}).get("sections") or {}
+    tier = sec.get("photowall_tier")
+    if tier in PHOTOWALL_TIERS:
+        return tier
+    if sec.get("photowall"):
+        return "gold"  # legacy paid photo wall → Gold
+    return None
+
+
+def _photowall_limit_bytes(inv: dict) -> int:
+    tier = _photowall_tier_of(inv)
+    if not tier:
+        return INVITE_PHOTOWALL_MAX_BYTES
+    return int(PHOTOWALL_TIERS[tier]["storage_gb"] * 1024 * 1024 * 1024)
+
+
+def _photowall_tiers_public() -> dict:
+    return {k: {"label": v["label"], "price": v["price"],
+                "storage_gb": v["storage_gb"], "table_qr": bool(v["table_qr"])}
+            for k, v in PHOTOWALL_TIERS.items()}
+
 
 def _invitation_pricing(theme: str, sections: dict) -> dict:
     """Server-authoritative pricing. Print PDF is free. Premium DIGITAL invitations
     require a one-time PayTR payment (additive): premium theme = INVITE_PREMIUM_PRICE,
-    plus the QR live photo+video wall = INVITE_PHOTOWALL_PRICE (added on top)."""
-    photowall = bool((sections or {}).get("photowall"))
+    plus the QR live photo+video wall (Anı Duvarı) priced by its Silver/Gold tier."""
+    sec = sections or {}
+    tier = sec.get("photowall_tier")
+    photowall = bool(sec.get("photowall")) or tier in PHOTOWALL_TIERS
+    if photowall and tier not in PHOTOWALL_TIERS:
+        tier = "gold"  # legacy paid photo wall defaults to Gold
     premium_theme = theme in INVITE_PREMIUM_THEMES
     price = 0.0
     if premium_theme:
         price += INVITE_PREMIUM_PRICE
+    photowall_price = 0.0
     if photowall:
-        price += INVITE_PHOTOWALL_PRICE
+        photowall_price = PHOTOWALL_TIERS[tier]["price"]
+        price += photowall_price
     needs_payment = price > 0
     return {"needs_payment": needs_payment, "price": price,
             "premium_theme": premium_theme, "photowall": photowall,
-            "premium_price": INVITE_PREMIUM_PRICE, "photowall_price": INVITE_PHOTOWALL_PRICE,
-            "extend_price": INVITE_EXTEND_PRICE, "photowall_max_gb": INVITE_PHOTOWALL_MAX_GB,
+            "photowall_tier": tier if photowall else None,
+            "photowall_storage_gb": PHOTOWALL_TIERS[tier]["storage_gb"] if photowall else None,
+            "photowall_table_qr": bool(PHOTOWALL_TIERS[tier]["table_qr"]) if photowall else False,
+            "premium_price": INVITE_PREMIUM_PRICE, "photowall_price": photowall_price,
+            "extend_price": INVITE_EXTEND_PRICE,
+            "photowall_max_gb": PHOTOWALL_TIERS[tier]["storage_gb"] if photowall else INVITE_PHOTOWALL_MAX_GB,
+            "tiers": _photowall_tiers_public(),
             "currency": "TRY"}
 
 
@@ -5940,6 +6109,12 @@ async def invitation_print_options():
             "event_types": [{"key": k, "label": v} for k, v in invitation_pdf.EVENT_LABELS.items()]}
 
 
+@api_router.get("/invitations/photowall-tiers")
+async def invitation_photowall_tiers():
+    """Public: Anı Duvarı (photo wall) Silver/Gold packages for the wizard."""
+    return {"tiers": _photowall_tiers_public(), "currency": "TRY"}
+
+
 # ---- Live guest photo wall ----
 @api_router.post("/invitations/public/{slug}/photos")
 async def upload_guest_photo(slug: str, file: UploadFile = File(...), uploader_name: str = Form("")):
@@ -5961,8 +6136,10 @@ async def upload_guest_photo(slug: str, file: UploadFile = File(...), uploader_n
         {"$group": {"_id": None, "total": {"$sum": "$size"}}},
     ]).to_list(1)
     used = int((agg[0]["total"] if agg else 0) or 0)
-    if used + len(data) > INVITE_PHOTOWALL_MAX_BYTES:
-        raise HTTPException(status_code=400, detail=f"Foto duvarı depolama sınırına ({int(INVITE_PHOTOWALL_MAX_GB)} GB) ulaşıldı")
+    limit_bytes = _photowall_limit_bytes(d)
+    limit_gb = int(round(limit_bytes / (1024 * 1024 * 1024)))
+    if used + len(data) > limit_bytes:
+        raise HTTPException(status_code=400, detail=f"Anı Duvarı depolama sınırına ({limit_gb} GB) ulaşıldı")
     pid = new_id()
     ext = (file.filename or ("mp4" if is_video else "jpg")).split(".")[-1].lower()[:5]
     path = f"{APP_NAME}/invitations/photos/{pid}.{ext}"
@@ -5980,7 +6157,7 @@ async def list_guest_photos(slug: str, since: Optional[str] = None):
     d = await db.invitations.find_one({"slug": slug, "status": "published"}, {"id": 1, "_id": 0})
     if not d:
         raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
-    q = {"invitation_id": d["id"], "hidden": {"$ne": True}}
+    q = {"invitation_id": d["id"], "hidden": {"$ne": True}, "spam": {"$ne": True}}
     if since:
         q["created_at"] = {"$gt": since}
     photos = await db.invitation_photos.find(q, {"_id": 0, "storage_path": 0}).sort("created_at", -1).to_list(length=1000)
@@ -5995,11 +6172,18 @@ async def manage_guest_photos(iid: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
     photos = await db.invitation_photos.find({"invitation_id": iid}, {"_id": 0, "storage_path": 0}).sort("created_at", -1).to_list(length=1000)
     total = sum(int(p.get("size", 0) or 0) for p in photos)
+    spam_count = sum(1 for p in photos if p.get("spam"))
+    limit_bytes = _photowall_limit_bytes(d)
+    tier = _photowall_tier_of(d)
     return {"photos": [{"id": p["id"], "uploader_name": p.get("uploader_name", ""),
                         "kind": p.get("kind", "image"), "size": int(p.get("size", 0) or 0),
-                        "created_at": p.get("created_at"), "hidden": bool(p.get("hidden"))} for p in photos],
-            "storage_used": total, "storage_limit": INVITE_PHOTOWALL_MAX_BYTES,
-            "storage_limit_gb": INVITE_PHOTOWALL_MAX_GB}
+                        "created_at": p.get("created_at"), "hidden": bool(p.get("hidden")),
+                        "spam": bool(p.get("spam"))} for p in photos],
+            "storage_used": total, "storage_limit": limit_bytes,
+            "storage_limit_gb": int(round(limit_bytes / (1024 * 1024 * 1024))),
+            "spam_count": spam_count,
+            "tier": tier, "tier_label": (PHOTOWALL_TIERS.get(tier) or {}).get("label", ""),
+            "table_qr": bool((PHOTOWALL_TIERS.get(tier) or {}).get("table_qr"))}
 
 
 class PhotoModerateIn(BaseModel):
@@ -6016,6 +6200,78 @@ async def moderate_guest_photo(iid: str, pid: str, payload: PhotoModerateIn, use
     if not r.matched_count:
         raise HTTPException(status_code=404, detail="Fotoğraf bulunamadı")
     return {"ok": True, "hidden": bool(payload.hidden)}
+
+
+class PhotoSpamIn(BaseModel):
+    spam: bool = True
+
+
+@api_router.post("/invitations/{iid}/photos/{pid}/spam")
+async def spam_guest_photo(iid: str, pid: str, payload: PhotoSpamIn, user: dict = Depends(get_current_user)):
+    """Owner-only: move a guest photo to the Spam box (or restore it). Spam photos
+    are hidden from the public wall & slideshow but kept until permanently deleted."""
+    d = await db.invitations.find_one({"id": iid, "owner_user_id": user.get("id")}, {"id": 1, "_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    r = await db.invitation_photos.update_one({"id": pid, "invitation_id": iid}, {"$set": {"spam": bool(payload.spam)}})
+    if not r.matched_count:
+        raise HTTPException(status_code=404, detail="Fotoğraf bulunamadı")
+    return {"ok": True, "spam": bool(payload.spam)}
+
+
+@api_router.get("/invitations/{iid}/table-qr.pdf")
+async def invitation_table_qr_pdf(iid: str, user: dict = Depends(get_current_user)):
+    """Gold-tier only: printable A4 with 6 table QR cards pointing guests to the
+    photo upload (Anı Duvarı) page."""
+    d = await db.invitations.find_one({"id": iid, "owner_user_id": user.get("id")}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
+    tier = _photowall_tier_of(d)
+    if tier != "gold":
+        raise HTTPException(status_code=403, detail="Masa QR Kartları yalnızca Gold Anı Duvarı paketinde sunulur")
+    base = (os.environ.get("PUBLIC_APP_URL") or "https://fotuber.com.tr").rstrip("/")
+    qr_url = f"{base}/davetiye/{d.get('slug')}"
+    couple = f"{d.get('person1') or ''} & {d.get('person2') or ''}".strip(" &") or (d.get("person1") or "")
+    pdf = invitation_pdf.render_table_qr_pdf({
+        "couple": couple, "subtitle": "Anı Duvarı", "cta": "Fotoğraflarını Yükle",
+        "hint": "QR kodu telefonunla okut, fotoğraf ve videolarını bizimle paylaş.",
+        "qr_url": qr_url,
+        "accent_color": d.get("primary_color") or "#B76E79",
+    })
+    fname = _slugify(couple) or "masa-qr"
+    return StarletteResponse(content=pdf, media_type="application/pdf",
+                             headers={"Content-Disposition": f"attachment; filename=masa-qr-{fname}.pdf"})
+
+
+@api_router.get("/admin/photowall-config")
+async def admin_photowall_config(admin: dict = Depends(require_admin)):
+    return {"tiers": _photowall_tiers_public()}
+
+
+class PhotowallTierIn(BaseModel):
+    price: Optional[float] = None
+    storage_gb: Optional[float] = None
+
+
+class PhotowallConfigIn(BaseModel):
+    silver: Optional[PhotowallTierIn] = None
+    gold: Optional[PhotowallTierIn] = None
+
+
+@api_router.put("/admin/photowall-config")
+async def admin_update_photowall_config(payload: PhotowallConfigIn, admin: dict = Depends(require_admin)):
+    for key in ("silver", "gold"):
+        t = getattr(payload, key)
+        if not t:
+            continue
+        if t.price is not None:
+            PHOTOWALL_TIERS[key]["price"] = max(0.0, float(t.price))
+        if t.storage_gb is not None:
+            PHOTOWALL_TIERS[key]["storage_gb"] = max(1.0, float(t.storage_gb))
+    await db.meta.update_one({"id": "photowall_config"},
+                             {"$set": {"tiers": {k: {"price": v["price"], "storage_gb": v["storage_gb"]}
+                                                 for k, v in PHOTOWALL_TIERS.items()}}}, upsert=True)
+    return {"ok": True, "tiers": _photowall_tiers_public()}
 
 
 @api_router.delete("/invitations/{iid}/photos/{pid}")
@@ -6052,7 +6308,7 @@ async def download_invitation_media(iid: str, user: dict = Depends(get_current_u
     d = await db.invitations.find_one({"id": iid, "owner_user_id": user.get("id")}, {"_id": 0})
     if not d:
         raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
-    docs = await db.invitation_photos.find({"invitation_id": iid}).sort("created_at", 1).to_list(5000)
+    docs = await db.invitation_photos.find({"invitation_id": iid, "spam": {"$ne": True}}).sort("created_at", 1).to_list(5000)
     if not docs:
         raise HTTPException(status_code=404, detail="İndirilecek medya yok")
     buf = io.BytesIO()
@@ -6114,6 +6370,8 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
                         "gift": bool((payload.gift or {}).get("iban")), "music": bool(payload.music_url or payload.greeting_audio_id)}
     theme = payload.theme if payload.theme in INVITE_THEMES else "romantic"
     sections = {**default_sections, **(payload.sections or {})}
+    if sections.get("photowall_tier") in PHOTOWALL_TIERS:
+        sections["photowall"] = True
     pricing = _invitation_pricing(theme, sections)
 
     # --- Salon (venue) invitation code redemption (atomic claim) ---
@@ -6142,8 +6400,15 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
             venue_gift_name = vc.get("venue_name")
         pricing = _apply_venue_pricing(pricing, venue_free, venue_discount_percent)
 
+    # Site admin / staff use ALL premium features FREE — no payment, published
+    # immediately, link extended (event + 15 gün).
+    is_internal = user.get("role") in ("admin", "staff")
+    if is_internal:
+        pricing = {**pricing, "price": 0.0, "needs_payment": False, "admin_free": True}
+
     inv_status = "unpaid" if pricing["needs_payment"] else "published"
     granted_by_venue = bool(venue_id) and not pricing["needs_payment"]
+    granted_free = granted_by_venue or is_internal
     doc = {
         "id": iid, "slug": slug, "owner_user_id": user.get("id"), "status": inv_status,
         "event_type": payload.event_type, "title": payload.title,
@@ -6162,12 +6427,13 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
         "gift": payload.gift or {},
         "is_premium": bool(pricing.get("premium_theme") or pricing.get("photowall")),
         "price": pricing["price"],
-        "paid": granted_by_venue,
+        "paid": granted_free,
         "venue_id": venue_id, "venue_code": venue_code_val or None,
         "venue_free": venue_free, "venue_discount_percent": venue_discount_percent,
         "venue_gift_name": venue_gift_name,
         "created_at": now, "published_at": (now if inv_status == "published" else None),
-        "expires_at": _invite_expires_at(payload.event_date),
+        "extended": is_internal,
+        "expires_at": _invite_expires_at(payload.event_date, extended=is_internal),
     }
     await db.invitations.insert_one(doc)
     return {"id": iid, "slug": slug, "url": f"/davetiye/{slug}",
@@ -6211,6 +6477,8 @@ async def update_invitation(iid: str, payload: InvitationIn, user: dict = Depend
     upd = payload.dict()
     upd["theme"] = upd["theme"] if upd["theme"] in INVITE_THEMES else "romantic"
     upd["sections"] = {**(d.get("sections") or {}), **(payload.sections or {})}
+    if upd["sections"].get("photowall_tier") in PHOTOWALL_TIERS:
+        upd["sections"]["photowall"] = True
     new_pricing = _invitation_pricing(upd["theme"], upd["sections"])
     # Preserve a previously redeemed venue code (free / discount)
     venue_free = bool(d.get("venue_free"))
@@ -6218,6 +6486,10 @@ async def update_invitation(iid: str, payload: InvitationIn, user: dict = Depend
     if venue_free or venue_discount_percent:
         new_pricing = _apply_venue_pricing(new_pricing, venue_free, venue_discount_percent)
     already_paid = bool(d.get("paid"))
+    is_internal = user.get("role") in ("admin", "staff")
+    if is_internal:
+        new_pricing = {**new_pricing, "price": 0.0, "needs_payment": False, "admin_free": True}
+        already_paid = True
     upd["is_premium"] = bool(new_pricing.get("premium_theme") or new_pricing.get("photowall"))
     upd["price"] = new_pricing["price"]
     upd["status"] = "published" if (not new_pricing["needs_payment"] or already_paid) else "unpaid"
@@ -6227,8 +6499,8 @@ async def update_invitation(iid: str, payload: InvitationIn, user: dict = Depend
     upd["venue_free"] = venue_free
     upd["venue_discount_percent"] = venue_discount_percent
     upd["paid"] = already_paid
-    upd["extended"] = bool(d.get("extended"))
-    upd["expires_at"] = _invite_expires_at(payload.event_date, extended=bool(d.get("extended")))
+    upd["extended"] = bool(d.get("extended")) or is_internal
+    upd["expires_at"] = _invite_expires_at(payload.event_date, extended=upd["extended"])
     upd["updated_at"] = now_iso()
     await db.invitations.update_one({"id": iid}, {"$set": upd})
     fresh = await db.invitations.find_one({"id": iid}, {"_id": 0})

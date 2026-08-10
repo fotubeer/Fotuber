@@ -78,7 +78,7 @@ const buildColorKeyMask = (el, sx, sy, cw, ch, tw, th, tol = 60) => {
   return c;
 };
 
-const AdminPassportPhoto = () => {
+const AdminPassportPhoto = ({ injected } = {}) => {
   const [specCode, setSpecCode] = useState("tr-bio");
   const [count, setCount] = useState(6);
   const [paperCode, setPaperCode] = useState(""); // auto if empty
@@ -208,6 +208,31 @@ const AdminPassportPhoto = () => {
     const blob = await resp.blob();
     await runBackgroundRemoval(blob, spec?.bg || "#ffffff");
   }, [originalImage, spec, runBackgroundRemoval]);
+
+  // Injected image from the 3'lü panel "İnce Ayar" → load it for fine-tuning.
+  // The image is already background-removed + framed, so we skip bg removal
+  // and let the existing auto-detect effect re-frame it.
+  useEffect(() => {
+    if (!injected?.src) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (injected.specCode) setSpecCode(injected.specCode);
+        setBgRemoved(false);
+        setFgMask(null);
+        const raw = await loadImageFromSrc(injected.src);
+        if (cancelled) return;
+        setOriginalImage(raw);
+        applyImage(raw);
+        toast.success("Fotoğraf tekli editöre yüklendi — ince ayar yapabilirsiniz");
+      } catch (e) {
+        toast.error("Fotoğraf yüklenemedi");
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [injected?.key]);
+
 
   const applyRetouch = useCallback(async (dataUrl) => {
     try {
