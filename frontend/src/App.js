@@ -21,6 +21,9 @@ import GuestPass from "@/pages/GuestPass";
 import CheckinScanner from "@/pages/CheckinScanner";
 import GoldenHour from "@/pages/GoldenHour";
 import GuestImport from "@/pages/GuestImport";
+import DesignStudio from "@/pages/DesignStudio";
+import StudioPortal from "@/pages/StudioPortal";
+import StudioDashboard from "@/pages/StudioDashboard";
 
 import Home from "@/pages/Home";
 import Services from "@/pages/Services";
@@ -112,6 +115,9 @@ function App() {
               <Route path="/gecis/:token" element={<GuestPass />} />
               <Route path="/davetiyelerim" element={<MyInvitations />} />
               <Route path="/sifre-sifirla" element={<ResetPassword />} />
+              <Route path="/tasarim-studyosu" element={<DesignStudio />} />
+              <Route path="/studyo" element={<StudioPortal />} />
+              <Route path="/studyo/panel" element={<StudioDashboard />} />
 
               <Route
                 path="/randevularim"

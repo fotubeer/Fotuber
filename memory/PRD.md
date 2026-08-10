@@ -383,3 +383,20 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - **Fix**: `<html lang="tr" translate="no">` + `<meta name="google" content="notranslate">` + `<meta http-equiv="Content-Language" content="tr">`.
 - **Doğrulama (iteration_29.json)**: homepage + davetiye view'da lang/translate/meta doğru; kaynak Türkçe metinler birebir doğru; bozuk kelime yok. FIX VERIFIED. (Non-blocking: countdown SVG circle cx/cy undefined uyarısı — ilgisiz.)
 - **BEKLEYEN FEATURE (scope'lanıyor)**: davetiye hazırlıkta font seçimi + sembol/emoji ekleme + font boyutu (hem dijital hem baskı); baskı davetiye için Canva benzeri zengin editör.
+
+## Session X (Jun 2026) — YENİ MODÜLLER: Davetiye Tasarım Stüdyosu + Stüdyo Paneli (Aşama 1 çekirdek, verified iteration_30: backend 18/18, frontend %100)
+- **Yaklaşım**: EKLEMELİ. Mevcut kod/auth/sayfalar korundu. Yeni backend router'ları factory desenli ayrı dosyalarda: `/app/backend/routers/design_studio.py` + `/app/backend/routers/studio.py`, server.py sonunda `app.include_router(...get_router(db,_module_deps))` ile mount (circular import yok). Fabric.js v6 eklendi (`import * as fabric`).
+- **Davetiye Tasarım Stüdyosu** (`/tasarim-studyosu`, `pages/DesignStudio.jsx`): Fabric.js mobil-öncelikli Canva benzeri editör. Metin/Başlık/Kutu/Daire/Çizgi/Görsel + {isim} kişiselleştirme (baskıda taşma korumalı otomatik font küçültme). Özellik paneli: 58 Google Font (Türkçe latin-ext), boyut, bold/italic, hizalama, renk, katman öne/arka, kopyala, sil. Şablonlar dialog (5 şablon). Kaydet (ana-site üyeliği gerekir) + PNG İndir + zoom.
+  - Uçlar: GET `/api/design/fonts` (58), GET `/api/design/templates` (5), POST/GET/PUT/DELETE `/api/design/projects` (get_current_user/db.users auth), POST `/api/design/upload` (görsel→object storage), GET `/api/design/asset/{id}`.
+- **Stüdyo Paneli** (`/studyo` portal + `/studyo/panel` pano, `pages/StudioPortal.jsx` + `StudioDashboard.jsx`): Glassmorphism birleşik giriş/kayıt. AYRI `studio_accounts` koleksiyonu, role="studio", ayrı `studio_token` cookie + Bearer (`fotuber_studio_token`). FTB-XXXXX müşteri kodu üretimi. 3 günlük Ücretsiz Deneme motoru (`_studio_state`): 0 AI kredisi, 10GB, max 2 etkinlik, 1 cihaz, filigran ZORUNLU. Planlar: trial/basic/bronze/silver/gold. Pano: FTB kodu, deneme geri sayımı, limitler, filigran rozeti, modül kartları (Vesikalık→/vesikalik, Tasarım→/tasarim-studyosu, Etkinlik Galerisi=Yakında), plan kartları.
+  - Uçlar: GET `/api/studio/plans` (public), POST `/api/studio/register`, POST `/api/studio/login`, POST `/api/studio/logout`, GET `/api/studio/me`.
+  - Auth: integration_expert JWT playbook'una uygun (mevcut bcrypt+PyJWT HS256 yardımcıları yeniden kullanıldı, get_current_studio role kontrolü).
+- **Test hesabı**: studio1@test.com / Test1234. Ana-site admin: admin@fotuber.com.tr / FTB.2024.
+- **MOCKED**: Stüdyo plan yükseltme (PayTR) henüz toast stub — Aşama 2'de gerçek PayTR bağlanacak. AI prompt→tasarım (Gemini Nano Banana) Aşama 2.
+- **Deps**: fabric@^6 (yarn).
+
+## Sonraki Aşamalar (Studio Suite / Design Studio backlog)
+- P0/P1 Davetiye Aşama 2: "Tasarım Hakkı" mantığı (1 hak=3 AI alternatif, Nano Banana), paketler (Basic/Bronze/Silver/Gold), kişiselleştirilmiş toplu indirme (kapasite aşımı satın alma).
+- P0/P1 Stüdyo Aşama 2: Vesikalık "Triple-Processing" (3 foto paralel bağımsız) + 20 fotoluk firma arşivi; Etkinlik Galerisi (chunked upload, RAW uyarısı, albüm limitleri, upsell paketleri, sipariş PDF); PayTR ile gerçek plan ödemesi.
+- P1: Merkezi Admin Bildirimleri (WebSocket/polling, kritik/genel, {firma_adi} etiketi, okundu bilgisi); Altın Saat AI mekan önerisi+mesafe.
+- P2: Masaüstü uygulama (Electron/Tauri) + doğrudan yazıcı + Google Ads server-side.

@@ -5743,6 +5743,31 @@ async def import_token_guests(token: str, payload: GuestBulkIn):
 # Register the router
 app.include_router(api_router)
 
+# ---------------------------------------------------------------------------
+# Additive modules (Session X): Davetiye Tasarım Stüdyosu + Stüdyo Paneli
+# Mounted via factory functions to avoid circular imports. Existing routes untouched.
+# ---------------------------------------------------------------------------
+from routers import design_studio as _design_studio
+from routers import studio as _studio
+
+_module_deps = {
+    "hash_password": hash_password,
+    "verify_password": verify_password,
+    "create_access_token": create_access_token,
+    "create_refresh_token": create_refresh_token,
+    "set_auth_cookies": set_auth_cookies,
+    "clear_auth_cookies": clear_auth_cookies,
+    "get_current_user": get_current_user,
+    "new_id": new_id,
+    "now_iso": now_iso,
+    "put_object": put_object,
+    "get_object": get_object,
+    "JWT_SECRET": JWT_SECRET,
+    "JWT_ALGORITHM": JWT_ALGORITHM,
+}
+app.include_router(_design_studio.get_router(db, _module_deps))
+app.include_router(_studio.get_router(db, _module_deps))
+
 
 # CORS - allow credentials with reflected origin
 _origins = os.environ.get("CORS_ORIGINS", "*").split(",")
