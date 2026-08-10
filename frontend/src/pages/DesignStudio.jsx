@@ -6,15 +6,18 @@ import {
   Type, Heading, Square, Circle as CircleIcon, Minus, Image as ImageIcon,
   UserSquare, Save, Download, LayoutTemplate, Trash2, Copy, ArrowUp, ArrowDown,
   Bold, Italic, AlignLeft, AlignCenter, AlignRight, ArrowLeft, ZoomIn,
+  Sparkles, Loader2, Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { api, formatApiError, API_BASE } from "@/lib/api";
+import { studioApi } from "@/lib/studioApi";
 import { loadGoogleFont, preloadFonts } from "@/lib/designFonts";
 
 const DEFAULT_W = 1080;
@@ -47,6 +50,13 @@ export default function DesignStudio() {
   const [zoomPct, setZoomPct] = useState(100);
   const [tplOpen, setTplOpen] = useState(false);
   const [sampleName, setSampleName] = useState("");
+
+  // AI design (Tasarım Hakkı → Nano Banana)
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiImages, setAiImages] = useState([]);
+  const [aiRights, setAiRights] = useState(undefined); // undefined=checking, null=not logged in, number=rights
 
   // ---- Fit canvas to container using fabric zoom ------------------------
   const fitCanvas = useCallback(() => {
@@ -292,6 +302,55 @@ export default function DesignStudio() {
     a.href = url; a.download = `${title || "davetiye"}.png`; a.click();
   };
 
+  // ---- AI design (Tasarım Hakkı) ---------------------------------------
+  const openAi = async (open) => {
+    setAiOpen(open);
+    if (!open) return;
+    setAiRights(undefined);
+    try {
+      const { data } = await studioApi.get("/studio/me");
+      setAiRights(data.account.design_rights ?? 0);
+    } catch {
+      setAiRights(null); // not logged into studio
+    }
+  };
+
+  const doAiGenerate = async () => {
+    if (!aiPrompt.trim()) { toast.error("Lütfen tasarımınızı tarif edin"); return; }
+    setAiBusy(true); setAiImages([]);
+    try {
+      const { data } = await studioApi.post("/studio/design/ai-generate", { prompt: aiPrompt.trim() });
+      setAiImages(data.images || []);
+      setAiRights(data.rights_remaining);
+      toast.success("3 alternatif üretildi · 1 tasarım hakkı kullanıldı");
+    } catch (err) {
+      const st = err?.response?.status;
+      if (st === 401) { toast.error("AI için Stüdyo Paneli hesabınızla giriş yapın"); setAiRights(null); }
+      else if (st === 402) toast.error(formatApiError(err, "Tasarım hakkınız bitti"));
+      else toast.error(formatApiError(err, "AI üretimi başarısız"));
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const addAiBackground = async (imgUrl) => {
+    const fc = fcRef.current; if (!fc) return;
+    try {
+      const url = `${process.env.REACT_APP_BACKEND_URL}${imgUrl}`;
+      const img = await fabric.FabricImage.fromURL(url, { crossOrigin: "anonymous" });
+      const { w, h } = designRef.current;
+      const scale = Math.max(w / img.width, h / img.height);
+      img.set({ originX: "center", originY: "center", left: w / 2, top: h / 2, scaleX: scale, scaleY: scale });
+      fc.add(img);
+      fc.sendObjectToBack(img);
+      fc.requestRenderAll();
+      setAiOpen(false);
+      toast.success("Arka plan tuvale eklendi. Üstüne metin/{isim} ekleyebilirsiniz.");
+    } catch {
+      toast.error("Görsel eklenemedi");
+    }
+  };
+
   return (
     <div data-testid="design-studio-page" className="fixed inset-0 flex flex-col bg-neutral-100 text-neutral-900">
       {/* Header */}
@@ -350,8 +409,76 @@ export default function DesignStudio() {
         <Tool testid="ds-add-line" icon={Minus} label="Çizgi" onClick={() => addShape("line")} />
         <Tool testid="ds-add-image" icon={ImageIcon} label="Görsel" onClick={() => fileInputRef.current?.click()} />
         <Tool testid="ds-add-personalize" icon={UserSquare} label="{isim}" onClick={addPersonalize} accent />
+        <Tool testid="ds-ai-btn" icon={Sparkles} label="AI Tasarla" onClick={() => openAi(true)} accent />
         <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={uploadImage} />
       </div>
+
+      {/* AI Design dialog (Tasarım Hakkı → Nano Banana) */}
+      <Dialog open={aiOpen} onOpenChange={openAi}>
+        <DialogContent data-testid="ai-design-dialog" className="max-w-2xl text-neutral-900">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Wand2 size={18} className="text-amber-500" /> AI ile Davetiye Tasarla</DialogTitle>
+            <DialogDescription>Tarif edin, Nano Banana yapay zekâsı 3 alternatif üretsin. Her üretim 1 tasarım hakkı kullanır.</DialogDescription>
+          </DialogHeader>
+
+          {aiRights === null ? (
+            <div data-testid="ai-login-note" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              AI tasarım üretimi için <b>Stüdyo Paneli</b> hesabınızla giriş yapmalısınız.
+              <div className="mt-3">
+                <Button size="sm" onClick={() => window.open("/studyo", "_blank")} className="bg-amber-500 hover:bg-amber-600 text-white">
+                  Stüdyo Paneli'ne Giriş Yap
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-neutral-500">Kalan Tasarım Hakkı</span>
+                <span data-testid="ai-rights" className="font-semibold text-amber-600">
+                  {aiRights === undefined ? "…" : `${aiRights} hak`}
+                </span>
+              </div>
+              <Textarea
+                data-testid="ai-prompt"
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                placeholder="Örn. Zarif bir kına gecesi davetiyesi, bordo ve altın tonları, mum ve gül motifleri"
+                rows={3}
+                className="text-neutral-900"
+              />
+              <Button
+                data-testid="ai-generate-btn"
+                onClick={doAiGenerate}
+                disabled={aiBusy || aiRights === 0}
+                className="w-full gap-2 bg-gradient-to-r from-amber-400 to-amber-600 text-neutral-900 font-semibold hover:from-amber-300 hover:to-amber-500"
+              >
+                {aiBusy ? <><Loader2 size={18} className="animate-spin" /> Üretiliyor… (~20 sn)</> : <><Sparkles size={18} /> 3 Alternatif Üret (1 hak)</>}
+              </Button>
+              {aiRights === 0 && (
+                <p className="text-xs text-red-500 text-center">Tasarım hakkınız bitti. Aşama 2'de PayTR ile yeni hak alabileceksiniz.</p>
+              )}
+
+              {aiImages.length > 0 && (
+                <div>
+                  <p className="text-xs text-neutral-500 mb-2">Birini seçin — tuvale arka plan olarak eklenir:</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {aiImages.map((im, i) => (
+                      <button
+                        key={im.id}
+                        data-testid={`ai-result-${i}`}
+                        onClick={() => addAiBackground(im.url)}
+                        className="rounded-lg overflow-hidden border-2 border-transparent hover:border-amber-400 transition-colors aspect-[4/5]"
+                      >
+                        <img src={`${process.env.REACT_APP_BACKEND_URL}${im.url}`} alt={`Alternatif ${i + 1}`} className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Canvas */}
       <div ref={wrapRef} className="flex-1 min-h-0 flex items-center justify-center overflow-hidden p-3">

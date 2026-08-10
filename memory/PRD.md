@@ -400,3 +400,10 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - P0/P1 Stüdyo Aşama 2: Vesikalık "Triple-Processing" (3 foto paralel bağımsız) + 20 fotoluk firma arşivi; Etkinlik Galerisi (chunked upload, RAW uyarısı, albüm limitleri, upsell paketleri, sipariş PDF); PayTR ile gerçek plan ödemesi.
 - P1: Merkezi Admin Bildirimleri (WebSocket/polling, kritik/genel, {firma_adi} etiketi, okundu bilgisi); Altın Saat AI mekan önerisi+mesafe.
 - P2: Masaüstü uygulama (Electron/Tauri) + doğrudan yazıcı + Google Ads server-side.
+
+## Session X-2 (Jun 2026) — AI Davetiye Tasarımı: Tasarım Hakkı + Nano Banana (self-verified: curl + tam UI akışı ekran görüntüsü)
+- **Tasarım Hakkı** studio_accounts'a bağlı (`design_rights`, varsayılan 3 · env STUDIO_FREE_DESIGN_RIGHTS). 1 hak = 3 AI davetiye arka plan alternatifi.
+- Uç: `POST /api/studio/design/ai-generate` {prompt} (get_current_studio). Atomik 1 hak düşer ($gte guard), 3 görsel PARALEL üretilir (Nano Banana `gemini-3.1-flash-image-preview`, emergentintegrations LlmChat `send_message_multimodal_response`, EMERGENT_LLM_KEY), object storage + db.design_assets(source=ai)'e kaydedilir, {images,rights_remaining} döner. Tam başarısızlıkta hak iade edilir. Hak yoksa 402. Görseller public `GET /api/design/asset/{id}` ile servis edilir. Prompt 3 farklı stile yönlendirir ve görselde YAZI olmamasını + ortada metin için boş alan bırakmasını zorlar.
+- Frontend: DesignStudio "AI Tasarla" butonu → dialog: stüdyo girişi kontrolü, kalan hak, prompt, üret (~20sn), 3 küçük görsel → tıklayınca tuvale tam-kapsayan arka plan (arkaya gönderilir). StudioDashboard'a "Tasarım Hakkı" kartı eklendi.
+- Doğrulama: curl (studio1 login → me rights=3 → generate → 3 image, rights 3→2, asset 200 1MB PNG) + tam UI akışı (login → editör → AI dialog "2 hak" → üret → 3 alternatif → seçim → altın çiçekli, ortası metin için boş, yazısız arka plan tuvale eklendi).
+- **Bekleyen (Aşama 2)**: hak bitince PayTR ile Tasarım Hakkı satın alma; AI arka plan + {isim} kişiselleştirme ile toplu üretim.

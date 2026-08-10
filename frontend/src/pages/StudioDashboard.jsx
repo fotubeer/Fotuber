@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   Camera, LogOut, IdCard, Clock, Sparkles, HardDrive, CalendarRange, ShieldAlert,
-  Images, Palette, ScanFace, Check, Crown,
+  Images, Palette, ScanFace, Check, Crown, Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { studioApi, clearStudioToken } from "@/lib/studioApi";
@@ -92,9 +92,9 @@ export default function StudioDashboard() {
         {/* Limits */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
           <Limit icon={Sparkles} label="AI Kredisi" value={m.ai_credits_remaining} testid="studio-limit-ai" />
+          <Limit icon={Wand2} label="Tasarım Hakkı" value={acc.design_rights ?? 0} testid="studio-limit-design" />
           <Limit icon={HardDrive} label="Depolama" value={`${m.limits.storage_gb} GB`} testid="studio-limit-storage" />
           <Limit icon={CalendarRange} label="Etkinlik" value={m.limits.max_events} testid="studio-limit-events" />
-          <Limit icon={IdCard} label="Cihaz" value={m.limits.max_devices} testid="studio-limit-devices" />
         </div>
 
         {/* Modules */}
