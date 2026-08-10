@@ -59,7 +59,7 @@ export const PublicLayout = ({ children }) => {
             </div>
           </Link>
 
-          <nav className="hidden lg:flex items-center justify-center flex-1 mx-2 min-w-0 overflow-hidden lg:gap-2.5 xl:gap-5 2xl:gap-7">
+          <nav className="hidden lg:flex items-center justify-center flex-1 mx-2 min-w-0 lg:gap-2 xl:gap-4 2xl:gap-6">
             {navItems.map((n) => (
               <NavLink
                 key={n.to}
@@ -78,7 +78,7 @@ export const PublicLayout = ({ children }) => {
             ))}
           </nav>
 
-          <div className="hidden lg:flex items-center gap-2 xl:gap-3 shrink-0 min-w-max">
+          <div className="hidden lg:flex items-center gap-2 xl:gap-2.5 shrink-0 min-w-max">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <motion.button
@@ -100,34 +100,41 @@ export const PublicLayout = ({ children }) => {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Link to="/studyo">
-              <Button data-testid="cta-vesikalik-panel" className="rounded-full bg-blue-600 hover:bg-blue-500 text-white font-semibold px-4 xl:px-5 gap-1.5 whitespace-nowrap shadow-[0_0_15px_rgba(37,99,235,0.3)] hover:shadow-[0_0_28px_rgba(37,99,235,0.5)] transition-shadow duration-300">
-                <IdCard className="w-4 h-4" /> Stüdyo Paneli
-              </Button>
-            </Link>
-            <Link to="/salon">
-              <Button data-testid="cta-salon" variant="outline" className="rounded-full border-rose-400/40 bg-transparent text-rose-300 hover:bg-rose-500/10 font-semibold px-4 gap-1.5 whitespace-nowrap">
-                <Landmark className="w-4 h-4" /> Salon Girişi
-              </Button>
-            </Link>
             <Link to="/randevu">
-              <Button data-testid="cta-book-appointment" className="rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-5 xl:px-6 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] transition-shadow duration-300">
+              <Button data-testid="cta-book-appointment" className="rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 xl:px-5 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] transition-shadow duration-300 whitespace-nowrap">
                 Randevu Al
               </Button>
             </Link>
-            {user && user.role === "admin" && (
-              <Link to="/admin/dashboard">
-                <Button
-                  data-testid="navbar-admin-panel-btn"
-                  className="rounded-full bg-slate-900 hover:bg-slate-800 text-white gap-2"
-                >
-                  <LayoutDashboard className="w-4 h-4" /> Yönetim Paneli
+            {/* Secondary panels/logins consolidated into one compact menu so the
+                main nav (Hakkımızda, Hizmetler, İletişim…) always fits. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button data-testid="cta-panels-menu" variant="outline" className="rounded-full border-neutral-700 bg-transparent text-neutral-200 hover:bg-neutral-800 hover:text-white font-semibold px-3 xl:px-4 gap-1.5 whitespace-nowrap">
+                  <IdCard className="w-4 h-4" /> Paneller <ChevronDown className="w-3.5 h-3.5 opacity-80" />
                 </Button>
-              </Link>
-            )}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={() => navigate("/studyo")} data-testid="menu-studio-panel" className="gap-2 cursor-pointer">
+                  <IdCard className="w-4 h-4 text-blue-600" /> Stüdyo Paneli
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/salon")} data-testid="menu-salon" className="gap-2 cursor-pointer">
+                  <Landmark className="w-4 h-4 text-rose-500" /> Salon Girişi
+                </DropdownMenuItem>
+                {(!user || user.role === "member") && (
+                  <DropdownMenuItem onClick={() => navigate("/personel-girisi")} data-testid="menu-staff-login" className="gap-2 cursor-pointer">
+                    <ShieldCheck className="w-4 h-4 text-[#d4af37]" /> Personel Girişi
+                  </DropdownMenuItem>
+                )}
+                {user && user.role === "admin" && (
+                  <DropdownMenuItem onClick={() => navigate("/admin/dashboard")} data-testid="menu-admin-panel" className="gap-2 cursor-pointer">
+                    <LayoutDashboard className="w-4 h-4 text-slate-700" /> Yönetim Paneli
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
             {user ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-neutral-400 whitespace-nowrap" data-testid="navbar-user-name">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-neutral-400 whitespace-nowrap hidden xl:inline" data-testid="navbar-user-name">
                   <User className="w-3.5 h-3.5 inline mr-1" strokeWidth={1.5} />
                   {user.name}{user.role === "member" ? " (Üye)" : ""}
                 </span>
@@ -142,13 +149,6 @@ export const PublicLayout = ({ children }) => {
                 </Button>
               </div>
             ) : null}
-            {(!user || user.role === "member") && (
-              <Link to="/personel-girisi">
-                <Button data-testid="staff-login-nav-btn" variant="outline" className="rounded-full border-neutral-700 bg-transparent text-neutral-300 hover:bg-neutral-800 hover:text-white gap-2 whitespace-nowrap">
-                  <ShieldCheck className="w-4 h-4" /> Personel Girişi
-                </Button>
-              </Link>
-            )}
           </div>
 
           {/* Persistent mobile access to admin/staff area (right next to hamburger) */}
