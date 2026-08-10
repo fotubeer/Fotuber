@@ -24,6 +24,8 @@ import GuestImport from "@/pages/GuestImport";
 import DesignStudio from "@/pages/DesignStudio";
 import StudioPortal from "@/pages/StudioPortal";
 import StudioDashboard from "@/pages/StudioDashboard";
+import StudioGallery from "@/pages/StudioGallery";
+import GallerySelect from "@/pages/GallerySelect";
 
 import Home from "@/pages/Home";
 import Services from "@/pages/Services";
@@ -119,6 +121,8 @@ function App() {
               <Route path="/tasarim-studyosu" element={<DesignStudio />} />
               <Route path="/studyo" element={<StudioPortal />} />
               <Route path="/studyo/panel" element={<StudioDashboard />} />
+              <Route path="/studyo/galeri" element={<StudioGallery />} />
+              <Route path="/galeri/:token" element={<GallerySelect />} />
 
               <Route
                 path="/randevularim"

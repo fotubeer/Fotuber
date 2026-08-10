@@ -161,6 +161,31 @@ def _strip_studio(acc: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Router factory (no server.py import → no circular dependency)
 # ---------------------------------------------------------------------------
+def build_get_current_studio(db, JWT_SECRET, JWT_ALGORITHM):
+    """Module-level factory so other routers (e.g. gallery) can reuse studio auth."""
+    async def get_current_studio(request: Request) -> dict:
+        token = request.cookies.get("studio_token") or request.cookies.get("access_token")
+        if not token:
+            auth = request.headers.get("Authorization", "")
+            if auth.startswith("Bearer "):
+                token = auth[7:]
+        if not token:
+            raise HTTPException(status_code=401, detail="Stüdyo girişi gerekli")
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            if payload.get("type") != "access" or payload.get("role") != "studio":
+                raise HTTPException(status_code=401, detail="Geçersiz stüdyo oturumu")
+            acc = await db.studio_accounts.find_one({"id": payload["sub"]}, {"_id": 0})
+            if not acc:
+                raise HTTPException(status_code=401, detail="Stüdyo hesabı bulunamadı")
+            return acc
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="Oturum süresi doldu")
+        except jwt.InvalidTokenError:
+            raise HTTPException(status_code=401, detail="Geçersiz token")
+    return get_current_studio
+
+
 def get_router(db, deps):
     router = APIRouter(prefix="/api/studio", tags=["studio"])
 
@@ -186,26 +211,7 @@ def get_router(db, deps):
                 return code
         return "FTB-" + secrets.token_hex(3).upper()
 
-    async def get_current_studio(request: Request) -> dict:
-        token = request.cookies.get("studio_token") or request.cookies.get("access_token")
-        if not token:
-            auth = request.headers.get("Authorization", "")
-            if auth.startswith("Bearer "):
-                token = auth[7:]
-        if not token:
-            raise HTTPException(status_code=401, detail="Stüdyo girişi gerekli")
-        try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-            if payload.get("type") != "access" or payload.get("role") != "studio":
-                raise HTTPException(status_code=401, detail="Geçersiz stüdyo oturumu")
-            acc = await db.studio_accounts.find_one({"id": payload["sub"]}, {"_id": 0})
-            if not acc:
-                raise HTTPException(status_code=401, detail="Stüdyo hesabı bulunamadı")
-            return acc
-        except jwt.ExpiredSignatureError:
-            raise HTTPException(status_code=401, detail="Oturum süresi doldu")
-        except jwt.InvalidTokenError:
-            raise HTTPException(status_code=401, detail="Geçersiz token")
+    get_current_studio = build_get_current_studio(db, JWT_SECRET, JWT_ALGORITHM)
 
     def _set_studio_cookie(response: Response, access: str):
         response.set_cookie(

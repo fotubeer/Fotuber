@@ -105,7 +105,7 @@ export default function StudioDashboard() {
           <ModuleCard testid="studio-module-design" icon={Palette} title="Davetiye Tasarım Stüdyosu"
             desc="Canva benzeri sürükle-bırak editör, 50+ font, kişiselleştirme." to="/tasarim-studyosu" cta="Tasarla" accent />
           <ModuleCard testid="studio-module-gallery" icon={Images} title="Etkinlik Galerisi"
-            desc="Müşteri foto seçimi, albüm, retouch ve sipariş takibi." soon />
+            desc="Müşteri foto seçimi, albüm, retouch ve sipariş takibi." to="/studyo/galeri" cta="Aç" />
         </div>
 
         {/* Plans */}

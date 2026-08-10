@@ -424,3 +424,18 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 ## KALAN FAZLAR (kullanıcı istedi, ayrı fazlar olarak yapılacak)
 - **Faz B — Etkinlik Galerisi (P0, büyük modül)**: Stüdyo Paneline etkinlik oluştur + parçalı (chunked) foto yükleme + RAW uyarısı; müşteriye özel seçim linki (albüm/kanvas/retouch) + katı albüm limiti; sipariş takibi + PDF; upsell ek hizmet paketleri.
 - **Faz C — Vesikalık Triple-Processing (P0)**: 3 fotoğrafı aynı anda bağımsız işleyen mod + 20 fotoluk firma arşivi (mevcut Vesikalık modülüne eklemeli).
+
+## Session X-5 (Jun 2026) — FAZ B: Etkinlik Galerisi (Event Gallery) tam modül (verified iteration_32: backend 9/9, frontend E2E; 2 bug fix + 2 backend güvenlik/doğruluk düzeltmesi sonrası re-verified)
+- **Backend** `routers/gallery.py` (factory, studio auth `build_get_current_studio` studio.py'den paylaşıldı):
+  - Etkinlik CRUD: POST/GET/GET{id}/DELETE `/api/studio/gallery/events` (share_token üretir).
+  - Parçalı yükleme: `/upload-init` (RAW uzantı tespiti+uyarı), `/upload-chunk/{uid}` (index), `/upload-complete/{uid}` (birleştir→object storage; non-RAW için PIL ile 640px thumbnail). RAW: cr2/cr3/nef/arw/dng/raf/orf/rw2. `_UPLOADS` in-memory (preview için yeterli; prod'da Redis/temp önerildi).
+  - Servis paketleri (upsell): CRUD `/api/studio/gallery/service-packs`.
+  - Siparişler: GET `/orders`, PUT `/orders/{id}/status` (new/processing/ready/delivered), GET `/orders/{id}/pdf` (reportlab; başlıklar ASCII transliterasyon — TTF backlog).
+  - Public: GET `/api/gallery/public/{token}` (foto studio_id/path sızıntısı temizlendi), POST `/select` (KATI albüm/kanvas/retouch limitleri, geçersiz photo_id sayımı engellendi → sipariş SIP-* oluşturur), foto servis `/gallery/photo/{id}` + `/gallery/thumb/{id}`.
+- **Frontend**: `pages/StudioGallery.jsx` (route /studyo/galeri) — sekmeler Etkinlikler/Servis Paketleri/Siparişler; etkinlik oluştur, parçalı çoklu foto yükleme (progress + RAW rozeti), müşteri linki kopyala (clipboard hatası try/catch fallback), sipariş durumu + PDF indir; sekme değişiminde canlı yeniden yükleme. `pages/GallerySelect.jsx` (public route /galeri/:token) — canlı limit çipleri, foto başına Albüm/Kanvas/Rötuş toggle (limit aşımı engelli), upsell, not, gönder→teşekkür/sipariş no. StudioDashboard "Etkinlik Galerisi" kartı artık /studyo/galeri'ye bağlı.
+- **Deps**: reportlab (mevcut), Pillow (mevcut).
+
+## KALAN (kullanıcı istedi)
+- **Faz C — Vesikalık Triple-Processing (P0)**: 3 fotoğrafı aynı anda bağımsız işleyen mod + 20 fotoluk firma arşivi.
+- **Daha Fazla AI Şablon**: Söz/Mevlüt/Açılış kategorileri.
+- **Şablonu Favorile**: sık kullanılan şablonları kaydet.

@@ -5856,6 +5856,7 @@ app.include_router(api_router)
 # ---------------------------------------------------------------------------
 from routers import design_studio as _design_studio
 from routers import studio as _studio
+from routers import gallery as _gallery
 
 _module_deps = {
     "hash_password": hash_password,
@@ -5875,6 +5876,7 @@ _module_deps = {
 }
 app.include_router(_design_studio.get_router(db, _module_deps))
 app.include_router(_studio.get_router(db, _module_deps))
+app.include_router(_gallery.get_router(db, _module_deps))
 
 
 # CORS - allow credentials with reflected origin
