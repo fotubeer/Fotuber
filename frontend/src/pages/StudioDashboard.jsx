@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   Camera, LogOut, IdCard, Clock, Sparkles, HardDrive, CalendarRange, ShieldAlert,
-  Images, Palette, ScanFace, Check, Crown, Wand2, Bell, Save, Copy, Users,
+  Images, Palette, ScanFace, Check, Crown, Wand2, Bell, Save, Copy, Users, Tag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -142,10 +142,14 @@ export default function StudioDashboard() {
             desc={acc.current_user?.is_owner ? "Çalışan ekle/yönet, kullanıcı limiti ve ekip sohbeti." : "Ekip sohbeti ve firma çalışanları."}
             to="/studyo/ekip" cta="Aç" badge={chatUnread} />
           {!acc.modules?.vesikalik && !acc.modules?.gallery && (
-            <div data-testid="studio-no-modules" className="sm:col-span-2 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-5 text-sm text-amber-100">
-              Paketinizde aktif modül yok. Vesikalık veya Etkinlik Galerisi paketini satın alın.
-            </div>
+            <Link to="/studyo/paketler" data-testid="studio-no-modules" className="sm:col-span-2 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-5 text-sm text-amber-100 hover:bg-amber-500/15">
+              Paketinizde aktif modül yok. <b>Vesikalık veya Etkinlik Galerisi</b> paketini satın almak için tıklayın →
+            </Link>
           )}
+          <Link to="/studyo/paketler" data-testid="studio-module-packages" className="rounded-2xl border border-white/12 bg-white/5 hover:bg-white/10 p-5 flex flex-col justify-center">
+            <div className="font-semibold flex items-center gap-2"><Tag size={16} className="text-amber-400" /> Paketler & Satın Al</div>
+            <p className="mt-1 text-xs text-white/50">Modül satın al / yükselt. İkinci modülde %20 indirim.</p>
+          </Link>
         </div>
 
         {/* Plans */}

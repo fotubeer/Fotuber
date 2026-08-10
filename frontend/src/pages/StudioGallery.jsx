@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   ArrowLeft, Plus, Upload, Trash2, Copy, Image as ImageIcon, Package, ClipboardList,
-  FileDown, Link2, Loader2, AlertTriangle, X,
+  FileDown, Link2, Loader2, AlertTriangle, X, Settings as SettingsIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,10 @@ import { API_BASE, formatApiError } from "@/lib/api";
 
 const BE = process.env.REACT_APP_BACKEND_URL;
 const CHUNK = 512 * 1024;
-const ORDER_STATUS = { new: "Yeni", processing: "Hazırlanıyor", ready: "Hazır", delivered: "Teslim" };
+const ORDER_STATUS = { new: "İnceleniyor", preparing: "Hazırlanıyor", printing: "Baskıda", shipping: "Kargoda", completed: "Tamamlandı",
+  processing: "Hazırlanıyor", ready: "Baskıda", delivered: "Tamamlandı" };
+const ORDER_STATUS_OPTIONS = { new: "İnceleniyor", preparing: "Hazırlanıyor", printing: "Baskıda", shipping: "Kargoda", completed: "Tamamlandı" };
+const fmtDate = (iso) => { if (!iso) return "—"; try { return new Date(iso).toLocaleDateString("tr-TR"); } catch { return "—"; } };
 
 export default function StudioGallery() {
   const navigate = useNavigate();
@@ -26,6 +29,8 @@ export default function StudioGallery() {
   const [active, setActive] = useState(null); // event detail
   const [packs, setPacks] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [isOwner, setIsOwner] = useState(true);
   const [loading, setLoading] = useState(true);
 
   const loadEvents = useCallback(async () => {
@@ -36,7 +41,10 @@ export default function StudioGallery() {
   const loadOrders = useCallback(async () => setOrders((await studioApi.get("/studio/gallery/orders")).data), []);
 
   useEffect(() => {
-    studioApi.get("/studio/me").catch(() => navigate("/studyo"));
+    studioApi.get("/studio/me")
+      .then((r) => setIsOwner(r.data?.account?.current_user?.is_owner !== false))
+      .catch(() => navigate("/studyo"));
+    studioApi.get("/studio/employees").then((r) => setEmployees(r.data?.employees || [])).catch(() => {});
     Promise.all([loadEvents(), loadPacks(), loadOrders()]).finally(() => setLoading(false));
   }, [navigate, loadEvents, loadPacks, loadOrders]);
 
@@ -67,7 +75,7 @@ export default function StudioGallery() {
         </div>
 
         <div className="flex gap-1 p-1 rounded-xl bg-white/5 w-fit mb-6">
-          {[["events", "Etkinlikler", ImageIcon], ["packs", "Servis Paketleri", Package], ["orders", "Siparişler", ClipboardList]].map(([k, label, Icon]) => (
+          {[["events", "Etkinlikler", ImageIcon], ["packs", "Servis Paketleri", Package], ["orders", "Siparişler", ClipboardList], ["settings", "Ayarlar", SettingsIcon]].map(([k, label, Icon]) => (
             <button key={k} data-testid={`sg-tab-${k}`} onClick={() => switchTab(k)}
               className={`px-4 h-9 rounded-lg text-sm font-medium flex items-center gap-1.5 ${tab === k ? "bg-white text-neutral-900" : "text-white/60 hover:text-white"}`}>
               <Icon size={15} /> {label}
@@ -80,7 +88,8 @@ export default function StudioGallery() {
             {tab === "events" && !active && <EventsList events={events} onOpen={setActive} onCopy={copyLink} onCreated={loadEvents} onDeleted={loadEvents} />}
             {tab === "events" && active && <EventDetail eventId={active.id} onBack={() => { setActive(null); loadEvents(); }} onCopy={copyLink} />}
             {tab === "packs" && <PacksTab packs={packs} reload={loadPacks} />}
-            {tab === "orders" && <OrdersTab orders={orders} reload={loadOrders} />}
+            {tab === "orders" && <OrdersTab orders={orders} reload={loadOrders} employees={employees} isOwner={isOwner} />}
+            {tab === "settings" && <SettingsTab />}
           </>
         )}
       </div>
@@ -92,6 +101,15 @@ function EventsList({ events, onOpen, onCopy, onCreated, onDeleted }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", client_name: "", event_date: "", album_limit: 0, canvas_limit: 0, retouch_limit: 0 });
   const [busy, setBusy] = useState(false);
+
+  const onExtend = async (ev) => {
+    if (!window.confirm(`"${ev.name}" için tek seferlik ek müşteri linki gönderilsin mi?\n\nNot: Bu, orijinal dosya silinme tarihini uzatmaz.`)) return;
+    try {
+      const { data } = await studioApi.post(`/studio/gallery/events/${ev.id}/extend-link`);
+      toast.success(data.note || "Ek link gönderildi");
+      onDeleted();
+    } catch (e) { toast.error(formatApiError(e, "Uzatılamadı")); }
+  };
 
   const create = async () => {
     if (!form.name.trim()) { toast.error("Etkinlik adı gerekli"); return; }
@@ -144,9 +162,18 @@ function EventsList({ events, onOpen, onCopy, onCreated, onDeleted }) {
               </div>
               <div className="text-xs text-white/50 mt-1">{ev.client_name || "-"} · {ev.photo_count} foto</div>
               <div className="text-xs text-white/40 mt-0.5">Albüm limiti: {ev.album_limit || "∞"}</div>
-              <div className="flex gap-2 mt-3">
+              <div className="mt-2 text-[11px] space-y-0.5">
+                <div className={ev.link_expired ? "text-red-300" : "text-white/50"}>
+                  Link: {ev.link_expired ? "süresi doldu" : fmtDate(ev.link_expires_at)}{ev.extra_link_used && " · ek link kullanıldı"}
+                </div>
+                <div className="text-white/40">Orijinal silinme: {fmtDate(ev.originals_delete_at)}{ev.originals_purged && " · silindi"}</div>
+              </div>
+              <div className="flex gap-2 mt-3 flex-wrap">
                 <Button data-testid={`sg-open-${ev.id}`} size="sm" onClick={() => onOpen(ev)} className="gap-1 bg-white/10 hover:bg-white/20 text-white"><Upload size={13} /> Yönet</Button>
                 <Button data-testid={`sg-copy-link-${ev.id}`} size="sm" variant="outline" onClick={() => onCopy(ev.share_token)} className="gap-1 bg-transparent border-white/15 text-white hover:bg-white/10"><Link2 size={13} /> Link</Button>
+                {!ev.extra_link_used && !ev.originals_purged && (
+                  <Button data-testid={`sg-extend-${ev.id}`} size="sm" variant="outline" onClick={() => onExtend(ev)} className="gap-1 bg-transparent border-amber-400/30 text-amber-200 hover:bg-amber-500/10"><Link2 size={13} /> Ek Link</Button>
+                )}
                 <Button data-testid={`sg-del-event-${ev.id}`} size="sm" variant="ghost" onClick={() => del(ev)} className="ml-auto text-red-300 hover:text-red-200 hover:bg-red-500/10"><Trash2 size={14} /></Button>
               </div>
             </div>
@@ -165,8 +192,15 @@ function EventDetail({ eventId, onBack, onCopy }) {
   const load = useCallback(async () => setData((await studioApi.get(`/studio/gallery/events/${eventId}`)).data), [eventId]);
   useEffect(() => { load(); }, [load]);
 
+  const RAW_EXTS = ["cr2", "cr3", "nef", "arw", "dng", "raf", "orf", "rw2", "sr2", "pef", "raw"];
+  const [rawWarned, setRawWarned] = useState(false);
+
   const uploadFile = async (file) => {
     const ext = (file.name.split(".").pop() || "").toLowerCase();
+    if (RAW_EXTS.includes(ext) && !rawWarned) {
+      setRawWarned(true);
+      toast.warning("Müşteriye RAW fotoğraf göndermeniz yükleme ve indirme sürelerini uzatacaktır. Önerilen fotoğraf tipi JPG formatıdır.", { duration: 7000 });
+    }
     const total = Math.max(1, Math.ceil(file.size / CHUNK));
     const key = `${file.name}-${Date.now()}`;
     setUploads((u) => [...u, { key, name: file.name, pct: 0, raw: false }]);
@@ -282,8 +316,9 @@ function PacksTab({ packs, reload }) {
   );
 }
 
-function OrdersTab({ orders, reload }) {
+function OrdersTab({ orders, reload, employees, isOwner }) {
   const setStatus = async (id, status) => { await studioApi.put(`/studio/gallery/orders/${id}/status`, { status }); toast.success("Durum güncellendi"); reload(); };
+  const assign = async (id, employee_id) => { await studioApi.put(`/studio/gallery/orders/${id}/assign`, { employee_id: employee_id === "none" ? null : employee_id }); toast.success("Personel atandı"); reload(); };
   const pdf = async (o) => {
     const res = await studioApi.get(`/studio/gallery/orders/${o.id}/pdf`, { responseType: "blob" });
     const url = URL.createObjectURL(res.data); const a = document.createElement("a"); a.href = url; a.download = `siparis-${o.order_no}.pdf`; a.click(); URL.revokeObjectURL(url);
@@ -295,16 +330,61 @@ function OrdersTab({ orders, reload }) {
           <div>
             <div className="font-semibold">{o.order_no} · {o.event_name}</div>
             <div className="text-xs text-white/50">{o.client_name || "-"} · Albüm {o.album_count} · Kanvas {o.canvas_count} · Retouch {o.retouch_count}{o.upsell_total ? ` · Upsell ${o.upsell_total}₺` : ""}</div>
+            {o.assigned_name && <div className="text-[11px] text-amber-200 mt-0.5">Sorumlu: {o.assigned_name}</div>}
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <Select value={o.status} onValueChange={(v) => setStatus(o.id, v)}>
+          <div className="ml-auto flex items-center gap-2 flex-wrap">
+            {isOwner && (
+              <Select value={o.assigned_to || "none"} onValueChange={(v) => assign(o.id, v)}>
+                <SelectTrigger data-testid={`sg-order-assign-${o.id}`} className="h-8 w-40 bg-white/5 border-white/15 text-white text-xs"><SelectValue placeholder="Personel ata" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Atanmadı</SelectItem>
+                  {(employees || []).map((e) => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
+            <Select value={ORDER_STATUS_OPTIONS[o.status] ? o.status : "new"} onValueChange={(v) => setStatus(o.id, v)}>
               <SelectTrigger data-testid={`sg-order-status-${o.id}`} className="h-8 w-36 bg-white/5 border-white/15 text-white text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>{Object.entries(ORDER_STATUS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+              <SelectContent>{Object.entries(ORDER_STATUS_OPTIONS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
             </Select>
             <Button data-testid={`sg-order-pdf-${o.id}`} size="sm" variant="outline" onClick={() => pdf(o)} className="gap-1 bg-transparent border-white/15 text-white hover:bg-white/10"><FileDown size={13} /> PDF</Button>
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function SettingsTab() {
+  const [s, setS] = useState(null);
+  useEffect(() => { studioApi.get("/studio/gallery/settings").then((r) => setS(r.data)).catch(() => {}); }, []);
+  const save = async (patch) => {
+    const next = { ...s, ...patch }; setS(next);
+    try { await studioApi.put("/studio/gallery/settings", patch); toast.success("Ayar kaydedildi"); }
+    catch (e) { toast.error(formatApiError(e, "Kaydedilemedi")); }
+  };
+  if (!s) return <p className="text-white/50">Yükleniyor…</p>;
+  return (
+    <div data-testid="sg-settings" className="max-w-lg space-y-3">
+      <div className="rounded-xl border border-white/12 bg-white/5 p-4 flex items-center justify-between">
+        <div>
+          <div className="font-medium">Müşteri galerisinde filigran</div>
+          <div className="text-xs text-white/50">{s.watermark_forced ? "Deneme sürümünde filigran zorunludur." : "Fotuber/firma filigranını aç/kapat."}</div>
+        </div>
+        <button data-testid="sg-set-watermark" disabled={s.watermark_forced} onClick={() => save({ watermark: !s.watermark })}
+          className={`w-12 h-6 rounded-full transition-colors ${s.watermark ? "bg-emerald-500" : "bg-white/20"} ${s.watermark_forced ? "opacity-50" : ""}`}>
+          <span className={`block w-5 h-5 bg-white rounded-full transition-transform ${s.watermark ? "translate-x-6" : "translate-x-0.5"}`} />
+        </button>
+      </div>
+      <div className="rounded-xl border border-white/12 bg-white/5 p-4 flex items-center justify-between">
+        <div>
+          <div className="font-medium">Orijinal dosya indirmeye izin ver</div>
+          <div className="text-xs text-white/50">{s.watermark_forced ? "Deneme sürümünde kapalıdır." : "Müşteri yüksek çözünürlüklü orijinali indirebilsin."}</div>
+        </div>
+        <button data-testid="sg-set-originals" disabled={s.watermark_forced} onClick={() => save({ allow_originals: !s.allow_originals })}
+          className={`w-12 h-6 rounded-full transition-colors ${s.allow_originals ? "bg-emerald-500" : "bg-white/20"} ${s.watermark_forced ? "opacity-50" : ""}`}>
+          <span className={`block w-5 h-5 bg-white rounded-full transition-transform ${s.allow_originals ? "translate-x-6" : "translate-x-0.5"}`} />
+        </button>
+      </div>
     </div>
   );
 }

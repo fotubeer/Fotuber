@@ -163,6 +163,8 @@ def _strip_studio(acc: dict) -> dict:
         "brand_name": acc.get("brand_name") or acc.get("firma_adi"),
         "brand_logo_asset_id": acc.get("brand_logo_asset_id"),
         "ai_credits": acc.get("ai_credits", 0),
+        "gallery_watermark": (True if (acc.get("plan") or "trial") == "trial" else acc.get("gallery_watermark", True)),
+        "gallery_allow_originals": (False if (acc.get("plan") or "trial") == "trial" else acc.get("gallery_allow_originals", False)),
         "current_user": {"name": acc.get("_emp_name") or acc.get("firma_adi"),
                          "is_owner": acc.get("_is_owner", True),
                          "emp_id": acc.get("_emp_id")},
@@ -507,6 +509,49 @@ def get_router(db, deps):
             fresh = await db.studio_accounts.find_one({"id": acc["id"]}, {"_id": 0, "design_rights": 1})
             resp["design_rights"] = int((fresh or {}).get("design_rights", 0))
         return resp
+
+    # ---- Module sales (Vesikalık / Etkinlik) via PayTR + 2nd-module 20% off ----
+    class ModuleBuyIn(BaseModel):
+        module: str
+        plan: str
+        origin_url: str = ""
+
+    def _module_price(mod: str, plan_id: str, mods: dict):
+        plan = next((p for p in STUDIO_PLANS if p["id"] == plan_id and p["id"] != "trial"), None)
+        if not plan or mod not in ("vesikalik", "gallery"):
+            return None
+        owns_other = bool((mods or {}).get("gallery" if mod == "vesikalik" else "vesikalik", False))
+        base = float(plan["price"])
+        price = round(base * 0.8, 2) if owns_other else base
+        return {"plan": plan, "base": base, "price": price, "discount": 20 if owns_other else 0}
+
+    @router.get("/modules/pricing")
+    async def modules_pricing(acc: dict = Depends(get_current_studio)):
+        mods = acc.get("modules") or {}
+        out = []
+        for m in ("vesikalik", "gallery"):
+            for p in STUDIO_PLANS:
+                if p["id"] == "trial":
+                    continue
+                info = _module_price(m, p["id"], mods)
+                out.append({"module": m, "plan": p["id"], "plan_name": p["name"],
+                            "base_price": info["base"], "price": info["price"], "discount": info["discount"]})
+        return {"pricing": out, "modules": mods,
+                "note": "İkinci modülde otomatik %20 indirim uygulanır."}
+
+    @router.post("/payments/module/create")
+    async def buy_module(payload: ModuleBuyIn, request: Request, acc: dict = Depends(get_current_studio)):
+        info = _module_price(payload.module, payload.plan, acc.get("modules") or {})
+        if not info:
+            raise HTTPException(status_code=400, detail="Geçersiz modül veya plan")
+        mlabel = "Vesikalık" if payload.module == "vesikalik" else "Etkinlik Galerisi"
+        title = f"Fotuber {mlabel} {info['plan']['name']}"
+        return await create_paytr_order(
+            title=title, price=info["price"], origin_url=payload.origin_url,
+            request_base_url=request.base_url,
+            order_extra={"kind": "studio_module", "studio_id": acc["id"], "module": payload.module,
+                         "plan": info["plan"]["id"], "discount": info["discount"]},
+        )
 
     # ---- Notification settings ------------------------------------------
     @router.put("/settings/notifications")

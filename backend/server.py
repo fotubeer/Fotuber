@@ -4615,6 +4615,24 @@ async def _grant_paid_order(order: dict):
             })
         return
 
+    # Studio Suite: module purchase (Vesikalık / Etkinlik) — grant entitlement + set plan
+    if order.get("kind") == "studio_module":
+        sid = order.get("studio_id")
+        mod = order.get("module")
+        plan = order.get("plan")
+        if sid and mod in ("vesikalik", "gallery"):
+            acc = await db.studio_accounts.find_one({"id": sid}, {"_id": 0, "modules": 1})
+            mods = (acc or {}).get("modules") or {"vesikalik": False, "gallery": False}
+            mods[mod] = True
+            await db.studio_accounts.update_one({"id": sid}, {"$set": {"modules": mods, "plan": plan}})
+            await db.studio_module_purchases.insert_one({
+                "studio_id": sid, "module": mod, "plan": plan, "price": order.get("price"),
+                "discount": order.get("discount", 0), "currency": "TRY",
+                "callback_id": order.get("callback_id"),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+        return
+
     uid = order.get("user_id")
     user = await db.users.find_one({"id": uid})
     if not user:
@@ -6250,6 +6268,7 @@ _module_deps = {
     "now_iso": now_iso,
     "put_object": put_object,
     "get_object": get_object,
+    "delete_object": delete_object,
     "create_paytr_order": _create_paytr_order,
     "send_email": email_service.send_email,
     "email_configured": email_service.email_configured,

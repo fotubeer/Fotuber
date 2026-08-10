@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
 import { toast } from "sonner";
-import { Check, Album, Frame, Sparkles, CheckCircle2, Camera } from "lucide-react";
+import { Check, Album, Frame, Sparkles, CheckCircle2, Camera, Clock, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { API_BASE } from "@/lib/api";
@@ -57,13 +57,47 @@ export default function GallerySelect() {
   if (loading) return <div className="min-h-screen grid place-items-center bg-neutral-950 text-white/60">Yükleniyor…</div>;
   if (data === false) return <div className="min-h-screen grid place-items-center bg-neutral-950 text-white/60">Galeri bulunamadı.</div>;
 
+  // Package-based link expiry / originals deletion
+  if (data.link_expired || data.originals_purged) return (
+    <div data-testid="gs-expired" className="min-h-screen grid place-items-center bg-neutral-950 text-white p-6 text-center">
+      <div>
+        <Clock size={56} className="mx-auto text-amber-400" />
+        <h1 className="mt-4 text-2xl font-semibold">Galeri süresi doldu</h1>
+        <p className="mt-2 text-white/60 max-w-sm">{data.message || "Görüntüleme/indirme süresi sona erdi. Yeni erişim için fotoğrafçınızla iletişime geçin."}</p>
+        <p className="mt-2 text-white/40">{data.firma_adi}</p>
+      </div>
+    </div>
+  );
+
+  const orderStatus = data.event?.order_status;
+  const flow = data.order_flow || [];
+
   if (done) return (
     <div data-testid="gs-success" className="min-h-screen grid place-items-center bg-neutral-950 text-white p-6 text-center">
-      <div>
+      <div className="max-w-md w-full">
         <CheckCircle2 size={56} className="mx-auto text-emerald-400" />
-        <h1 className="mt-4 text-2xl font-semibold">{done === "already" ? "Seçiminiz zaten alındı" : "Seçiminiz alındı!"}</h1>
+        <h1 className="mt-4 text-2xl font-semibold">{done === "already" ? "Seçiminiz alındı" : "Seçiminiz alındı!"}</h1>
         {done !== "already" && <p className="mt-2 text-white/60">Sipariş No: <b className="text-amber-300">{done}</b></p>}
         <p className="mt-2 text-white/50">{data.firma_adi} sizinle iletişime geçecek. Teşekkürler.</p>
+        {flow.length > 0 && (
+          <div data-testid="gs-order-status" className="mt-6 text-left">
+            <div className="text-xs text-white/50 mb-3 text-center">Sipariş Durumu</div>
+            <div className="space-y-2">
+              {flow.map((f, i) => {
+                const curIdx = flow.findIndex((x) => x.key === (orderStatus || "new"));
+                const state = i < curIdx ? "done" : i === curIdx ? "current" : "todo";
+                return (
+                  <div key={f.key} data-testid={`gs-status-${f.key}`} className="flex items-center gap-3">
+                    <div className={`w-6 h-6 rounded-full grid place-items-center text-[11px] ${state === "done" ? "bg-emerald-500 text-white" : state === "current" ? "bg-amber-500 text-neutral-900 font-bold" : "bg-white/10 text-white/40"}`}>
+                      {state === "done" ? <Check size={13} /> : i + 1}
+                    </div>
+                    <span className={state === "current" ? "text-white font-medium" : "text-white/50"}>{f.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -93,9 +127,22 @@ export default function GallerySelect() {
             const s = sel[p.id] || {};
             return (
               <div key={p.id} data-testid={`gs-photo-${p.id}`} className="rounded-xl overflow-hidden bg-white/5 border border-white/10">
-                <div className="aspect-square bg-black/40">
+                <div className="aspect-square bg-black/40 relative">
                   {p.is_raw ? <div className="w-full h-full grid place-items-center text-xs text-white/40">{p.filename}</div>
                     : <img src={`${BE}${p.thumb || p.url}`} alt="" className="w-full h-full object-cover" />}
+                  {data.watermark && !p.is_raw && (
+                    <div data-testid={`gs-watermark-${p.id}`} className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden">
+                      <span className="text-white/25 text-[11px] font-bold tracking-widest -rotate-45 whitespace-nowrap select-none">
+                        {(data.firma_adi + " · ").repeat(4)}
+                      </span>
+                    </div>
+                  )}
+                  {data.allow_originals && !p.is_raw && (
+                    <a data-testid={`gs-download-${p.id}`} href={`${BE}${p.url}`} target="_blank" rel="noreferrer" download
+                      className="absolute top-1 right-1 bg-black/60 rounded-full p-1.5 text-white hover:bg-black/80" title="Orijinali indir">
+                      <Download size={13} />
+                    </a>
+                  )}
                 </div>
                 <div className="flex text-[11px]">
                   <Toggle testid={`gs-toggle-album-${p.id}`} on={s.album} label="Albüm" onClick={() => toggle(p.id, "album", ev.album_limit, counts.a)} />

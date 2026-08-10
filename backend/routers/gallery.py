@@ -18,6 +18,17 @@ from routers.studio import build_get_current_studio
 
 RAW_EXTS = {"cr2", "cr3", "nef", "arw", "dng", "raf", "orf", "rw2", "sr2", "pef", "raw"}
 
+# Package-based durations: (client-link days, originals-deletion days)
+GALLERY_DURATIONS = {"trial": (2, 4), "basic": (2, 4), "bronze": (4, 8), "silver": (5, 10), "gold": (7, 14)}
+
+def _gallery_durations(plan):
+    return GALLERY_DURATIONS.get(plan or "trial", (2, 4))
+
+# Order lifecycle (client-visible). Keys are stored; labels shown to client.
+ORDER_FLOW = ["new", "preparing", "printing", "shipping", "completed"]
+ORDER_LABELS = {"new": "İnceleniyor", "preparing": "Hazırlanıyor", "printing": "Baskıda",
+                "shipping": "Kargoda", "completed": "Tamamlandı"}
+
 # In-memory chunk buffer for resumable uploads (single-process dev/preview).
 _UPLOADS: dict = {}
 
@@ -83,11 +94,51 @@ def get_router(db, deps):
             "submitted": ev.get("submitted", False), "created_at": ev.get("created_at"),
             "photo_count": (counts or {}).get("photos", 0),
             "order_status": ev.get("order_status"),
+            "order_status_label": ORDER_LABELS.get(ev.get("order_status"), None),
+            "link_expires_at": ev.get("link_expires_at"),
+            "originals_delete_at": ev.get("originals_delete_at"),
+            "extra_link_used": ev.get("extra_link_used", False),
+            "originals_purged": ev.get("originals_purged", False),
+            "link_expired": _is_past(ev.get("link_expires_at")),
         }
+
+    def _is_past(iso):
+        if not iso:
+            return False
+        try:
+            return datetime.now(timezone.utc) > datetime.fromisoformat(iso)
+        except Exception:
+            return False
+
+    def _add_days(days):
+        from datetime import timedelta
+        return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+
+    async def _purge_if_due(ev):
+        """Delete original hi-res photos after the package deletion window.
+        Order/selection metadata is preserved."""
+        if ev.get("originals_purged"):
+            return ev
+        if not _is_past(ev.get("originals_delete_at")):
+            return ev
+        photos = await db.gallery_photos.find({"event_id": ev["id"]}, {"_id": 0, "path": 1, "thumb_path": 1}).to_list(5000)
+        for p in photos:
+            for key in ("path", "thumb_path"):
+                if p.get(key):
+                    try:
+                        deps.get("delete_object", lambda *_: None)(p[key])
+                    except Exception:
+                        pass
+        await db.gallery_photos.delete_many({"event_id": ev["id"]})
+        await db.gallery_events.update_one({"id": ev["id"]}, {"$set": {"originals_purged": True, "status": "expired"}})
+        ev["originals_purged"] = True
+        ev["status"] = "expired"
+        return ev
 
     # ==================== STUDIO: EVENTS ====================
     @router.post("/studio/gallery/events")
     async def create_event(payload: EventIn, acc: dict = Depends(get_current_studio)):
+        link_days, del_days = _gallery_durations(acc.get("plan"))
         doc = {
             "id": new_id(), "studio_id": acc["id"], "name": payload.name,
             "client_name": payload.client_name, "event_date": payload.event_date,
@@ -95,9 +146,35 @@ def get_router(db, deps):
             "retouch_limit": payload.retouch_limit,
             "share_token": secrets.token_urlsafe(9), "status": "open",
             "submitted": False, "order_status": None, "created_at": now_iso(),
+            "link_expires_at": _add_days(link_days),
+            "originals_delete_at": _add_days(del_days),
+            "extra_link_used": False, "originals_purged": False,
         }
         await db.gallery_events.insert_one(doc)
         return _event_out(doc)
+
+    @router.post("/studio/gallery/events/{event_id}/extend-link")
+    async def extend_link(event_id: str, acc: dict = Depends(get_current_studio)):
+        ev = await db.gallery_events.find_one({"id": event_id, "studio_id": acc["id"]}, {"_id": 0})
+        if not ev:
+            raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+        if ev.get("extra_link_used"):
+            raise HTTPException(status_code=400, detail="Ek link hakkı zaten kullanıldı (yalnızca bir kez).")
+        if ev.get("originals_purged"):
+            raise HTTPException(status_code=400, detail="Orijinal dosyalar silindiği için link uzatılamaz.")
+        link_days, _ = _gallery_durations(acc.get("plan"))
+        # Extend link only — does NOT change the originals deletion date.
+        base = datetime.now(timezone.utc)
+        try:
+            cur = datetime.fromisoformat(ev["link_expires_at"])
+            if cur > base:
+                base = cur
+        except Exception:
+            pass
+        from datetime import timedelta
+        new_exp = (base + timedelta(days=link_days)).isoformat()
+        await db.gallery_events.update_one({"id": event_id}, {"$set": {"link_expires_at": new_exp, "extra_link_used": True}})
+        return {"ok": True, "link_expires_at": new_exp, "note": "Ek link gönderildi. Orijinal dosya silinme tarihi değişmedi."}
 
     @router.get("/studio/gallery/events")
     async def list_events(acc: dict = Depends(get_current_studio)):
@@ -225,20 +302,75 @@ def get_router(db, deps):
     # ==================== STUDIO: ORDERS ====================
     @router.get("/studio/gallery/orders")
     async def list_orders(acc: dict = Depends(get_current_studio)):
-        return await db.gallery_orders.find({"studio_id": acc["id"]}, {"_id": 0}).sort("created_at", -1).to_list(300)
+        q = {"studio_id": acc["id"]}
+        # Employees see only orders assigned to them; owner sees all.
+        if not acc.get("_is_owner", True):
+            q["assigned_to"] = acc.get("_emp_id")
+        orders = await db.gallery_orders.find(q, {"_id": 0}).sort("created_at", -1).to_list(300)
+        for o in orders:
+            o["status_label"] = ORDER_LABELS.get(o.get("status"), o.get("status"))
+        return orders
+
+    @router.get("/studio/gallery/order-flow")
+    async def order_flow(acc: dict = Depends(get_current_studio)):
+        return {"flow": [{"key": k, "label": ORDER_LABELS[k]} for k in ORDER_FLOW]}
 
     @router.put("/studio/gallery/orders/{order_id}/status")
     async def update_order_status(order_id: str, request: Request, acc: dict = Depends(get_current_studio)):
         body = await request.json()
         status = body.get("status")
-        if status not in {"new", "processing", "ready", "delivered"}:
+        # Accept new 5-step flow + legacy values for backward compatibility.
+        if status not in set(ORDER_FLOW) | {"ready", "delivered", "processing"}:
             raise HTTPException(status_code=400, detail="Geçersiz durum")
         order = await db.gallery_orders.find_one({"id": order_id, "studio_id": acc["id"]})
         if not order:
             raise HTTPException(status_code=404, detail="Sipariş bulunamadı")
         await db.gallery_orders.update_one({"id": order_id}, {"$set": {"status": status}})
         await db.gallery_events.update_one({"id": order["event_id"]}, {"$set": {"order_status": status}})
-        return {"ok": True, "status": status}
+        return {"ok": True, "status": status, "status_label": ORDER_LABELS.get(status, status)}
+
+    @router.put("/studio/gallery/orders/{order_id}/assign")
+    async def assign_order(order_id: str, request: Request, acc: dict = Depends(get_current_studio)):
+        if not acc.get("_is_owner", True):
+            raise HTTPException(status_code=403, detail="Yalnızca firma sahibi personel atayabilir.")
+        body = await request.json()
+        emp_id = body.get("employee_id") or None
+        assigned_name = None
+        if emp_id:
+            emp = await db.studio_employees.find_one({"id": emp_id, "studio_id": acc["id"]}, {"_id": 0})
+            if not emp:
+                raise HTTPException(status_code=404, detail="Çalışan bulunamadı")
+            assigned_name = emp.get("name") or emp.get("username")
+        r = await db.gallery_orders.update_one({"id": order_id, "studio_id": acc["id"]},
+                                               {"$set": {"assigned_to": emp_id, "assigned_name": assigned_name}})
+        if r.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Sipariş bulunamadı")
+        return {"ok": True, "assigned_to": emp_id, "assigned_name": assigned_name}
+
+    # ==================== STUDIO: GALLERY SETTINGS (watermark / originals) ====================
+    @router.get("/studio/gallery/settings")
+    async def get_gallery_settings(acc: dict = Depends(get_current_studio)):
+        trial = (acc.get("plan") or "trial") == "trial"
+        return {
+            "watermark": True if trial else acc.get("gallery_watermark", True),
+            "allow_originals": False if trial else acc.get("gallery_allow_originals", False),
+            "watermark_forced": trial,
+        }
+
+    @router.put("/studio/gallery/settings")
+    async def set_gallery_settings(request: Request, acc: dict = Depends(get_current_studio)):
+        if not acc.get("_is_owner", True):
+            raise HTTPException(status_code=403, detail="Yalnızca firma sahibi değiştirebilir.")
+        body = await request.json()
+        upd = {}
+        if "watermark" in body:
+            upd["gallery_watermark"] = bool(body["watermark"])
+        if "allow_originals" in body:
+            upd["gallery_allow_originals"] = bool(body["allow_originals"])
+        if upd:
+            await db.studio_accounts.update_one({"id": acc["id"]}, {"$set": upd})
+        trial = (acc.get("plan") or "trial") == "trial"
+        return {"ok": True, "watermark_forced": trial}
 
     @router.get("/studio/gallery/orders/{order_id}/pdf")
     async def order_pdf(order_id: str, acc: dict = Depends(get_current_studio)):
@@ -255,6 +387,31 @@ def get_router(db, deps):
         ev = await db.gallery_events.find_one({"share_token": token}, {"_id": 0})
         if not ev:
             raise HTTPException(status_code=404, detail="Galeri bulunamadı")
+        ev = await _purge_if_due(ev)
+        # Link expiry: block access to photos when the client link window has passed.
+        link_expired = _is_past(ev.get("link_expires_at"))
+        studio = await db.studio_accounts.find_one({"id": ev["studio_id"]}, {"_id": 0, "firma_adi": 1, "plan": 1, "gallery_watermark": 1, "gallery_allow_originals": 1})
+        trial = ((studio or {}).get("plan") or "trial") == "trial"
+        watermark = True if trial else (studio or {}).get("gallery_watermark", True)
+        allow_originals = False if trial else (studio or {}).get("gallery_allow_originals", False)
+        base = {
+            "event": {"name": ev["name"], "client_name": ev.get("client_name", ""),
+                      "event_date": ev.get("event_date", ""), "album_limit": ev.get("album_limit", 0),
+                      "canvas_limit": ev.get("canvas_limit", 0), "retouch_limit": ev.get("retouch_limit", 0),
+                      "submitted": ev.get("submitted", False), "status": ev.get("status", "open"),
+                      "order_status": ev.get("order_status"),
+                      "order_status_label": ORDER_LABELS.get(ev.get("order_status")),
+                      "link_expires_at": ev.get("link_expires_at")},
+            "firma_adi": (studio or {}).get("firma_adi", "Stüdyo"),
+            "order_flow": [{"key": k, "label": ORDER_LABELS[k]} for k in ORDER_FLOW],
+            "watermark": watermark, "allow_originals": allow_originals,
+            "link_expired": link_expired, "originals_purged": ev.get("originals_purged", False),
+        }
+        if link_expired or ev.get("originals_purged"):
+            base["photos"] = []
+            base["service_packs"] = []
+            base["message"] = "Galeri görüntüleme/indirme süresi doldu. Yeni erişim için fotoğrafçınızla iletişime geçin."
+            return base
         photos = await db.gallery_photos.find({"event_id": ev["id"]}, {"_id": 0}).sort("created_at", 1).to_list(1000)
         clean = []
         for p in photos:
@@ -264,23 +421,18 @@ def get_router(db, deps):
                 "url": f"/api/gallery/photo/{p['id']}",
                 "thumb": f"/api/gallery/thumb/{p['id']}" if has_thumb else None,
             })
-        photos = clean
         packs = await db.gallery_service_packs.find({"studio_id": ev["studio_id"], "active": True}, {"_id": 0}).to_list(100)
-        studio = await db.studio_accounts.find_one({"id": ev["studio_id"]}, {"_id": 0, "firma_adi": 1})
-        return {
-            "event": {"name": ev["name"], "client_name": ev.get("client_name", ""),
-                      "event_date": ev.get("event_date", ""), "album_limit": ev.get("album_limit", 0),
-                      "canvas_limit": ev.get("canvas_limit", 0), "retouch_limit": ev.get("retouch_limit", 0),
-                      "submitted": ev.get("submitted", False), "status": ev.get("status", "open")},
-            "firma_adi": (studio or {}).get("firma_adi", "Stüdyo"),
-            "photos": photos, "service_packs": packs,
-        }
+        base["photos"] = clean
+        base["service_packs"] = packs
+        return base
 
     @router.post("/gallery/public/{token}/select")
     async def public_select(token: str, payload: SelectionIn):
         ev = await db.gallery_events.find_one({"share_token": token})
         if not ev:
             raise HTTPException(status_code=404, detail="Galeri bulunamadı")
+        if _is_past(ev.get("link_expires_at")) or ev.get("originals_purged"):
+            raise HTTPException(status_code=403, detail="Galeri süresi doldu. Fotoğrafçınızla iletişime geçin.")
         if ev.get("submitted"):
             raise HTTPException(status_code=400, detail="Seçim zaten gönderilmiş")
         # Only count/apply selections for photos that actually belong to this event
