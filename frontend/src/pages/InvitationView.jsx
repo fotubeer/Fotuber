@@ -9,6 +9,7 @@ import InvitationPreview from "@/components/invitation/InvitationPreview";
 import InvitationReveal from "@/components/invitation/InvitationReveal";
 import PhotoWall from "@/components/invitation/PhotoWall";
 import { getTheme } from "@/lib/invitationThemes";
+import { loadGoogleFont } from "@/lib/designFonts";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -24,7 +25,7 @@ export default function InvitationView() {
   const [inv, setInv] = useState(null);
   const [error, setError] = useState(null);
   const [memories, setMemories] = useState([]);
-  const [rsvp, setRsvp] = useState({ name: "", surname: "", choice: "yes", guest_count: 1, note: "" });
+  const [rsvp, setRsvp] = useState({ name: "", surname: "", choice: "yes", guest_count: 1, note: "", menu: "standard", needs_transfer: false, companions: [] });
   const [mem, setMem] = useState({ name: "", message: "" });
   const [rsvpDone, setRsvpDone] = useState(false);
   const [checkinToken, setCheckinToken] = useState(null);
@@ -73,7 +74,7 @@ export default function InvitationView() {
     try {
       const r = await fetch(`${API}/api/invitations/public/${slug}/rsvp`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: rsvp.name, surname: rsvp.surname, note: rsvp.note, guest_count: rsvp.guest_count, rsvp_choice: rsvp.choice, attending: rsvp.choice === "yes", guest_token: guestToken }),
+        body: JSON.stringify({ name: rsvp.name, surname: rsvp.surname, note: rsvp.note, guest_count: rsvp.guest_count, rsvp_choice: rsvp.choice, attending: rsvp.choice === "yes", guest_token: guestToken, menu: rsvp.menu, needs_transfer: rsvp.needs_transfer, companions: rsvp.companions.filter((c) => (c.name || "").trim()) }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.detail || "Gönderilemedi");
@@ -83,6 +84,11 @@ export default function InvitationView() {
     } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   };
+
+  // Optional custom font chosen in the wizard — overrides theme script/heading everywhere.
+  useEffect(() => {
+    if (inv?.font_family) { try { loadGoogleFont(inv.font_family); } catch { /* ignore */ } }
+  }, [inv?.font_family]);
 
   const submitMemory = async () => {
     if (!mem.name.trim() || !mem.message.trim()) { toast.error("İsim ve mesaj gerekli"); return; }
@@ -108,6 +114,11 @@ export default function InvitationView() {
   );
 
   const t = getTheme(inv.theme, inv.primary_color);
+  if (inv.font_family) {
+    const fam = `'${inv.font_family}', serif`;
+    t.script = fam; t.heading = fam;
+  }
+  const nameScale = inv.name_scale || 1;
   const sections = inv.sections || {};
   const music = sections.music !== false && (inv.music_url || inv.greeting_audio_id);
   const musicSrc = inv.music_url || (inv.greeting_audio_id ? `${API}/api/invitations/audio/${inv.greeting_audio_id}` : null);
@@ -185,11 +196,44 @@ export default function InvitationView() {
                       data-testid="rsvp-maybe"><HelpCircle className="w-4 h-4" /> Emin Değilim</button>
                   </div>
                   {rsvp.choice === "yes" && (
-                    <div>
-                      <label className="text-xs" style={{ color: t.sub }}>Kaç kişi geleceksiniz?</label>
-                      <input type="number" min={1} value={rsvp.guest_count}
-                        onChange={(e) => setRsvp({ ...rsvp, guest_count: Math.max(1, parseInt(e.target.value || "1")) })}
-                        className="w-full py-2 text-sm outline-none mt-1" style={inputStyle} data-testid="rsvp-count" />
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs" style={{ color: t.sub }}>Kaç kişi geleceksiniz?</label>
+                        <input type="number" min={1} max={30} value={rsvp.guest_count}
+                          onChange={(e) => {
+                            const n = Math.max(1, Math.min(30, parseInt(e.target.value || "1")));
+                            const comps = Array.from({ length: n - 1 }, (_, i) => rsvp.companions[i] || { name: "", menu: "standard" });
+                            setRsvp({ ...rsvp, guest_count: n, companions: comps });
+                          }}
+                          className="w-full py-2 text-sm outline-none mt-1" style={inputStyle} data-testid="rsvp-count" />
+                      </div>
+                      <div>
+                        <label className="text-xs" style={{ color: t.sub }}>Menü tercihiniz</label>
+                        <select value={rsvp.menu} onChange={(e) => setRsvp({ ...rsvp, menu: e.target.value })}
+                          className="w-full py-2 text-sm outline-none mt-1" style={inputStyle} data-testid="rsvp-menu">
+                          <option value="standard">Standart Menü</option>
+                          <option value="vegetarian">Vejetaryen Menü</option>
+                          <option value="child">Çocuk Menüsü</option>
+                        </select>
+                      </div>
+                      {rsvp.companions.map((c, i) => (
+                        <div key={i} className="grid grid-cols-2 gap-2" data-testid={`rsvp-companion-${i}`}>
+                          <input placeholder={`${i + 2}. kişi adı`} value={c.name}
+                            onChange={(e) => { const cs = [...rsvp.companions]; cs[i] = { ...cs[i], name: e.target.value }; setRsvp({ ...rsvp, companions: cs }); }}
+                            className="py-2 text-sm outline-none placeholder:opacity-50" style={inputStyle} data-testid={`rsvp-companion-name-${i}`} />
+                          <select value={c.menu}
+                            onChange={(e) => { const cs = [...rsvp.companions]; cs[i] = { ...cs[i], menu: e.target.value }; setRsvp({ ...rsvp, companions: cs }); }}
+                            className="py-2 text-sm outline-none" style={inputStyle} data-testid={`rsvp-companion-menu-${i}`}>
+                            <option value="standard">Standart</option>
+                            <option value="vegetarian">Vejetaryen</option>
+                            <option value="child">Çocuk</option>
+                          </select>
+                        </div>
+                      ))}
+                      <label className="flex items-center gap-2 text-sm" style={{ color: t.text }} data-testid="rsvp-transfer-label">
+                        <input type="checkbox" checked={rsvp.needs_transfer} onChange={(e) => setRsvp({ ...rsvp, needs_transfer: e.target.checked })} data-testid="rsvp-transfer" />
+                        Transfer / servis istiyorum
+                      </label>
                     </div>
                   )}
                   <textarea placeholder="Not (isteğe bağlı)" value={rsvp.note} onChange={(e) => setRsvp({ ...rsvp, note: e.target.value })} rows={2}

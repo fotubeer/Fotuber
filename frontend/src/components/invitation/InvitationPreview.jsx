@@ -63,6 +63,9 @@ const CountBox = ({ v, label, t }) => (
 // Premium animated invitation card. Used in wizard preview + guest page.
 export const InvitationPreview = ({ data }) => {
   const t = getTheme(data.theme, data.primary_color);
+  if (data.font_family) { const fam = `'${data.font_family}', serif`; t.script = fam; t.heading = fam; }
+  const ns = data.name_scale || 1;
+  const nameSize = `clamp(${3 * ns}rem, ${12 * ns}vw, ${5.5 * ns}rem)`;
   const cd = useCountdown(data.event_date, data.event_time);
   const sections = data.sections || {};
   const names = data.person2 ? `${data.person1} & ${data.person2}` : data.person1;
@@ -106,7 +109,7 @@ export const InvitationPreview = ({ data }) => {
               className="leading-none mb-4"
               style={{
                 fontFamily: t.script,
-                fontSize: "clamp(3rem, 12vw, 5.5rem)",
+                fontSize: nameSize,
                 backgroundImage: `linear-gradient(100deg, ${t.accent} 0%, #ffffff 45%, ${t.accent} 90%)`,
                 backgroundSize: "220% auto",
                 WebkitBackgroundClip: "text",
@@ -120,7 +123,7 @@ export const InvitationPreview = ({ data }) => {
             </motion.h1>
           ) : (
             <motion.h1 variants={item} className="leading-none mb-4"
-              style={{ fontFamily: t.script, fontSize: "clamp(3rem, 12vw, 5.5rem)", color: t.accent }}>
+              style={{ fontFamily: t.script, fontSize: nameSize, color: t.accent }}>
               {names || "İsimler"}
             </motion.h1>
           )}

@@ -422,13 +422,29 @@ export default function MyInvitations() {
                 <div key={l} className="rounded-lg border border-slate-200 p-2"><div className="text-xl font-bold">{v}</div><div className="text-[10px] text-slate-500">{l}</div></div>
               ))}
             </div>
+            {report.stats.menu && (
+              <div className="rounded-lg border border-slate-200 p-3 my-2" data-testid="report-menu-summary">
+                <div className="text-xs font-semibold text-slate-600 mb-1.5">İkram / Menü Dağılımı</div>
+                <div className="flex flex-wrap gap-3 text-sm">
+                  <span>🍽️ Standart: <b>{report.stats.menu.standard || 0}</b></span>
+                  <span>🥗 Vejetaryen: <b>{report.stats.menu.vegetarian || 0}</b></span>
+                  <span>🧒 Çocuk: <b>{report.stats.menu.child || 0}</b></span>
+                  <span>🚐 Transfer isteyen: <b>{report.stats.transfer || 0}</b></span>
+                </div>
+              </div>
+            )}
             <div className="mt-3">
               <div className="text-sm font-semibold mb-1">Katılım Yanıtları</div>
               {report.rsvps.length === 0 ? <div className="text-xs text-slate-400">Henüz yanıt yok.</div> : (
                 <div className="space-y-1">
                   {report.rsvps.map((r) => (
                     <div key={r.id} className="flex items-center justify-between text-sm border-b border-slate-100 py-1">
-                      <span>{r.name} {r.surname} {r.attending ? `(${r.guest_count} kişi)` : ""}</span>
+                      <span>
+                        {r.name} {r.surname} {r.attending ? `(${r.guest_count} kişi)` : ""}
+                        {r.attending && r.menu && r.menu !== "standard" && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">{r.menu === "vegetarian" ? "Vejetaryen" : "Çocuk"}</span>}
+                        {r.needs_transfer && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">Transfer</span>}
+                        {r.companions && r.companions.length > 0 && <span className="ml-1 text-[11px] text-slate-400">+ {r.companions.map((c) => c.name).join(", ")}</span>}
+                      </span>
                       <Badge className={r.attending ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}>{r.attending ? "Geliyor" : "Gelemiyor"}</Badge>
                     </div>
                   ))}

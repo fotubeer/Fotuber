@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
+import { loadGoogleFont } from "@/lib/designFonts";
 import InvitationReveal, { SIGNATURE_STYLES } from "@/components/invitation/InvitationReveal";
 import RevealOptions from "@/components/invitation/RevealOptions";
 import VoiceRecorder from "@/components/invitation/VoiceRecorder";
@@ -27,6 +28,7 @@ export default function InvitationCreate() {
     event_type: "dugun", person1: "", person2: "", event_date: "", event_time: "",
     venue_name: "", venue_address: "", map_url: "", message: "", theme: "romantic",
     primary_color: "", cover_image_id: "", music_url: "", reveal_style: "", reveal_opts: {},
+    font_family: "", name_scale: 1,
     gift: { full_name: "", bank_name: "", iban: "", note: "" },
     sections: { countdown: true, map: true, memories: true, rsvp: true, gift: true, music: false },
     venue_code: "",
@@ -46,6 +48,10 @@ export default function InvitationCreate() {
   const [mobilePrev, setMobilePrev] = useState(false);
   const [venueInfo, setVenueInfo] = useState(null); // { valid, code_type, discount_percent, venue_name }
   const [venueChecking, setVenueChecking] = useState(false);
+
+  useEffect(() => {
+    if (data.font_family) { try { loadGoogleFont(data.font_family); } catch { /* ignore */ } }
+  }, [data.font_family]);
 
   const checkVenueCode = async () => {
     const code = (data.venue_code || "").trim().toUpperCase();
@@ -312,6 +318,29 @@ export default function InvitationCreate() {
                 </span>
                 <span className="text-xs px-3 py-1.5 rounded-full bg-white/80 text-slate-700 flex items-center gap-1"><Eye className="w-3.5 h-3.5" /> Şablonları Gör</span>
               </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Yazı Tipi (isimler)</Label>
+                <select data-testid="inv-font-family" value={data.font_family || ""} onChange={(e) => set("font_family", e.target.value)}
+                  className="mt-1 w-full h-10 rounded-xl border border-slate-200 px-3 text-sm" style={{ fontFamily: data.font_family ? `'${data.font_family}'` : undefined }}>
+                  <option value="">Tema varsayılanı</option>
+                  {["Great Vibes", "Dancing Script", "Playfair Display", "Cormorant Garamond", "Sacramento", "Parisienne", "Pinyon Script", "Allura", "Tangerine", "Marcellus"].map((f) => (
+                    <option key={f} value={f} style={{ fontFamily: `'${f}'` }}>{f}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label>İsim Boyutu</Label>
+                <select data-testid="inv-name-scale" value={String(data.name_scale || 1)} onChange={(e) => set("name_scale", parseFloat(e.target.value))}
+                  className="mt-1 w-full h-10 rounded-xl border border-slate-200 px-3 text-sm">
+                  <option value="0.85">Küçük</option>
+                  <option value="1">Orta</option>
+                  <option value="1.2">Büyük</option>
+                  <option value="1.4">Çok Büyük</option>
+                </select>
+              </div>
             </div>
 
             <div className="rounded-xl border border-slate-200 p-4 space-y-3">

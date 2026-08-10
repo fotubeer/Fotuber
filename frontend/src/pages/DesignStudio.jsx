@@ -7,7 +7,7 @@ import {
   Type, Heading, Square, Circle as CircleIcon, Minus, Image as ImageIcon,
   UserSquare, Save, Download, LayoutTemplate, Trash2, Copy, ArrowUp, ArrowDown,
   Bold, Italic, AlignLeft, AlignCenter, AlignRight, ArrowLeft, ZoomIn,
-  Sparkles, Loader2, Wand2, Users, ShoppingCart, RefreshCw, Star, Printer,
+  Sparkles, Loader2, Wand2, Users, ShoppingCart, RefreshCw, Star, Printer, Smile, Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,16 @@ import { printImageSheet } from "@/lib/printImage";
 
 const DEFAULT_W = 1080;
 const DEFAULT_H = 1350;
+
+// Categorized symbol/emoji library for the design canvas.
+const SYMBOL_LIBRARY = [
+  { cat: "Kalpler", items: ["❤", "♥", "💕", "💖", "💗", "💘", "💝", "♡", "❥", "💞"] },
+  { cat: "Çiçek & Yaprak", items: ["🌸", "🌷", "🌹", "🌺", "🌼", "💐", "🍃", "🌿", "❀", "✿"] },
+  { cat: "Düğün & Yüzük", items: ["💍", "👰", "🤵", "💒", "🕊", "🥂", "🍾", "🎊", "🎉", "🔔"] },
+  { cat: "Yıldız & Işıltı", items: ["★", "☆", "✦", "✧", "✨", "⭐", "🌟", "❋", "❃", "✩"] },
+  { cat: "Geometrik & Çerçeve", items: ["◆", "◇", "❖", "▲", "△", "●", "○", "⬥", "⟡", "⌘"] },
+  { cat: "Kına & Geleneksel", items: ["🌙", "☾", "☽", "۞", "❁", "☙", "❦", "⚜", "✤", "҂"] },
+];
 
 // input[type=color] needs a 7-char hex; normalize fabric fills (#111, rgb(...)).
 function toHexColor(c) {
@@ -50,6 +60,10 @@ export default function DesignStudio() {
   const [sel, setSel] = useState(null); // active object snapshot
   const [title, setTitle] = useState("İsimsiz Tasarım");
   const [projectId, setProjectId] = useState(null);
+  const [autosavedAt, setAutosavedAt] = useState(null);
+  const [symbolPickerOpen, setSymbolPickerOpen] = useState(false);
+  const dirtyRef = useRef(false);
+  const doSaveRef = useRef(null);
   const [saving, setSaving] = useState(false);
   const [zoomPct, setZoomPct] = useState(100);
   const [tplOpen, setTplOpen] = useState(false);
@@ -152,6 +166,8 @@ export default function DesignStudio() {
     fc.on("selection:created", readSel);
     fc.on("selection:updated", readSel);
     fc.on("selection:cleared", () => setSel(null));
+    ["object:modified", "object:added", "object:removed", "text:changed"].forEach((ev) =>
+      fc.on(ev, () => { dirtyRef.current = true; }));
 
     let cancelled = false;
     Promise.all([
@@ -203,6 +219,17 @@ export default function DesignStudio() {
     else if (kind === "circle") obj = new fabric.Circle({ left: centerLeft(), top: centerTop(), radius: 130, fill: "#8a4b52" });
     else obj = new fabric.Line([0, 0, 360, 0], { left: centerLeft(), top: centerTop() + 80, stroke: "#111", strokeWidth: 6 });
     fc.add(obj); fc.setActiveObject(obj); fc.requestRenderAll(); readSel();
+  };
+
+  const addSymbol = (ch) => {
+    const fc = fcRef.current; if (!fc) return;
+    const tb = new fabric.Textbox(ch, {
+      left: centerLeft() + 160, top: centerTop(), fontSize: 120,
+      fontFamily: "Arial", fill: "#8a4b52", textAlign: "center",
+      width: 160, editable: false,
+    });
+    fc.add(tb); fc.setActiveObject(tb); fc.requestRenderAll(); readSel();
+    setSymbolPickerOpen(false);
   };
 
   const addPersonalize = () => {
@@ -310,9 +337,9 @@ export default function DesignStudio() {
   };
 
   // ---- Save / export ----------------------------------------------------
-  const doSave = async () => {
+  const doSave = async (silent = false) => {
     const fc = fcRef.current; if (!fc) return;
-    setSaving(true);
+    if (!silent) setSaving(true);
     try {
       const json = fc.toJSON();
       const thumb = fc.toDataURL({ format: "png", multiplier: 0.25 });
@@ -329,16 +356,30 @@ export default function DesignStudio() {
         const { data } = await api.post("/design/projects", body);
         setProjectId(data.id);
       }
-      toast.success("Tasarım kaydedildi");
+      if (silent) setAutosavedAt(Date.now());
+      else toast.success("Tasarım kaydedildi");
     } catch (err) {
+      if (silent) return; // autosave stays quiet (e.g. not logged in yet)
       if (err?.response?.status === 401) {
         toast.error("Kaydetmek için üye girişi gerekli");
         navigate("/giris");
       } else toast.error(formatApiError(err, "Kaydedilemedi"));
     } finally {
-      setSaving(false);
+      if (!silent) setSaving(false);
     }
   };
+  doSaveRef.current = doSave;
+
+  // Auto-save every 12s when the canvas is dirty (silent).
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (dirtyRef.current) {
+        dirtyRef.current = false;
+        doSaveRef.current && doSaveRef.current(true);
+      }
+    }, 12000);
+    return () => clearInterval(t);
+  }, []);
 
   const exportPng = () => {
     const fc = fcRef.current; if (!fc) return;
@@ -606,9 +647,14 @@ export default function DesignStudio() {
           <Button data-testid="ds-print-btn" variant="outline" size="sm" className="gap-1.5" onClick={quickPrint}>
             <Printer size={16} /><span className="hidden sm:inline">Hızlı Baskı</span>
           </Button>
-          <Button data-testid="ds-save-btn" size="sm" className="gap-1.5 bg-neutral-900 hover:bg-neutral-800" onClick={doSave} disabled={saving}>
+          <Button data-testid="ds-save-btn" size="sm" className="gap-1.5 bg-neutral-900 hover:bg-neutral-800" onClick={() => doSave(false)} disabled={saving}>
             <Save size={16} />{saving ? "..." : "Kaydet"}
           </Button>
+          {autosavedAt && (
+            <span data-testid="ds-autosave-indicator" className="hidden md:flex items-center gap-1 text-[11px] text-emerald-600">
+              <Check size={12} /> Otomatik kaydedildi
+            </span>
+          )}
         </div>
       </header>
 
@@ -619,12 +665,37 @@ export default function DesignStudio() {
         <Tool testid="ds-add-rect" icon={Square} label="Kutu" onClick={() => addShape("rect")} />
         <Tool testid="ds-add-circle" icon={CircleIcon} label="Daire" onClick={() => addShape("circle")} />
         <Tool testid="ds-add-line" icon={Minus} label="Çizgi" onClick={() => addShape("line")} />
+        <Tool testid="ds-add-symbol" icon={Smile} label="Sembol" onClick={() => setSymbolPickerOpen(true)} accent />
         <Tool testid="ds-add-image" icon={ImageIcon} label="Görsel" onClick={() => fileInputRef.current?.click()} />
         <Tool testid="ds-add-personalize" icon={UserSquare} label="{isim}" onClick={addPersonalize} accent />
         <Tool testid="ds-ai-btn" icon={Sparkles} label="AI Tasarla" onClick={() => openAi(true)} accent />
         <Tool testid="ds-bulk-btn" icon={Users} label="Toplu Üret" onClick={() => setBulkOpen(true)} accent />
         <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={uploadImage} />
       </div>
+
+      {/* Symbol / emoji library */}
+      <Dialog open={symbolPickerOpen} onOpenChange={setSymbolPickerOpen}>
+        <DialogContent className="max-w-lg text-neutral-900 max-h-[85vh] overflow-y-auto" data-testid="ds-symbol-dialog">
+          <DialogHeader><DialogTitle>Sembol & Süsleme Ekle</DialogTitle>
+            <DialogDescription>Bir kategoriden dokunarak tuvale ekleyin; sonra renk ve boyutu değiştirebilirsiniz.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {SYMBOL_LIBRARY.map((g) => (
+              <div key={g.cat}>
+                <div className="text-xs font-semibold text-neutral-500 mb-1.5">{g.cat}</div>
+                <div className="grid grid-cols-8 gap-1.5">
+                  {g.items.map((ch, i) => (
+                    <button key={i} data-testid={`ds-symbol-${g.cat}-${i}`} onClick={() => addSymbol(ch)}
+                      className="h-10 rounded-lg border border-neutral-200 hover:bg-rose-50 hover:border-rose-300 text-xl flex items-center justify-center">
+                      {ch}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* AI Design dialog (Tasarım Hakkı → Nano Banana) */}
       <Dialog open={aiOpen} onOpenChange={openAi}>

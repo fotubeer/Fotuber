@@ -5773,6 +5773,7 @@ def _invite_public(doc: dict, owner: bool = False) -> dict:
         "venue_name": doc.get("venue_name"), "venue_address": doc.get("venue_address"),
         "map_url": doc.get("map_url"), "message": doc.get("message"),
         "theme": doc.get("theme"), "primary_color": doc.get("primary_color"),
+        "font_family": doc.get("font_family") or "", "name_scale": doc.get("name_scale") or 1.0,
         "cover_image_id": doc.get("cover_image_id"), "music_url": doc.get("music_url"),
         "greeting_audio_id": doc.get("greeting_audio_id"),
         "checkin_enabled": bool(doc.get("checkin_enabled")),
@@ -5805,6 +5806,8 @@ class InvitationIn(BaseModel):
     message: Optional[str] = ""
     theme: str = "romantic"
     primary_color: Optional[str] = ""
+    font_family: Optional[str] = ""
+    name_scale: Optional[float] = 1.0
     cover_image_id: Optional[str] = ""
     music_url: Optional[str] = ""
     greeting_audio_id: Optional[str] = ""
@@ -5816,6 +5819,11 @@ class InvitationIn(BaseModel):
     venue_code: Optional[str] = ""
 
 
+class RsvpCompanion(BaseModel):
+    name: str = ""
+    menu: str = "standard"  # standard | vegetarian | child
+
+
 class RsvpIn(BaseModel):
     name: str
     surname: str
@@ -5824,6 +5832,9 @@ class RsvpIn(BaseModel):
     note: Optional[str] = ""
     guest_token: Optional[str] = ""
     rsvp_choice: Optional[str] = ""  # yes | no | maybe
+    menu: Optional[str] = "standard"       # main guest menu
+    needs_transfer: Optional[bool] = False
+    companions: Optional[list[RsvpCompanion]] = None  # extra guests + their menus
 
 
 class MemoryIn(BaseModel):
@@ -6142,6 +6153,7 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
         "map_url": payload.map_url, "message": payload.message,
         "theme": theme,
         "primary_color": payload.primary_color, "cover_image_id": payload.cover_image_id,
+        "font_family": payload.font_family or "", "name_scale": float(payload.name_scale or 1.0),
         "music_url": payload.music_url, "greeting_audio_id": payload.greeting_audio_id,
         "checkin_enabled": bool(payload.checkin_enabled),
         "reveal_style": payload.reveal_style or "",
@@ -6279,11 +6291,21 @@ async def submit_rsvp(slug: str, payload: RsvpIn):
         guest = await db.invitation_guests.find_one({"invitation_id": d["id"], "guest_token": payload.guest_token.strip()})
         if guest:
             side = guest.get("side") or ""
+    _menus = {"standard", "vegetarian", "child"}
+    main_menu = payload.menu if payload.menu in _menus else "standard"
+    companions = []
+    for c in (payload.companions or [])[:30]:
+        nm = (c.name or "").strip()[:80]
+        cm = c.menu if c.menu in _menus else "standard"
+        if nm:
+            companions.append({"name": nm, "menu": cm})
     rec = {
         "id": new_id(), "invitation_id": d["id"], "name": payload.name.strip(),
         "surname": payload.surname.strip(), "attending": attending, "rsvp_choice": choice,
         "guest_count": max(1, int(payload.guest_count or 1)) if attending else 0, "note": (payload.note or "").strip(),
         "side": side, "guest_id": guest.get("id") if guest else None,
+        "menu": main_menu, "needs_transfer": bool(payload.needs_transfer) if attending else False,
+        "companions": companions,
         "checkin_token": token, "checked_in": False, "checked_in_at": None,
         "created_at": now_iso(),
     }
@@ -6342,12 +6364,26 @@ async def invitation_report(iid: str, user: dict = Depends(get_current_user)):
         return {"attending": len(sy), "declined": len(sn), "maybe": len(sm),
                 "guests": sum(int(r.get("guest_count") or 1) for r in sy)}
     guest_count = await db.invitation_guests.count_documents({"invitation_id": iid})
+    # Menu / transfer aggregation across attending guests (main + companions)
+    menu_counts = {"standard": 0, "vegetarian": 0, "child": 0}
+    transfer_count = 0
+    for r in yes:
+        mm = r.get("menu") or "standard"
+        if mm in menu_counts:
+            menu_counts[mm] += 1
+        for c in (r.get("companions") or []):
+            cm = c.get("menu") or "standard"
+            if cm in menu_counts:
+                menu_counts[cm] += 1
+        if r.get("needs_transfer"):
+            transfer_count += 1
     return {
         "invitation": _invite_public(d, owner=True),
         "rsvps": rsvps, "memories": memories,
         "stats": {"rsvp_total": len(rsvps), "attending": len(yes), "declined": len(no), "maybe": len(maybe),
                   "total_guests": heads, "memories": len(memories), "checked_in": checked,
                   "guest_list_total": guest_count,
+                  "menu": menu_counts, "transfer": transfer_count,
                   "by_side": {"gelin": _side("gelin"), "damat": _side("damat")}},
     }
 
@@ -6361,10 +6397,14 @@ async def invitation_report_csv(iid: str, user: dict = Depends(get_current_user)
         raise HTTPException(status_code=404, detail="Davetiye bulunamadı")
     rsvps = await db.invitation_rsvps.find({"invitation_id": iid}, {"_id": 0}).sort("created_at", -1).to_list(length=100000)
     buf = io.StringIO(); w = csv.writer(buf)
-    w.writerow(["Ad", "Soyad", "Katılım", "Kişi Sayısı", "Not", "Tarih"])
+    _ml = {"standard": "Standart", "vegetarian": "Vejetaryen", "child": "Çocuk"}
+    w.writerow(["Ad", "Soyad", "Katılım", "Kişi Sayısı", "Menü", "Transfer", "Refakatçiler", "Not", "Tarih"])
     for r in rsvps:
+        comps = "; ".join(f"{c.get('name')} ({_ml.get(c.get('menu'), 'Standart')})" for c in (r.get("companions") or []))
         w.writerow([r.get("name"), r.get("surname"), "Geliyor" if r.get("attending") else "Gelemiyor",
-                    r.get("guest_count"), r.get("note"), (r.get("created_at") or "")[:16]])
+                    r.get("guest_count"), _ml.get(r.get("menu"), "Standart"),
+                    "Evet" if r.get("needs_transfer") else "Hayır", comps,
+                    r.get("note"), (r.get("created_at") or "")[:16]])
     buf.seek(0)
     return StreamingResponse(iter(["\ufeff" + buf.getvalue()]), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": f"attachment; filename=davetiye_{d.get('slug')}.csv"})
