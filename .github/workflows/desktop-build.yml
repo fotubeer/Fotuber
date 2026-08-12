@@ -44,7 +44,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: desktop
-        run: yarn install --frozen-lockfile
+        run: yarn install --network-timeout 600000
 
       - name: Build installer
         working-directory: desktop
