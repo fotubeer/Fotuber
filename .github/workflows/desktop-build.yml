@@ -1,8 +1,7 @@
 name: Desktop Build (Windows & macOS)
 
-# Fotuber Stüdyo masaüstü uygulamasını (desktop/) Windows .exe ve macOS .dmg olarak derler.
-# Kod GitHub'a gönderildiğinde otomatik çalışır; ayrıca elle de tetiklenebilir.
-# Üretilen kurulum dosyaları "Artifacts" olarak indirilebilir (Actions çalışması sayfasında).
+# Fotuber Stüdyo masaüstü uygulamasını (desktop/) Windows .exe ve macOS .dmg olarak derler
+# ve otomatik olarak "desktop-latest" adlı bir GitHub Release'e yükler (herkese açık indirme linki).
 
 on:
   push:
@@ -15,6 +14,9 @@ on:
         description: "Uygulamanın açacağı adres (boş bırakılırsa config.js varsayılanı kullanılır)"
         required: false
         default: ""
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -48,11 +50,8 @@ jobs:
 
       - name: Build installer
         working-directory: desktop
-        # FOTUBER_APP_URL: repo secret'ından ya da elle tetiklemede girilen değerden gelir;
-        # boşsa config.js içindeki DEFAULT_APP_URL kullanılır.
         env:
           FOTUBER_APP_URL: ${{ github.event.inputs.app_url != '' && github.event.inputs.app_url || secrets.FOTUBER_APP_URL }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: yarn ${{ matrix.script }}
 
       - name: Upload artifact
@@ -62,3 +61,29 @@ jobs:
           path: ${{ matrix.pattern }}
           if-no-files-found: error
           retention-days: 30
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: List files
+        run: find dist -type f
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-latest
+          name: Fotuber Stüdyo (Masaüstü)
+          body: |
+            Fotuber Stüdyo masaüstü uygulaması — en güncel derleme.
+            Windows: fotuber-studio-*.exe · macOS: fotuber-studio-*.dmg
+          files: |
+            dist/**/*.exe
+            dist/**/*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

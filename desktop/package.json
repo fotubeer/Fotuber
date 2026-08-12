@@ -20,6 +20,7 @@
   "build": {
     "appId": "tr.com.fotuber.studio",
     "productName": "Fotuber Stüdyo",
+    "artifactName": "fotuber-studio-${version}-${arch}.${ext}",
     "publish": [
       {
         "provider": "generic",
