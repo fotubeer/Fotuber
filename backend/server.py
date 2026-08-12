@@ -26,6 +26,7 @@ from fastapi import (
 )
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import Response as StarletteResponse
+from starlette.responses import HTMLResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 
@@ -7026,6 +7027,71 @@ async def import_token_guests(token: str, payload: GuestBulkIn):
         raise HTTPException(status_code=410, detail="Bağlantı süresi doldu")
     n = await _add_guests(d["id"], payload.side or "", [g.dict() for g in (payload.guests or [])])
     return {"ok": True, "added": n}
+
+
+# ---------------------------------------------------------------------------
+# Faz 2: Dijital teslimat — PUBLIC QR indirme (auth yok). Müşteri telefonundan açar.
+# ---------------------------------------------------------------------------
+async def _get_active_delivery(token: str):
+    doc = await db.vesikalik_deliveries.find_one({"token": token, "is_deleted": False}, {"_id": 0})
+    if not doc:
+        return None, "not_found"
+    if (doc.get("expires_at") or "") < now_iso():
+        return doc, "expired"
+    return doc, "ok"
+
+
+def _delivery_html(body: str) -> str:
+    return f"""<!doctype html><html lang="tr"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Fotuber — Fotoğraf İndir</title>
+<style>
+  :root {{ color-scheme: dark; }}
+  * {{ box-sizing: border-box; }}
+  body {{ margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:#0a0a0a; color:#fff; min-height:100vh; display:grid; place-items:center; padding:20px; }}
+  .card {{ width:100%; max-width:420px; background:#141414; border:1px solid #262626; border-radius:20px; padding:24px; text-align:center; }}
+  .brand {{ font-size:13px; color:#f59e0b; font-weight:600; letter-spacing:.02em; }}
+  img.preview {{ width:100%; max-width:300px; border-radius:12px; border:1px solid #262626; margin:16px auto; display:block; background:#fff; }}
+  a.btn {{ display:block; background:#f59e0b; color:#111; text-decoration:none; font-weight:700; padding:14px; border-radius:12px; margin-top:8px; }}
+  a.btn:active {{ opacity:.85; }}
+  .note {{ font-size:12px; color:#8a8a8a; margin-top:14px; line-height:1.5; }}
+  .expired {{ color:#f87171; font-weight:600; }}
+</style></head><body><div class="card">{body}</div></body></html>"""
+
+
+@api_router.get("/v/{token}")
+async def delivery_page(token: str):
+    doc, st = await _get_active_delivery(token)
+    if st == "not_found":
+        return HTMLResponse(_delivery_html('<div class="brand">FOTUBER</div><p class="expired">Bağlantı bulunamadı.</p>'), status_code=404)
+    if st == "expired":
+        return HTMLResponse(_delivery_html('<div class="brand">FOTUBER</div><p class="expired">Bu indirme bağlantısının süresi doldu (24 saat).</p><p class="note">Lütfen fotoğrafçınızdan yeni bir bağlantı isteyin.</p>'), status_code=410)
+    brand = doc.get("brand_name") or "Fotuber"
+    label = doc.get("spec_label") or "Vesikalık / Biyometrik"
+    body = (
+        f'<div class="brand">{brand}</div>'
+        f'<img class="preview" src="/api/v/{token}/file?inline=1" alt="Fotoğraf"/>'
+        f'<a class="btn" href="/api/v/{token}/file" download>📥 Fotoğrafı İndir</a>'
+        f'<p class="note">{label}<br/>Yüksek çözünürlüklü dijital fotoğrafınız. Bağlantı 24 saat geçerlidir.</p>'
+    )
+    return HTMLResponse(_delivery_html(body), headers={"Cache-Control": "no-store"})
+
+
+@api_router.get("/v/{token}/file")
+async def delivery_file(token: str, inline: int = 0):
+    doc, st = await _get_active_delivery(token)
+    if st != "ok":
+        raise HTTPException(status_code=410 if st == "expired" else 404, detail="Bağlantı geçersiz")
+    try:
+        data, ct = await asyncio.to_thread(get_object, doc["storage_path"])
+    except Exception:
+        raise HTTPException(status_code=502, detail="Dosya alınamadı")
+    if not inline:
+        await db.vesikalik_deliveries.update_one({"token": token}, {"$inc": {"downloads": 1}})
+    fname = f"{doc.get('code') or 'fotograf'}.png"
+    disp = "inline" if inline else f'attachment; filename="{fname}"'
+    return Response(content=data, media_type=doc.get("content_type") or ct or "image/png",
+                    headers={"Content-Disposition": disp, "Cache-Control": "private, max-age=3600"})
 
 
 # Register the router

@@ -671,3 +671,10 @@ Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay
 - FAZ 3: ICAO yüz/kalite kontrolü (yüz oranı %70-80, göz/bakış, gölge; yeşil onay/rozet).
 - FAZ 4: Stüdyo CRM arşivi (ad/telefon kayıt + hızlı arama + yeniden baskı/QR; 6 ay arşiv).
 - FAZ 5: Askeri rütbeli kıyafet AI giydirme (admin üniforma yükleme + Nano Banana kafa birleştirme; tasarım hakkından düşer).
+
+## Session AQ (12 Haz 2026) — FAZ 2: Dijital Teslimat + QR (yalnızca tekli foto) + maxKB düzeltmesi
+- **maxKB düzeltmesi**: ≤100KB sınırı ARTIK sadece askeri kimlik ebatlarında. Diğer tüm ebatlarda `Dijital İndir` tam kalite PNG (sıkıştırmasız). (Kullanıcı isteği.)
+- **QR Teslimat (yalnızca tekli)**: `POST /api/studio/vesikalik/deliver` (studio Bearer VEYA admin access_token cookie) → tekli PNG'yi Object Storage'a (`fotuber/vesikalik/{studio_id}/{uuid}.png`) yükler; `db.vesikalik_deliveries` (token, 24h expires_at, 182g archive_until, client_name/phone/spec_label). Public: `GET /api/v/{token}` (HTML önizleme + indir, no-store), `GET /api/v/{token}/file` (bytes; ?inline=1 önizleme). Süre dolunca 410.
+- **Frontend**: `AdminPassportPhoto.jsx` — `QR ile Teslim Et` butonu → qrcode.react QR modalı (qr-canvas, qr-url, kopyala, 24s notu). Object Storage server.py'deki mevcut put_object/get_object (deps) ile.
+- **Test**: backend curl (deliver/page/file 200) + testing_agent iter_53 → %100 (8/8): QR modal, public link auth'suz çözülüyor, maxKB askeri-only, dijital-only'de baskı butonları disabled, kombin+hızlı baskı regresyon temiz.
+- **Sıradaki**: Üniforma Kütüphanesi (admin yükle+onay, fotoğrafçı PNG+PSD öner→admin onay→herkese açık; PSD=Photoshop indirme, PNG=önizleme+Faz5 AI katmanı). Sonra Faz 3 (ICAO), Faz 4 (CRM), Faz 5-B (AI kafa birleştirme).

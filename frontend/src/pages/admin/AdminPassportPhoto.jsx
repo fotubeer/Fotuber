@@ -5,13 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn, ZoomOut, Sparkles, ScanFace, Loader2, Eraser, Paintbrush, Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn, ZoomOut, Sparkles, ScanFace, Loader2, Eraser, Paintbrush, Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, QrCode, X, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { PHOTO_SPECS, PAPER_SIZES, suggestPaper, COUNT_PRESETS } from "@/lib/passportSpecs";
 import { printImageSheet } from "@/lib/printImage";
 import { loadCustomSpecs, saveCustomSpec, deleteCustomSpec, canvasToJpegMaxKb, exportExactPx, drawComboSheet } from "@/lib/passportLayout";
 import { detectBiometricCrop, loadFaceModels } from "@/lib/faceDetect";
 import { removeBackground, compositeOnColor } from "@/lib/bgRemove";
+import { QRCodeCanvas } from "qrcode.react";
 import RetouchBrush from "@/components/RetouchBrush";
 import PhotoStudio from "@/components/PhotoStudio";
 
@@ -728,15 +729,69 @@ const AdminPassportPhoto = ({ injected } = {}) => {
     drawSingle();
     const src = singleCanvasRef.current;
     let dataUrl;
-    if (spec?.exactPx) dataUrl = exportExactPx(src, spec.exactPx, spec.maxKb || 100);
-    else dataUrl = canvasToJpegMaxKb(src, spec?.maxKb || 200);
+    let ext = "jpg";
+    if (spec?.exactPx) {
+      // Askeri dijital: tam piksel + ≤100 KB.
+      dataUrl = exportExactPx(src, spec.exactPx, spec.maxKb || 100);
+    } else if (spec?.maxKb) {
+      // Askeri baskı ebatı (2.5×3.2): ≤100 KB.
+      dataUrl = canvasToJpegMaxKb(src, spec.maxKb);
+    } else {
+      // Diğer TÜM ebatlar: sıkıştırmasız, en yüksek kalite/boyut (PNG).
+      dataUrl = src.toDataURL("image/png");
+      ext = "png";
+    }
     const a = document.createElement("a");
-    a.href = dataUrl; a.download = `${code}_dijital.jpg`; a.click();
+    a.href = dataUrl; a.download = `${code}_dijital.${ext}`; a.click();
     await saveToArchive();
-    toast.success(spec?.exactPx ? `Dijital indirildi (${spec.exactPx.w}×${spec.exactPx.h}px)` : "Dijital indirildi");
+    toast.success(
+      spec?.exactPx ? `Dijital indirildi (${spec.exactPx.w}×${spec.exactPx.h}px · ≤${spec.maxKb || 100}KB)`
+        : spec?.maxKb ? `Dijital indirildi (≤${spec.maxKb}KB)`
+        : "Dijital indirildi (tam kalite PNG)"
+    );
   };
 
-  // ---- Faz 1: Kombin (AutoLayout) baskı ------------------------------------
+  // ---- Faz 2: QR ile dijital teslimat (YALNIZCA tekli fotoğraf) -----------
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrUrl, setQrUrl] = useState("");
+  const [qrExpires, setQrExpires] = useState("");
+  const [delivering, setDelivering] = useState(false);
+  const [qrForm, setQrForm] = useState({ name: "", phone: "" });
+
+  const qrDeliver = async () => {
+    if (!image || !singleCanvasRef.current) { toast.error("Önce fotoğraf yükleyin"); return; }
+    setDelivering(true);
+    try {
+      drawSingle();
+      const src = singleCanvasRef.current;
+      // Tekli fotoğrafı yüksek çözünürlüklü PNG olarak gönder.
+      const dataUrl = src.toDataURL("image/png");
+      const st = localStorage.getItem("fotuber_studio_token");
+      const headers = { "Content-Type": "application/json" };
+      if (st) headers["Authorization"] = `Bearer ${st}`;
+      const resp = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/studio/vesikalik/deliver`, {
+        method: "POST", credentials: "include", headers,
+        body: JSON.stringify({ image_b64: dataUrl, client_name: qrForm.name, phone: qrForm.phone, spec_label: spec?.label, code }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || "Teslimat başarısız");
+      }
+      const data = await resp.json();
+      setQrUrl(`${process.env.REACT_APP_BACKEND_URL}${data.path}`);
+      setQrExpires(data.expires_at);
+      setQrOpen(true);
+      await saveToArchive();
+    } catch (e) {
+      toast.error(e.message || "QR teslimat başarısız");
+    } finally {
+      setDelivering(false);
+    }
+  };
+
+  const copyQrUrl = () => { navigator.clipboard?.writeText(qrUrl); toast.success("Bağlantı kopyalandı"); };
+
+
   const addComboItem = () => setComboItems((it) => [...it, { specCode: specCode, count: 1 }]);
   const updateComboItem = (i, patch) => setComboItems((it) => it.map((x, idx) => idx === i ? { ...x, ...patch } : x));
   const removeComboItem = (i) => setComboItems((it) => it.filter((_, idx) => idx !== i));
@@ -878,6 +933,7 @@ const AdminPassportPhoto = ({ injected } = {}) => {
                 </Button>
                 <Button onClick={downloadSingle} disabled={bgProcessing} className="bg-slate-900 hover:bg-slate-800" data-testid="download-single-btn"><Download className="w-4 h-4 mr-2" />Tekli İndir</Button>
                 <Button onClick={digitalDownload} disabled={bgProcessing || !image} className="bg-indigo-600 hover:bg-indigo-700" data-testid="digital-download-btn"><Download className="w-4 h-4 mr-2" />Dijital İndir{spec?.exactPx ? ` (${spec.exactPx.w}×${spec.exactPx.h}px)` : spec?.maxKb ? ` (≤${spec.maxKb}KB)` : ""}</Button>
+                <Button onClick={qrDeliver} disabled={bgProcessing || !image || delivering} className="bg-fuchsia-600 hover:bg-fuchsia-700" data-testid="qr-deliver-btn">{delivering ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <QrCode className="w-4 h-4 mr-2" />}QR ile Teslim Et</Button>
                 <Button onClick={downloadSheet} disabled={bgProcessing || spec?.digitalOnly} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40" data-testid="download-sheet-btn"><Printer className="w-4 h-4 mr-2" />Baskıya Hazır İndir</Button>
                 <Button onClick={quickPrint} disabled={bgProcessing || spec?.digitalOnly} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40" data-testid="quick-print-btn"><Printer className="w-4 h-4 mr-2" />Hızlı Baskı</Button>
               </div>
@@ -1219,6 +1275,28 @@ const AdminPassportPhoto = ({ injected } = {}) => {
         color={spec?.bg || "#ffffff"}
         onApply={applyRetouch}
       />
+
+      {qrOpen && (
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm grid place-items-center p-4" data-testid="qr-modal" onClick={() => setQrOpen(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm text-center relative" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setQrOpen(false)} data-testid="qr-close" className="absolute top-3 right-3 text-slate-400 hover:text-slate-700"><X className="w-5 h-5" /></button>
+            <div className="text-xs font-semibold text-fuchsia-600 tracking-wide">DİJİTAL TESLİMAT</div>
+            <h3 className="text-lg font-bold text-slate-900 mt-1">QR ile Fotoğrafı Ver</h3>
+            <p className="text-xs text-slate-500 mt-1">Müşteri telefon kamerasıyla okutup yüksek çözünürlüklü fotoğrafını indirsin.</p>
+            <div className="my-4 flex justify-center">
+              <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-sm">
+                <QRCodeCanvas value={qrUrl} size={200} level="M" includeMargin data-testid="qr-canvas" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5">
+              <span className="text-[11px] text-slate-600 truncate flex-1 text-left" data-testid="qr-url">{qrUrl}</span>
+              <button onClick={copyQrUrl} data-testid="qr-copy" className="text-slate-500 hover:text-fuchsia-600 shrink-0"><Copy className="w-4 h-4" /></button>
+            </div>
+            <p className="text-[11px] text-amber-600 mt-3">⏱️ Bu bağlantı 24 saat geçerlidir.</p>
+            <a href={qrUrl} target="_blank" rel="noreferrer" data-testid="qr-open-link" className="inline-block mt-2 text-xs text-blue-600 hover:underline">Bağlantıyı aç / önizle</a>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

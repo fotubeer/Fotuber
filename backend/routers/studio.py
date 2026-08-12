@@ -1064,4 +1064,50 @@ def get_router(db, deps):
         await db.design_ai_favorites.delete_one({"studio_id": acc["id"], "asset_id": asset_id})
         return {"ok": True}
 
+    # ---- Faz 2: Dijital teslimat (QR) — YALNIZCA tekli fotoğraf --------------
+    class DeliverIn(BaseModel):
+        image_b64: str
+        client_name: Optional[str] = None
+        phone: Optional[str] = None
+        spec_label: Optional[str] = None
+        code: Optional[str] = None
+
+    @router.post("/vesikalik/deliver")
+    async def vesikalik_deliver(payload: DeliverIn, acc: dict = Depends(get_current_studio)):
+        import uuid as _uuid
+        put_object = deps["put_object"]
+        raw = payload.image_b64 or ""
+        if "," in raw and raw.strip().startswith("data:"):
+            raw = raw.split(",", 1)[1]
+        try:
+            data = _b64lib.b64decode(raw)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Görsel çözümlenemedi")
+        if not data:
+            raise HTTPException(status_code=400, detail="Boş görsel")
+        did = str(_uuid.uuid4())
+        token = secrets.token_urlsafe(9)
+        storage_path = f"{'fotuber'}/vesikalik/{acc['id']}/{did}.png"
+        try:
+            result = await asyncio.to_thread(put_object, storage_path, data, "image/png")
+        except Exception as e:
+            _log.error(f"deliver upload failed: {e}")
+            raise HTTPException(status_code=502, detail="Depolamaya yüklenemedi, tekrar deneyin")
+        now = datetime.now(timezone.utc)
+        doc = {
+            "id": did, "token": token, "studio_id": acc["id"],
+            "storage_path": result.get("path", storage_path), "content_type": "image/png",
+            "size": result.get("size", len(data)),
+            "client_name": (payload.client_name or "").strip() or None,
+            "phone": (payload.phone or "").strip() or None,
+            "spec_label": payload.spec_label, "code": payload.code,
+            "brand_name": acc.get("brand_name") or acc.get("firma_adi") or "Fotuber",
+            "created_at": now.isoformat(),
+            "expires_at": (now + timedelta(hours=24)).isoformat(),
+            "archive_until": (now + timedelta(days=182)).isoformat(),
+            "downloads": 0, "is_deleted": False,
+        }
+        await db.vesikalik_deliveries.insert_one(doc)
+        return {"token": token, "path": f"/api/v/{token}", "expires_at": doc["expires_at"]}
+
     return router
