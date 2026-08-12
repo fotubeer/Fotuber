@@ -1,12 +1,20 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useLocation } from "react-router-dom";
-import { MessageCircle, X, Minus, Send, Paperclip, Image as ImageIcon, Mic, Smile, FileText, Square } from "lucide-react";
+import { MessageCircle, X, Minus, Send, Paperclip, Image as ImageIcon, Mic, Smile, FileText, Square, Trash2 } from "lucide-react";
 import { studioApi } from "@/lib/studioApi";
 
 const BE = process.env.REACT_APP_BACKEND_URL;
 const EMOJIS = ["😀","😂","😍","👍","🙏","🎉","❤️","🔥","👏","😢","😮","😎","🥳","💐","📸","✅","⏰","💬"];
 let _actx = null;
 const beep = () => { try { _actx = _actx || new (window.AudioContext || window.webkitAudioContext)(); const a = _actx; const o = a.createOscillator(); const g = a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.value = 660; g.gain.value = 0.05; o.start(); o.stop(a.currentTime + 0.15); } catch {} };
+const fmtSecs = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+// iOS Safari doesn't support audio/webm; pick the first supported mime.
+const pickAudioMime = () => {
+  const cands = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/aac", "audio/ogg"];
+  if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) return "";
+  return cands.find((c) => MediaRecorder.isTypeSupported(c)) || "";
+};
+const mimeExt = (mime) => (mime.includes("mp4") || mime.includes("aac") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm");
 
 export default function StudioChatWidget() {
   const loc = useLocation();
@@ -18,8 +26,13 @@ export default function StudioChatWidget() {
   const [text, setText] = useState("");
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [recSecs, setRecSecs] = useState(0);
+  const [preview, setPreview] = useState(null); // {url, file, secs}
   const lastCount = useRef(0);
   const recRef = useRef(null);
+  const streamRef = useRef(null);
+  const timerRef = useRef(null);
+  const canceledRef = useRef(false);
   const fileRef = useRef(null);
   const scrollRef = useRef(null);
   const bodyRef = useRef(null);
@@ -77,23 +90,61 @@ export default function StudioChatWidget() {
     if (f) sendFile(f, f.type.startsWith("image/") ? "image" : "file");
   };
 
-  const toggleRec = async () => {
-    if (recording) { recRef.current?.stop(); return; }
+  const stopTimer = () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
+
+  const startRec = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) { alert("Tarayıcınız ses kaydını desteklemiyor"); return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream);
+      streamRef.current = stream;
+      const mime = pickAudioMime();
+      const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
       const chunks = [];
-      mr.ondataavailable = (ev) => chunks.push(ev.data);
+      mr.ondataavailable = (ev) => { if (ev.data && ev.data.size) chunks.push(ev.data); };
       mr.onstop = () => {
+        stopTimer();
         stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(chunks, { type: "audio/webm" });
-        const file = new File([blob], `ses-${Date.now()}.webm`, { type: "audio/webm" });
-        sendFile(file, "audio");
+        streamRef.current = null;
+        if (canceledRef.current) { canceledRef.current = false; setRecording(false); setRecSecs(0); return; }
+        const type = mr.mimeType || mime || "audio/webm";
+        const blob = new Blob(chunks, { type });
+        const file = new File([blob], `ses-${Date.now()}.${mimeExt(type)}`, { type });
+        const url = URL.createObjectURL(blob);
+        setRecSecs((s) => { setPreview({ url, file, secs: s }); return 0; });
         setRecording(false);
       };
-      recRef.current = mr; mr.start(); setRecording(true);
+      recRef.current = mr;
+      mr.start();
+      canceledRef.current = false;
+      setRecSecs(0);
+      setRecording(true);
+      timerRef.current = setInterval(() => setRecSecs((s) => {
+        if (s >= 300) { recRef.current?.stop(); return s; } // 5 dk güvenlik limiti
+        return s + 1;
+      }), 1000);
     } catch { alert("Mikrofon izni gerekli"); }
   };
+
+  const stopRec = () => { try { recRef.current?.stop(); } catch {} };
+  const cancelRec = () => {
+    stopTimer();
+    canceledRef.current = true;
+    try {
+      if (recRef.current && recRef.current.state !== "inactive") recRef.current.stop();
+    } catch {}
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setRecording(false); setRecSecs(0);
+  };
+  const discardPreview = () => { if (preview?.url) URL.revokeObjectURL(preview.url); setPreview(null); };
+  const sendPreview = () => {
+    if (!preview) return;
+    sendFile(preview.file, "audio");
+    URL.revokeObjectURL(preview.url);
+    setPreview(null);
+  };
+
+  useEffect(() => () => { stopTimer(); streamRef.current?.getTracks().forEach((t) => t.stop()); }, []);
 
   if (!onStudio || !enabled) return null;
 
@@ -132,15 +183,32 @@ export default function StudioChatWidget() {
               {EMOJIS.map((e) => <button key={e} onClick={() => setText((t) => t + e)} className="text-lg hover:scale-125 transition-transform">{e}</button>)}
             </div>
           )}
-          <div className="flex items-center gap-1 px-2 py-2 bg-neutral-800 border-t border-white/10">
-            <button data-testid="chat-emoji-btn" onClick={() => setEmojiOpen((v) => !v)} className="w-8 h-8 grid place-items-center text-white/60 hover:text-amber-400"><Smile className="w-5 h-5" /></button>
-            <button data-testid="chat-file-btn" onClick={() => fileRef.current?.click()} className="w-8 h-8 grid place-items-center text-white/60 hover:text-amber-400"><Paperclip className="w-5 h-5" /></button>
-            <button data-testid="chat-mic-btn" onClick={toggleRec} className={`w-8 h-8 grid place-items-center ${recording ? "text-red-500 animate-pulse" : "text-white/60 hover:text-amber-400"}`}>{recording ? <Square className="w-4 h-4" /> : <Mic className="w-5 h-5" />}</button>
-            <input ref={fileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" hidden onChange={onFile} />
-            <input data-testid="chat-input" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendText(); } }}
-              placeholder="Mesaj yaz…" className="flex-1 bg-neutral-900 text-white text-sm rounded-full px-3 h-9 outline-none border border-white/10 focus:border-amber-500" />
-            <button data-testid="chat-send-btn" onClick={sendText} className="w-9 h-9 grid place-items-center rounded-full bg-amber-500 hover:bg-amber-600 text-neutral-900"><Send className="w-4 h-4" /></button>
-          </div>
+          {preview ? (
+            <div data-testid="chat-audio-preview" className="flex items-center gap-2 px-2 py-2 bg-neutral-800 border-t border-white/10">
+              <button data-testid="chat-audio-discard" onClick={discardPreview} title="Sil" className="w-9 h-9 shrink-0 grid place-items-center rounded-full text-red-400 hover:bg-red-500/15"><Trash2 className="w-4 h-4" /></button>
+              <audio data-testid="chat-audio-preview-player" controls src={preview.url} className="flex-1 h-9 min-w-0" />
+              <span className="text-[11px] tabular-nums text-white/50 shrink-0">{fmtSecs(preview.secs)}</span>
+              <button data-testid="chat-audio-send" onClick={sendPreview} title="Gönder" className="w-9 h-9 shrink-0 grid place-items-center rounded-full bg-amber-500 hover:bg-amber-600 text-neutral-900"><Send className="w-4 h-4" /></button>
+            </div>
+          ) : recording ? (
+            <div data-testid="chat-recording-bar" className="flex items-center gap-2 px-3 py-2.5 bg-neutral-800 border-t border-white/10">
+              <button data-testid="chat-rec-cancel" onClick={cancelRec} title="İptal" className="w-9 h-9 shrink-0 grid place-items-center rounded-full text-white/60 hover:text-red-400 hover:bg-white/5"><X className="w-4 h-4" /></button>
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+              <span data-testid="chat-rec-timer" className="text-sm tabular-nums text-white/80 font-medium">{fmtSecs(recSecs)}</span>
+              <span className="text-xs text-white/40 truncate">Kaydediliyor…</span>
+              <button data-testid="chat-rec-stop" onClick={stopRec} title="Durdur" className="ml-auto w-9 h-9 shrink-0 grid place-items-center rounded-full bg-amber-500 hover:bg-amber-600 text-neutral-900"><Square className="w-4 h-4" /></button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 px-2 py-2 bg-neutral-800 border-t border-white/10">
+              <button data-testid="chat-emoji-btn" onClick={() => setEmojiOpen((v) => !v)} className="w-8 h-8 grid place-items-center text-white/60 hover:text-amber-400"><Smile className="w-5 h-5" /></button>
+              <button data-testid="chat-file-btn" onClick={() => fileRef.current?.click()} className="w-8 h-8 grid place-items-center text-white/60 hover:text-amber-400"><Paperclip className="w-5 h-5" /></button>
+              <button data-testid="chat-mic-btn" onClick={startRec} className="w-8 h-8 grid place-items-center text-white/60 hover:text-amber-400"><Mic className="w-5 h-5" /></button>
+              <input ref={fileRef} type="file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" hidden onChange={onFile} />
+              <input data-testid="chat-input" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendText(); } }}
+                placeholder="Mesaj yaz…" className="flex-1 min-w-0 bg-neutral-900 text-white text-sm rounded-full px-3 h-9 outline-none border border-white/10 focus:border-amber-500" />
+              <button data-testid="chat-send-btn" onClick={sendText} className="w-9 h-9 shrink-0 grid place-items-center rounded-full bg-amber-500 hover:bg-amber-600 text-neutral-900"><Send className="w-4 h-4" /></button>
+            </div>
+          )}
         </div>
       )}
     </div>

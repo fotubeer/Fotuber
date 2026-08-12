@@ -1,0 +1,18 @@
+{
+  "summary": "RETEST of StudioChatWidget voice-message UX after canceledRef fix in cancelRec/onstop. Logged in via /api/studio/login (page.request) as studio1@test.com, injected token into localStorage 'fotuber_studio_token', opened floating chat via chat-open-btn on /studyo/panel. Injected fake AudioContext MediaStream via addInitScript so getUserMedia/MediaRecorder work headlessly. ALL 7 assertions passed: (1) chat-rec-timer increments 0:00 -> 0:01 -> 0:02; (2) RETEST FIX — click chat-rec-cancel while recording removes chat-recording-bar, does NOT create chat-audio-preview, and returns to normal chat-input bar; (3) chat-rec-stop shows chat-audio-preview with player+send+discard, not auto-sent; (4) chat-audio-send posts audio (appears as <audio> in message list, count>=1), preview closes, input returns; (5) chat-audio-discard closes preview without adding a message; (6) chat-input + chat-send-btn text send works — unique message text found in list; (7) mobile 390x844: documentElement.scrollWidth==390, chat-recording-bar and chat-audio-preview both fit within viewport (right edge 373 <= 390), send/discard buttons visible & tappable. Cancel-while-recording bug from iteration_48 is FIXED.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "canceledRef pattern in StudioChatWidget.jsx (onstop early-return when canceledRef.current===true, cancelRec sets it before mr.stop()) is correct and race-free. Consider extracting recording state into a small useReducer if more edge cases (pause/resume) get added later."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "studio1@test.com / Test1234 (studio gold). Login via POST /api/studio/login, token stored in localStorage['fotuber_studio_token'].",
+  "seed_data_creation": "One TEST audio message + one TEST text message ('TEST voice-ux text <ts>') posted to /api/studio/chat during send tests. No cleanup performed (matches previous iterations).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Voice-message flow (timer + cancel + stop→preview + send + discard + text-send + mobile 390 no-overflow) fully green. To reproduce headlessly: grant_permissions(['microphone']) + addInitScript that patches navigator.mediaDevices.getUserMedia to return a MediaStreamDestination stream from AudioContext (see script). Login via page.request.post (urllib gets 403 from CDN).",
+  "rca of the issue": "Previously (iter 48) MediaRecorder.onstop unconditionally called setPreview, so cancelRec's setRecording(false) was overwritten. Fix (present in current StudioChatWidget.jsx L104-113/L129-131): canceledRef useRef(false); cancelRec sets canceledRef.current=true then recRef.current.stop(); onstop first checks if (canceledRef.current) { reset flag; setRecording(false); setRecSecs(0); return; } — verified by test 2 (preview count=0 after cancel)."
+}
