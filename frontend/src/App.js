@@ -72,6 +72,7 @@ import AdminMemberships from "@/pages/admin/AdminMemberships";
 import AdminDesignRights from "@/pages/admin/AdminDesignRights";
 import AdminNotifications from "@/pages/admin/AdminNotifications";
 import AdminAdBanners from "@/pages/admin/AdminAdBanners";
+import AdminDesktopApp from "@/pages/admin/AdminDesktopApp";
 import AdminStudioPlans from "@/pages/admin/AdminStudioPlans";
 import AdminMemoryWall from "@/pages/admin/AdminMemoryWall";
 import AdminSitePricing from "@/pages/admin/AdminSitePricing";
@@ -188,6 +189,7 @@ function App() {
               <Route path="/admin/gmail" element={<AdminGuard><AdminInbox /></AdminGuard>} />
               <Route path="/admin/bildirimler" element={<AdminGuard><AdminNotifications /></AdminGuard>} />
               <Route path="/admin/reklamlar" element={<AdminGuard><AdminAdBanners /></AdminGuard>} />
+              <Route path="/admin/masaustu" element={<AdminGuard><AdminDesktopApp /></AdminGuard>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

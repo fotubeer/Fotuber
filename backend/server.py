@@ -1492,6 +1492,36 @@ class AdBannerUpdate(BaseModel):
     orientation: str = "horizontal"   # horizontal (yatay/dikdörtgen) | vertical (dikey)
     active: bool = True
     sort: int = 0
+    starts_at: str = ""                # YYYY-MM-DD (boş = hemen başla)
+    ends_at: str = ""                  # YYYY-MM-DD (boş = süresiz)
+
+
+def _ad_today() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _ad_in_schedule(b: dict, today: str = None) -> bool:
+    today = today or _ad_today()
+    s = (b.get("starts_at") or "").strip()
+    e = (b.get("ends_at") or "").strip()
+    if s and today < s:
+        return False
+    if e and today > e:
+        return False
+    return True
+
+
+def _ad_schedule_status(b: dict) -> str:
+    today = _ad_today()
+    s = (b.get("starts_at") or "").strip()
+    e = (b.get("ends_at") or "").strip()
+    if not b.get("active"):
+        return "paused"
+    if s and today < s:
+        return "scheduled"
+    if e and today > e:
+        return "expired"
+    return "live"
 
 
 @api_router.post("/admin/ad-banners")
@@ -1501,6 +1531,8 @@ async def create_ad_banner(
     placement: str = Form("home_footer"),
     orientation: str = Form("horizontal"),
     sort: int = Form(0),
+    starts_at: str = Form(""),
+    ends_at: str = Form(""),
     file: UploadFile = File(...),
     admin: dict = Depends(require_admin),
 ):
@@ -1518,6 +1550,7 @@ async def create_ad_banner(
     doc = {
         "id": bid, "title": title, "target_url": target_url,
         "placement": placement, "orientation": orientation, "sort": sort,
+        "starts_at": starts_at.strip(), "ends_at": ends_at.strip(),
         "image_path": path, "content_type": content_type, "media_type": media_type,
         "active": True, "clicks": 0, "impressions": 0, "created_at": now_iso(),
     }
@@ -1536,6 +1569,9 @@ async def list_ad_banners_admin(admin: dict = Depends(require_admin)):
         r["impressions"] = imp
         r["clicks"] = clk
         r["ctr"] = round((clk / imp) * 100, 2) if imp > 0 else 0.0
+        r["starts_at"] = r.get("starts_at", "")
+        r["ends_at"] = r.get("ends_at", "")
+        r["schedule_status"] = _ad_schedule_status(r)
     return rows
 
 
@@ -1590,10 +1626,11 @@ async def list_ad_banners_public(placement: str):
     if placement not in AD_PLACEMENTS:
         return []
     rows = await db.ad_banners.find({"placement": placement, "active": True}, {"_id": 0}).sort("sort", 1).to_list(50)
+    today = _ad_today()
     return [{"id": r["id"], "title": r.get("title", ""), "target_url": r.get("target_url", ""),
              "orientation": r.get("orientation", "horizontal"),
              "media_type": r.get("media_type", "image"),
-             "image_url": f"/api/ad-banners/img/{r['id']}"} for r in rows]
+             "image_url": f"/api/ad-banners/img/{r['id']}"} for r in rows if _ad_in_schedule(r, today)]
 
 
 @api_router.post("/ad-banners/{bid}/impression")
@@ -1607,6 +1644,33 @@ async def click_ad_banner(bid: str):
     await db.ad_banners.update_one({"id": bid}, {"$inc": {"clicks": 1}})
     doc = await db.ad_banners.find_one({"id": bid}, {"_id": 0, "target_url": 1})
     return {"target_url": (doc or {}).get("target_url", "")}
+
+
+# ---------------------------------------------------------------------------
+# Masaüstü uygulaması indirme bağlantıları (admin yönetimli)
+# ---------------------------------------------------------------------------
+class DesktopDownloads(BaseModel):
+    windows_url: str = ""
+    mac_url: str = ""
+    version: str = ""
+
+
+@api_router.get("/desktop-downloads")
+async def get_desktop_downloads():
+    doc = await db.desktop_downloads.find_one({"id": "singleton"}, {"_id": 0})
+    if not doc:
+        return {"windows_url": "", "mac_url": "", "version": ""}
+    return {"windows_url": doc.get("windows_url", ""), "mac_url": doc.get("mac_url", ""), "version": doc.get("version", "")}
+
+
+@api_router.put("/admin/desktop-downloads")
+async def set_desktop_downloads(payload: DesktopDownloads, admin: dict = Depends(require_admin)):
+    await db.desktop_downloads.update_one(
+        {"id": "singleton"},
+        {"$set": {"windows_url": payload.windows_url.strip(), "mac_url": payload.mac_url.strip(),
+                  "version": payload.version.strip(), "updated_at": now_iso()}},
+        upsert=True)
+    return {"ok": True}
 
 
 

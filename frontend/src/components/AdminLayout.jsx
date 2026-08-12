@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, CalendarDays, CalendarClock, Users, Wallet,
   ImageIcon, Camera, LogOut, Menu, X, Package, Settings, Coins, Ticket, Film, KeyRound, ArrowLeftRight,
-  Images, QrCode, Frame, MapPin, Instagram, Bot, Contact, BadgeCheck, Wand2, Bell, SlidersHorizontal, Megaphone, Inbox,
+  Images, QrCode, Frame, MapPin, Instagram, Bot, Contact, BadgeCheck, Wand2, Bell, SlidersHorizontal, Megaphone, Inbox, Monitor,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
@@ -43,6 +43,7 @@ const items = [
   { to: "/admin/duyurular", label: "Duyuru & Telafi", icon: Megaphone, ownerOnly: true },
   { to: "/admin/gmail", label: "Gmail Kutusu", icon: Inbox, ownerOnly: true },
   { to: "/admin/reklamlar", label: "Reklam Alanları", icon: Megaphone },
+  { to: "/admin/masaustu", label: "Masaüstü Uygulaması", icon: Monitor },
 ];
 
 export const AdminLayout = ({ children }) => {

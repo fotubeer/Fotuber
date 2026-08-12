@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, Menu, dialog } = require("electron");
+const { app, BrowserWindow, shell, Menu, dialog, session } = require("electron");
 const path = require("path");
 const config = require("./config");
 
@@ -31,6 +31,9 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: true,
+      // Kalıcı oturum: giriş yapan firma/şahıs uygulamayı kapatıp açsa da oturumu açık kalır
+      // (localStorage + çerezler diske yazılır).
+      partition: "persist:fotuber",
     },
   });
 
@@ -75,6 +78,22 @@ function buildMenu() {
         { label: "Yeniden Yükle", accelerator: "CmdOrCtrl+R", click: () => mainWindow && mainWindow.reload() },
         { label: "Geri", accelerator: "Alt+Left", click: () => mainWindow && mainWindow.webContents.canGoBack() && mainWindow.webContents.goBack() },
         { label: "İleri", accelerator: "Alt+Right", click: () => mainWindow && mainWindow.webContents.canGoForward() && mainWindow.webContents.goForward() },
+        { type: "separator" },
+        {
+          label: "Oturumu Sıfırla (Çıkış)",
+          click: async () => {
+            const r = await dialog.showMessageBox(mainWindow, {
+              type: "question", buttons: ["Vazgeç", "Oturumu Kapat"], defaultId: 1, cancelId: 0,
+              title: "Oturumu Sıfırla",
+              message: "Kayıtlı oturum silinsin mi?",
+              detail: "Bu işlem sizi uygulamadan çıkarır; başka bir firma/şahıs hesabıyla giriş yapabilirsiniz.",
+            });
+            if (r.response === 1 && mainWindow) {
+              await session.fromPartition("persist:fotuber").clearStorageData();
+              mainWindow.loadURL(config.APP_URL);
+            }
+          },
+        },
         { type: "separator" },
         { role: "quit", label: "Çıkış" },
       ],

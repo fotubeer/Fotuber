@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import DesktopDownloadButtons from "@/components/DesktopDownloadButtons";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -160,6 +161,8 @@ export default function StudioDashboard() {
             <p className="mt-1 text-xs text-white/50">Modül satın al / yükselt. İkinci modülde %20 indirim.</p>
           </Link>
         </div>
+
+        <DesktopDownloadButtons className="mt-8" />
 
         {/* Plans */}
         <h2 className="mt-8 mb-3 text-sm font-semibold text-white/60 uppercase tracking-wide">Abonelik Planları</h2>
