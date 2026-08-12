@@ -1,0 +1,35 @@
+{
+  "summary": "Frontend E2E on /admin/vesikalik for the 3 new additions + regression. All flows PASS. (1) CATEGORY: uniform-cat-filter present with 3 chips ['Tümü','Deniz Kuvvetleri','Diğer'] — Deniz chip filters grid from 3→1 card, Tümü restores to 3. uniform-category <select> in uniform-form has all 7 CATS options (Kara/Deniz/Hava/Jandarma/Sahil Güvenlik/Polis/Diğer). Cards render 'Kategori · yükleyen' (e.g. 'Deniz Kuvvetleri · Fotuber Yönetim', 'Diğer · Test Stüdyo'). Seed data present: Deniz Er (Deniz Kuvvetleri), Piyade Er + Jandarma Uzman (Diğer). (2) BEFORE/AFTER: clicked uniform-apply-<id> once (real AI ~10-20s), uniform-result-modal appeared with uniform-before (naturalWidth=591 = original) + uniform-after (naturalWidth=1200 = AI result) + uniform-accept + uniform-retry + uniform-discard + rights note ('Kalan tasarım hakkı: ...'). Kabul Et closed modal and photo updated. (3) WHATSAPP: Created archive via crm-name='Test WA' + crm-phone='5551112233' + qr-deliver-btn → qr-modal opened, closed. Intercepted window.open on archive-whatsapp-<id> for the with-phone record — got url='https://wa.me/905551112233?text=Merhaba%20Test%20WA%2C%20…%2Fapi%2Fv%2FIYu-ZufP8lSq' target='_blank'. Phone correctly normalized to +90, relink token embedded (24h). For a legacy no-phone record, fallback correctly used 'https://wa.me/?text=…' (still opens WhatsApp). No JS errors triggered by the button. TRIAL BANNER: ai-trial-banner correctly absent for admin (not on trial). REGRESSION: icao-check-btn, digital-download-btn, qr-deliver-btn, archive-search, uniform-toggle-form all present; canvas-single renders after upload with auto-bg-toggle OFF; no new pageerrors — only pre-existing WebGL/wasm warnings (unrelated) and two 401s from an unauthenticated pre-login asset probe.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_results_matrix": {
+    "login_and_nav": "PASS",
+    "auto_bg_toggle_off": "PASS (checked→unchecked)",
+    "upload_plain_image_canvas_single": "PASS (canvas-single rendered)",
+    "category_filter_chips": "PASS (Tümü + per-category; Deniz filter 3→1, Tümü 1→3)",
+    "category_upload_select": "PASS (7 CATS options)",
+    "category_label_on_card": "PASS ('Deniz Kuvvetleri · Fotuber Yönetim' etc.)",
+    "ai_giydir_before_after_modal": "PASS (before naturalWidth=591 original, after naturalWidth=1200 AI, buttons + rights note)",
+    "accept_updates_photo": "PASS (modal dismissed, no error)",
+    "whatsapp_with_phone": "PASS (wa.me/905551112233?text=... with relink token, target=_blank)",
+    "whatsapp_no_phone_fallback": "PASS (wa.me/?text=...)",
+    "trial_banner_absent_for_admin": "PASS",
+    "regression_buttons": "PASS (icao-check-btn, digital-download-btn, qr-deliver-btn, archive-search, uniform-toggle-form all present)"
+  },
+  "critical_code_review_comments": [
+    "UniformLibrary.jsx (~210 LOC): clean, categories/filter/banner logic well-isolated. Filter chip only renders categories that have items — good UX.",
+    "VesikalikArchive.jsx whatsapp(): correctly calls relink then window.open. normalizePhone strips leading 0 and prefixes 90 only for 10-digit TR numbers; foreign-format numbers may open with wrong country code — acceptable for now (TR-only product).",
+    "AdminPassportPhoto.jsx now >1300 LOC and growing (staged uniformResult state, modal JSX inline). Still overdue for a UniformResultModal subcomponent split.",
+    "Console errors observed are pre-existing: TFJS WebGL/wasm warnings (headless Chromium lacks WebGL) and two 401s pre-login. Not introduced by this iteration."
+  ],
+  "test_report_links": ["/app/test_reports/iteration_57.json"],
+  "action_items": [],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only per request)", "frontend": "100% (12/12 flows verified)"},
+  "test_credentials": "Admin admin@fotuber.com.tr / FTB.2024",
+  "seed_data_creation": "Left 3 archive records under admin (Test WA / 2 legacy İsimsiz). One real AI Giydirme credit was consumed as instructed. No cleanup performed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All three additions (uniform categories with filter chips + upload select + card label, AI before/after modal, archive WhatsApp button) are wired and verified end-to-end on /admin/vesikalik. WhatsApp interception approach: window.open override → assert URL contains wa.me + phone digits + '/api/v/<token>' relink. When testing WhatsApp, prefer clicking the archive record that has a phone (fetch /api/studio/vesikalik/archive to find one) — legacy 'İsimsiz' records fall back to wa.me/?text= (correct behavior). AI cost warning: each uniform-apply click bills against design_rights / trial credits — do at most ONE per iteration.",
+  "rca of the issue": "N/A — no defects."
+}

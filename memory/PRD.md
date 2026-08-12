@@ -703,3 +703,10 @@ Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay
 - **Frontend**: `UniformLibrary` onaylı kartlarda "AI Giydir" butonu (uniform-apply-{id}, spinner). `AdminPassportPhoto.applyUniform` tekli canvas PNG'yi gönderir, sonucu editöre yükler (contain crop), kalan hakkı toast'lar.
 - **Test**: backend gerçek Nano Banana çağrısı curl ile → HTTP 200, ~768KB birleşik görsel, design_rights düştü. Frontend derleme temiz, kanıtlı fetch deseni. AI görsel kalitesi kullanıcı tarafından canlıda değerlendirilecek.
 - **DURUM**: Faz 1-2-3-4 + 5-A + 5-B TAMAMLANDI. Askeri kimlik B2B modül seti bitti.
+
+## Session AV (12 Haz 2026) — AI Öncesi/Sonrası + Üniforma Kategorileri + WhatsApp + Deneme AI hakkı
+- **Öncesi/Sonrası**: AI giydirme sonucu artık doğrudan uygulanmıyor; `uniform-result-modal` (öncesi/sonrası görsel + Kabul Et/Tekrar Dene/Vazgeç). Kabul edilince editöre yüklenir.
+- **Üniforma kategorileri**: `military_uniforms.category` (Kara/Deniz/Hava/Jandarma/Sahil Güvenlik/Polis/Diğer). Backend create/list(?category=)/patch. Frontend: yükleme formunda kategori select (uniform-category), grid üstünde filtre çipleri (uniform-cat-*), kartta 'Kategori · yükleyen'.
+- **Tek tık WhatsApp**: Arşivde `archive-whatsapp-*` → relink ile taze 24s link + normalize telefon (0 at, 10 hane ise +90) → wa.me/<numara>?text=... otomatik açılır. Telefon yoksa wa.me/?text=... fallback.
+- **Deneme AI hakkı (3 gün)**: Trial hesapları `ai_trial_credits=3` (erkek/kadın/askeri birer kez). `apply_uniform` trial aktifse önce ücretsiz deneme hakkını kullanır (design_rights düşmez), hata/boşta iade eder. `/uniforms` trial_active + ai_trial_credits döner; UniformLibrary'de `ai-trial-banner`.
+- **Test**: backend curl (trial account: 3 hak→apply trial_used=true, kalan 2, design_rights değişmedi; kategori filtre) + testing_agent iter_57 → frontend %100 (12/12), regresyon temiz.

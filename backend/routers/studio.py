@@ -462,6 +462,7 @@ def get_router(db, deps):
             "paid_until": None,
             "ai_credits": 0,
             "design_rights": STUDIO_FREE_DESIGN_RIGHTS,
+            "ai_trial_credits": 3,
             "modules": {"vesikalik": True, "gallery": True},
             "brand_name": payload.firma_adi.strip(),
             "brand_logo_asset_id": None,
@@ -1171,6 +1172,7 @@ def get_router(db, deps):
     def _uniform_out(u: dict) -> dict:
         return {
             "id": u["id"], "name": u.get("name"), "status": u.get("status"),
+            "category": u.get("category") or "Diğer",
             "png_url": f"/api/studio/uniforms/{u['id']}/file/png" if u.get("png_path") else None,
             "has_psd": bool(u.get("psd_path")),
             "psd_url": f"/api/studio/uniforms/{u['id']}/file/psd" if u.get("psd_path") else None,
@@ -1179,15 +1181,24 @@ def get_router(db, deps):
         }
 
     @router.get("/uniforms")
-    async def list_uniforms(acc: dict = Depends(get_current_studio)):
+    async def list_uniforms(category: str = "", acc: dict = Depends(get_current_studio)):
+        base = {"is_deleted": {"$ne": True}}
+        if (category or "").strip():
+            base["category"] = category.strip()
         if _is_admin(acc):
-            docs = await db.military_uniforms.find({"is_deleted": {"$ne": True}}, {"_id": 0}).sort("created_at", -1).to_list(500)
+            docs = await db.military_uniforms.find(base, {"_id": 0}).sort("created_at", -1).to_list(500)
         else:
             docs = await db.military_uniforms.find(
-                {"is_deleted": {"$ne": True}, "$or": [{"status": "approved"}, {"uploaded_by": acc["id"]}]},
+                {**base, "$or": [{"status": "approved"}, {"uploaded_by": acc["id"]}]},
                 {"_id": 0},
             ).sort("created_at", -1).to_list(500)
-        return {"items": [_uniform_out(d) for d in docs], "is_admin": _is_admin(acc)}
+        t_end = _parse(acc.get("trial_end"))
+        is_trial = (acc.get("plan") or "trial") == "trial" and t_end and t_end > datetime.now(timezone.utc)
+        tc = acc.get("ai_trial_credits")
+        if tc is None and is_trial:
+            tc = 3
+        return {"items": [_uniform_out(d) for d in docs], "is_admin": _is_admin(acc),
+                "trial_active": bool(is_trial), "ai_trial_credits": int(tc or 0)}
 
     @router.post("/uniforms/upload-init")
     async def uniform_upload_init(kind: str = Form(...), filename: str = Form(""),
@@ -1223,6 +1234,7 @@ def get_router(db, deps):
         name: str
         png_upload_id: str
         psd_upload_id: Optional[str] = None
+        category: Optional[str] = None
 
     @router.post("/uniforms")
     async def create_uniform(payload: UniformSubmitIn, acc: dict = Depends(get_current_studio)):
@@ -1251,6 +1263,7 @@ def get_router(db, deps):
         is_admin = _is_admin(acc)
         doc = {
             "id": uid, "name": name, "status": "approved" if is_admin else "pending",
+            "category": (payload.category or "Diğer").strip() or "Diğer",
             "png_path": png_path, "psd_path": psd_path,
             "png_size": len(png["data"]), "psd_size": len(psd["data"]) if psd else 0,
             "uploaded_by": "admin" if is_admin else acc["id"],
@@ -1283,11 +1296,24 @@ def get_router(db, deps):
             person = base64.b64decode(raw)
         except Exception:
             raise HTTPException(status_code=400, detail="Fotoğraf çözümlenemedi")
-        # Tasarım hakkı düşümü (atomik) — başarısızlıkta iade edilir.
-        res = await db.studio_accounts.update_one(
-            {"id": acc["id"], "design_rights": {"$gte": 1}}, {"$inc": {"design_rights": -1}})
-        if res.modified_count == 0:
-            raise HTTPException(status_code=402, detail="Tasarım hakkınız bitti.")
+        # Deneme sürümü: erkek/kadın/askeri için toplam 3 ücretsiz AI hakkı.
+        # Trial aktifse önce deneme hakkı kullanılır; bittiyse tasarım hakkı düşer.
+        fresh0 = await db.studio_accounts.find_one({"id": acc["id"]}, {"_id": 0})
+        t_end = _parse(fresh0.get("trial_end"))
+        is_trial = (fresh0.get("plan") or "trial") == "trial" and t_end and t_end > datetime.now(timezone.utc)
+        trial_credits = fresh0.get("ai_trial_credits")
+        if trial_credits is None and is_trial:
+            trial_credits = 3
+        used_trial = False
+        if is_trial and (trial_credits or 0) > 0:
+            await db.studio_accounts.update_one({"id": acc["id"]}, {"$set": {"ai_trial_credits": (trial_credits or 0) - 1}})
+            used_trial = True
+        else:
+            res = await db.studio_accounts.update_one(
+                {"id": acc["id"], "design_rights": {"$gte": 1}}, {"$inc": {"design_rights": -1}})
+            if res.modified_count == 0:
+                raise HTTPException(status_code=402, detail="Tasarım hakkınız bitti.")
+        _refund = ({"ai_trial_credits": 1} if used_trial else {"design_rights": 1})
         try:
             uni_bytes, _ct = await asyncio.to_thread(get_object, u["png_path"])
             from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
@@ -1314,15 +1340,17 @@ def get_router(db, deps):
             _text, images = await chat.send_message_multimodal_response(
                 UserMessage(text=instruction, file_contents=[ImageContent(person_b64), ImageContent(uni_b64)]))
         except Exception as e:
-            await db.studio_accounts.update_one({"id": acc["id"]}, {"$inc": {"design_rights": 1}})
+            await db.studio_accounts.update_one({"id": acc["id"]}, {"$inc": _refund})
             _log.error(f"uniform apply failed: {e}")
             raise HTTPException(status_code=502, detail="AI giydirme başarısız, hakkınız iade edildi.")
         if not images:
-            await db.studio_accounts.update_one({"id": acc["id"]}, {"$inc": {"design_rights": 1}})
+            await db.studio_accounts.update_one({"id": acc["id"]}, {"$inc": _refund})
             raise HTTPException(status_code=502, detail="Sonuç üretilemedi, hakkınız iade edildi.")
-        fresh = await db.studio_accounts.find_one({"id": acc["id"]}, {"_id": 0, "design_rights": 1})
+        fresh = await db.studio_accounts.find_one({"id": acc["id"]}, {"_id": 0, "design_rights": 1, "ai_trial_credits": 1})
         return {"image_b64": f"data:image/png;base64,{images[0]['data']}",
-                "rights_remaining": int((fresh or {}).get("design_rights", 0))}
+                "rights_remaining": int((fresh or {}).get("design_rights", 0)),
+                "trial_used": used_trial,
+                "ai_trial_credits": int((fresh or {}).get("ai_trial_credits", 0) or 0)}
 
     @router.get("/uniforms/{uid}/file/{kind}")
     async def uniform_file(uid: str, kind: str, acc: dict = Depends(get_current_studio)):
@@ -1345,6 +1373,7 @@ def get_router(db, deps):
 
     class UniformPatchIn(BaseModel):
         name: Optional[str] = None
+        category: Optional[str] = None
 
     @router.post("/uniforms/{uid}/approve")
     async def approve_uniform(uid: str, acc: dict = Depends(get_current_studio)):
@@ -1368,8 +1397,13 @@ def get_router(db, deps):
     async def patch_uniform(uid: str, payload: UniformPatchIn, acc: dict = Depends(get_current_studio)):
         if not _is_admin(acc):
             raise HTTPException(status_code=403, detail="Yalnızca site yöneticisi")
+        upd = {}
         if payload.name is not None and payload.name.strip():
-            await db.military_uniforms.update_one({"id": uid}, {"$set": {"name": payload.name.strip()}})
+            upd["name"] = payload.name.strip()
+        if payload.category is not None and payload.category.strip():
+            upd["category"] = payload.category.strip()
+        if upd:
+            await db.military_uniforms.update_one({"id": uid}, {"$set": upd})
         return {"ok": True}
 
     @router.delete("/uniforms/{uid}")

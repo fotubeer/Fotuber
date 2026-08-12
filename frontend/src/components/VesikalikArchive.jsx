@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Archive, Search, Download, QrCode, Trash2, Clock, Loader2, X, Copy } from "lucide-react";
+import { Archive, Search, Download, QrCode, Trash2, Clock, Loader2, X, Copy, MessageCircle } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -69,6 +69,22 @@ export const VesikalikArchive = () => {
     try { await jsend(`/api/studio/vesikalik/archive/${it.id}`, "DELETE"); load(q); } catch { toast.error("Silinemedi"); }
   };
 
+  const normalizePhone = (p) => {
+    let d = (p || "").replace(/\D/g, "");
+    if (!d) return "";
+    if (d.startsWith("0")) d = d.slice(1);
+    if (d.length === 10) d = "90" + d; // TR yerel 10 hane → +90
+    return d;
+  };
+  const whatsapp = async (it) => {
+    let url = "";
+    try { const r = await jsend(`/api/studio/vesikalik/archive/${it.id}/relink`, "POST"); url = `${BE}${r.path}`; load(q); }
+    catch { toast.error("Bağlantı alınamadı"); return; }
+    const phone = normalizePhone(it.phone);
+    const text = encodeURIComponent(`Merhaba${it.client_name ? " " + it.client_name : ""}, vesikalık fotoğrafınızı buradan indirebilirsiniz (24 saat geçerli): ${url}`);
+    window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, "_blank");
+  };
+
   return (
     <div className="border border-slate-200 rounded-2xl bg-white" data-testid="vesikalik-archive">
       <div className="flex items-center gap-2 p-4 border-b border-slate-100">
@@ -101,6 +117,7 @@ export const VesikalikArchive = () => {
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button onClick={() => reprint(it)} data-testid={`archive-reprint-${it.id}`} title="Yeniden baskı (indir)" className="p-1.5 rounded bg-slate-50 text-slate-600 hover:bg-slate-100"><Download className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => whatsapp(it)} data-testid={`archive-whatsapp-${it.id}`} title="WhatsApp ile gönder" className="p-1.5 rounded bg-green-50 text-green-600 hover:bg-green-100"><MessageCircle className="w-3.5 h-3.5" /></button>
                   <button onClick={() => relink(it)} data-testid={`archive-relink-${it.id}`} title="QR bağlantısı al (24s)" className="p-1.5 rounded bg-fuchsia-50 text-fuchsia-600 hover:bg-fuchsia-100"><QrCode className="w-3.5 h-3.5" /></button>
                   <button onClick={() => del(it)} data-testid={`archive-del-${it.id}`} title="Sil" className="p-1.5 rounded bg-red-50 text-red-500 hover:bg-red-100"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>

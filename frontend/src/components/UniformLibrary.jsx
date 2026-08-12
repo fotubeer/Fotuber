@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 
 const BE = process.env.REACT_APP_BACKEND_URL;
 const CHUNK = 512 * 1024;
+const CATS = ["Kara Kuvvetleri", "Deniz Kuvvetleri", "Hava Kuvvetleri", "Jandarma", "Sahil Güvenlik", "Polis", "Diğer"];
 
 const authHeaders = () => {
   const st = localStorage.getItem("fotuber_studio_token");
@@ -53,15 +54,19 @@ async function uploadFileChunked(file, kind, onProgress) {
 export const UniformLibrary = ({ onApplyUniform, applyingUniform }) => {
   const [items, setItems] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [trialActive, setTrialActive] = useState(false);
+  const [aiTrial, setAiTrial] = useState(0);
   const [openForm, setOpenForm] = useState(false);
   const [name, setName] = useState("");
+  const [category, setCategory] = useState(CATS[0]);
+  const [filterCat, setFilterCat] = useState("");
   const [pngFile, setPngFile] = useState(null);
   const [psdFile, setPsdFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [prog, setProg] = useState(0);
 
   const load = useCallback(async () => {
-    try { const r = await jget("/api/studio/uniforms"); setItems(r.items || []); setIsAdmin(!!r.is_admin); } catch {}
+    try { const r = await jget("/api/studio/uniforms"); setItems(r.items || []); setIsAdmin(!!r.is_admin); setTrialActive(!!r.trial_active); setAiTrial(r.ai_trial_credits || 0); } catch {}
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -73,7 +78,7 @@ export const UniformLibrary = ({ onApplyUniform, applyingUniform }) => {
       const pngId = await uploadFileChunked(pngFile, "png", setProg);
       let psdId = null;
       if (psdFile) psdId = await uploadFileChunked(psdFile, "psd", setProg);
-      const res = await jsend("/api/studio/uniforms", "POST", { name: name.trim(), png_upload_id: pngId, psd_upload_id: psdId });
+      const res = await jsend("/api/studio/uniforms", "POST", { name: name.trim(), category, png_upload_id: pngId, psd_upload_id: psdId });
       toast.success(res.pending ? "Üniforma gönderildi — admin onayı bekleniyor" : "Üniforma yayınlandı");
       setName(""); setPngFile(null); setPsdFile(null); setOpenForm(false);
       load();
@@ -107,7 +112,7 @@ export const UniformLibrary = ({ onApplyUniform, applyingUniform }) => {
       </div>
       <div className="p-2">
         <div className="text-xs font-medium text-slate-800 truncate" title={u.name}>{u.name}</div>
-        <div className="text-[10px] text-slate-400 truncate">{u.uploader_name}</div>
+        <div className="text-[10px] text-slate-400 truncate">{u.category || "Diğer"} · {u.uploader_name}</div>
         <div className="flex items-center gap-1 mt-1.5 flex-wrap">
           {u.status === "approved" && onApplyUniform && (
             <button data-testid={`uniform-apply-${u.id}`} onClick={() => onApplyUniform(u.id)} disabled={applyingUniform === u.id}
@@ -146,12 +151,21 @@ export const UniformLibrary = ({ onApplyUniform, applyingUniform }) => {
         </Button>
       </div>
 
+      {trialActive && (
+        <div className="mx-4 mt-3 rounded-lg bg-fuchsia-50 border border-fuchsia-200 px-3 py-2 text-[11px] text-fuchsia-700 flex items-center gap-1.5" data-testid="ai-trial-banner">
+          <Sparkles className="w-3.5 h-3.5" /> Deneme sürümü: erkek/kadın/askeri için <b>{aiTrial}</b> ücretsiz AI giydirme hakkınız kaldı. Deneyin, beğenin!
+        </div>
+      )}
+
       {openForm && (
         <div className="p-4 border-b border-slate-100 bg-slate-50/60 space-y-2" data-testid="uniform-form">
           <p className="text-[11px] text-slate-500">
             {isAdmin ? "Yüklediğiniz üniforma anında yayınlanır." : "Yüklediğiniz üniforma admin onayından sonra tüm panellerde görünür."} PNG saydam arka planlı olmalı; PSD isteğe bağlıdır (Photoshop için).
           </p>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Üniforma adı (örn. Piyade Er)" className="h-9 text-sm" data-testid="uniform-name" />
+          <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full h-9 text-sm border border-slate-200 rounded-md px-2 bg-white" data-testid="uniform-category">
+            {CATS.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
           <div className="grid grid-cols-2 gap-2">
             <label className="text-xs">
               <span className="block text-slate-500 mb-1">PNG (zorunlu)</span>
@@ -171,11 +185,21 @@ export const UniformLibrary = ({ onApplyUniform, applyingUniform }) => {
       )}
 
       <div className="p-4">
+        {items.length > 0 && (
+          <div className="flex gap-1 mb-3 overflow-x-auto no-scrollbar" data-testid="uniform-cat-filter">
+            <button onClick={() => setFilterCat("")} className={`text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap ${filterCat === "" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>Tümü</button>
+            {CATS.filter((c) => items.some((i) => (i.category || "Diğer") === c)).map((c) => (
+              <button key={c} data-testid={`uniform-cat-${c}`} onClick={() => setFilterCat(c)} className={`text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap ${filterCat === c ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{c}</button>
+            ))}
+          </div>
+        )}
         {items.length === 0 ? (
           <div className="text-center text-xs text-slate-400 py-6" data-testid="uniform-empty">Henüz üniforma yok. İlk üniformayı yükleyin.</div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2" data-testid="uniform-grid">
-            {[...pending, ...approved, ...items.filter((i) => i.status === "rejected")].map((u) => <Card key={u.id} u={u} />)}
+            {[...pending, ...approved, ...items.filter((i) => i.status === "rejected")]
+              .filter((u) => !filterCat || (u.category || "Diğer") === filterCat)
+              .map((u) => <Card key={u.id} u={u} />)}
           </div>
         )}
       </div>

@@ -774,34 +774,44 @@ const AdminPassportPhoto = ({ injected } = {}) => {
     } finally { setIcaoRunning(false); }
   };
 
-  // ---- Faz 5-B: Askeri kıyafet AI giydirme (tasarım hakkından düşer) -------
+  // ---- Faz 5-B: Askeri kıyafet AI giydirme (öncesi/sonrası onaylı) --------
   const [applyingUniform, setApplyingUniform] = useState(null);
+  const [uniformResult, setUniformResult] = useState(null); // {before, after, uid, rights}
+
   const applyUniform = async (uid) => {
     if (!image || !singleCanvasRef.current) { toast.error("Önce fotoğraf yükleyin"); return; }
     setApplyingUniform(uid);
     try {
       drawSingle();
-      const dataUrl = singleCanvasRef.current.toDataURL("image/png");
+      const beforeUrl = singleCanvasRef.current.toDataURL("image/png");
       const st = localStorage.getItem("fotuber_studio_token");
       const headers = { "Content-Type": "application/json" };
       if (st) headers["Authorization"] = `Bearer ${st}`;
       const resp = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/studio/uniforms/${uid}/apply`, {
-        method: "POST", credentials: "include", headers, body: JSON.stringify({ image_b64: dataUrl }),
+        method: "POST", credentials: "include", headers, body: JSON.stringify({ image_b64: beforeUrl }),
       });
       if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || "Giydirme başarısız"); }
       const data = await resp.json();
-      const raw = await loadImageFromSrc(data.image_b64);
-      setOriginalImage(raw);
-      setImage(raw);
-      const ar = spec ? spec.h / spec.w : raw.h / raw.w;
-      let cw = raw.w, ch = cw * ar;
-      if (ch > raw.h) { ch = raw.h; cw = ch / ar; }
-      setCrop({ cx: raw.w / 2, cy: raw.h / 2, w: cw });
-      setZoom(1); setRotate(0);
-      toast.success(`Üniforma uygulandı — kalan tasarım hakkı: ${data.rights_remaining}`);
+      setUniformResult({ before: beforeUrl, after: data.image_b64, uid, rights: data.rights_remaining, trialUsed: data.trial_used, aiTrial: data.ai_trial_credits });
     } catch (e) {
       toast.error(e.message || "AI giydirme başarısız");
     } finally { setApplyingUniform(null); }
+  };
+
+  const acceptUniformResult = async () => {
+    if (!uniformResult) return;
+    const raw = await loadImageFromSrc(uniformResult.after);
+    setOriginalImage(raw);
+    setImage(raw);
+    const ar = spec ? spec.h / spec.w : raw.h / raw.w;
+    let cw = raw.w, ch = cw * ar;
+    if (ch > raw.h) { ch = raw.h; cw = ch / ar; }
+    setCrop({ cx: raw.w / 2, cy: raw.h / 2, w: cw });
+    setZoom(1); setRotate(0);
+    toast.success(uniformResult.trialUsed
+      ? `Üniforma uygulandı (ücretsiz deneme) — kalan deneme AI hakkı: ${uniformResult.aiTrial}`
+      : `Üniforma uygulandı — kalan tasarım hakkı: ${uniformResult.rights}`);
+    setUniformResult(null);
   };
 
   const qrDeliver = async () => {
@@ -1368,6 +1378,32 @@ const AdminPassportPhoto = ({ injected } = {}) => {
             </div>
             <p className="text-[11px] text-amber-600 mt-3">⏱️ Bu bağlantı 24 saat geçerlidir.</p>
             <a href={qrUrl} target="_blank" rel="noreferrer" data-testid="qr-open-link" className="inline-block mt-2 text-xs text-blue-600 hover:underline">Bağlantıyı aç / önizle</a>
+          </div>
+        </div>
+      )}
+      {uniformResult && (
+        <div className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm grid place-items-center p-4" data-testid="uniform-result-modal">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-lg">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-bold text-slate-900">AI Giydirme — Öncesi / Sonrası</h3>
+              <button onClick={() => setUniformResult(null)} data-testid="uniform-result-close" className="text-slate-400 hover:text-slate-700"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="text-center">
+                <div className="text-[11px] text-slate-500 mb-1">Öncesi</div>
+                <img src={uniformResult.before} alt="öncesi" className="rounded-lg border border-slate-200 w-full object-contain bg-slate-50" data-testid="uniform-before" />
+              </div>
+              <div className="text-center">
+                <div className="text-[11px] text-fuchsia-600 font-semibold mb-1">Sonrası (AI)</div>
+                <img src={uniformResult.after} alt="sonrası" className="rounded-lg border border-fuchsia-200 w-full object-contain bg-slate-50" data-testid="uniform-after" />
+              </div>
+            </div>
+            <p className="text-[11px] text-amber-600 mt-2">{uniformResult.trialUsed ? `Ücretsiz deneme kullanıldı — kalan deneme AI hakkı: ${uniformResult.aiTrial}.` : `Kalan tasarım hakkı: ${uniformResult.rights}.`} Beğenmezseniz "Tekrar Dene" 1 hak daha kullanır.</p>
+            <div className="flex gap-2 mt-3">
+              <Button onClick={acceptUniformResult} className="flex-1 bg-emerald-600 hover:bg-emerald-700 gap-1" data-testid="uniform-accept"><Check className="w-4 h-4" /> Kabul Et</Button>
+              <Button onClick={() => { const uid = uniformResult.uid; setUniformResult(null); applyUniform(uid); }} variant="outline" className="flex-1 gap-1" data-testid="uniform-retry"><Sparkles className="w-4 h-4" /> Tekrar Dene</Button>
+              <Button onClick={() => setUniformResult(null)} variant="ghost" className="text-slate-500" data-testid="uniform-discard">Vazgeç</Button>
+            </div>
           </div>
         </div>
       )}
