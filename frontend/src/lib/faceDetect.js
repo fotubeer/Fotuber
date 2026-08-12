@@ -62,6 +62,79 @@ export const detectBiometricCrop = async (imgEl, spec) => {
 
 const avgX = (pts) => pts.reduce((s, p) => s + p.x, 0) / pts.length;
 const avgY = (pts) => pts.reduce((s, p) => s + p.y, 0) / pts.length;
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+// ---------------------------------------------------------------------------
+// Faz 3: ICAO biyometrik uygunluk kontrolü. Bitmiş (çerçevelenmiş) canvas'ı
+// analiz eder ve fotoğrafçıya yeşil onay / uyarı rozetleri döndürür.
+// ---------------------------------------------------------------------------
+export const checkIcao = async (canvasEl) => {
+  await loadFaceModels();
+  const det = await faceapi
+    .detectSingleFace(canvasEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.4 }))
+    .withFaceLandmarks();
+  if (!det) return { ok: false, checks: [{ key: "face", label: "Yüz tespit edilemedi", ok: false }] };
+
+  const W = canvasEl.width, H = canvasEl.height;
+  const lm = det.landmarks;
+  const leftEye = lm.getLeftEye();
+  const rightEye = lm.getRightEye();
+  const jaw = lm.getJawOutline();
+  const eyeMidX = (avgX(leftEye) + avgX(rightEye)) / 2;
+  const eyeMidY = (avgY(leftEye) + avgY(rightEye)) / 2;
+  const chinY = jaw[Math.floor(jaw.length / 2)].y;
+
+  const checks = [];
+
+  // 1) Yüz yüksekliği oranı (ICAO %70-80).
+  const headHeight = Math.max(1, (chinY - eyeMidY) * 2.2);
+  const ratio = headHeight / H;
+  if (ratio < 0.62) checks.push({ key: "ratio", label: "Yüz oranı düşük (yakınlaştırın)", ok: false });
+  else if (ratio > 0.88) checks.push({ key: "ratio", label: "Yüz oranı yüksek (uzaklaştırın)", ok: false });
+  else checks.push({ key: "ratio", label: `Yüz oranı uygun (%${Math.round(ratio * 100)})`, ok: true });
+
+  // 2) Gözler açık mı (Eye Aspect Ratio).
+  const ear = (e) => (dist(e[1], e[5]) + dist(e[2], e[4])) / (2 * dist(e[0], e[3]));
+  const avgEar = (ear(leftEye) + ear(rightEye)) / 2;
+  checks.push(avgEar < 0.17
+    ? { key: "eyes", label: "Gözler kapalı olabilir", ok: false }
+    : { key: "eyes", label: "Gözler açık", ok: true });
+
+  // 3) Baş eğikliği (göz hattı açısı).
+  const angle = Math.abs(Math.atan2(avgY(rightEye) - avgY(leftEye), avgX(rightEye) - avgX(leftEye)) * 180 / Math.PI);
+  const tilt = Math.min(angle, Math.abs(180 - angle));
+  checks.push(tilt > 7
+    ? { key: "tilt", label: `Baş eğik (${Math.round(tilt)}°)`, ok: false }
+    : { key: "tilt", label: "Baş düz", ok: true });
+
+  // 4) Yüz yatayda ortada mı.
+  const offset = Math.abs(eyeMidX - W / 2) / W;
+  checks.push(offset > 0.12
+    ? { key: "center", label: "Yüz ortada değil", ok: false }
+    : { key: "center", label: "Yüz ortalanmış", ok: true });
+
+  // 5) Arka plan / gölge analizi — üst köşelerin parlaklık dengesi.
+  try {
+    const ctx = canvasEl.getContext("2d");
+    const bw = Math.max(6, Math.round(W * 0.12));
+    const bh = Math.max(6, Math.round(H * 0.12));
+    const lum = (data) => {
+      let s = 0; const n = data.length / 4;
+      for (let i = 0; i < data.length; i += 4) s += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      return s / n;
+    };
+    const tl = lum(ctx.getImageData(0, 0, bw, bh).data);
+    const tr = lum(ctx.getImageData(W - bw, 0, bw, bh).data);
+    const diff = Math.abs(tl - tr);
+    const dark = Math.min(tl, tr);
+    if (diff > 28 || dark < 150) checks.push({ key: "bg", label: "Işık/gölge dengesiz olabilir", ok: false });
+    else checks.push({ key: "bg", label: "Arka plan dengeli", ok: true });
+  } catch {
+    // getImageData taint (cross-origin) — atla.
+  }
+
+  return { ok: checks.every((c) => c.ok), checks };
+};
 
 // Detect facial landmarks and return convenient regions for red-eye removal
 // and eye-sharpening tools. Returns eye bounding boxes in image-pixel coords.

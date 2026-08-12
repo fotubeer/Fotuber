@@ -5,12 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn, ZoomOut, Sparkles, ScanFace, Loader2, Eraser, Paintbrush, Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, QrCode, X, Copy } from "lucide-react";
+import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn, ZoomOut, Sparkles, ScanFace, Loader2, Eraser, Paintbrush, Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, QrCode, X, Copy, Check, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { PHOTO_SPECS, PAPER_SIZES, suggestPaper, COUNT_PRESETS } from "@/lib/passportSpecs";
 import { printImageSheet } from "@/lib/printImage";
 import { loadCustomSpecs, saveCustomSpec, deleteCustomSpec, canvasToJpegMaxKb, exportExactPx, drawComboSheet } from "@/lib/passportLayout";
-import { detectBiometricCrop, loadFaceModels } from "@/lib/faceDetect";
+import { detectBiometricCrop, loadFaceModels, checkIcao } from "@/lib/faceDetect";
 import { removeBackground, compositeOnColor } from "@/lib/bgRemove";
 import { QRCodeCanvas } from "qrcode.react";
 import RetouchBrush from "@/components/RetouchBrush";
@@ -758,6 +758,20 @@ const AdminPassportPhoto = ({ injected } = {}) => {
   const [qrExpires, setQrExpires] = useState("");
   const [delivering, setDelivering] = useState(false);
   const [qrForm, setQrForm] = useState({ name: "", phone: "" });
+  const [icao, setIcao] = useState(null);
+  const [icaoRunning, setIcaoRunning] = useState(false);
+
+  const runIcao = async () => {
+    if (!image || !singleCanvasRef.current) { toast.error("Önce fotoğraf yükleyin"); return; }
+    setIcaoRunning(true);
+    try {
+      drawSingle();
+      const res = await checkIcao(singleCanvasRef.current);
+      setIcao(res);
+    } catch (e) {
+      toast.error("ICAO kontrolü yapılamadı — yüz modeli yüklenemedi veya tarayıcınız desteklemiyor");
+    } finally { setIcaoRunning(false); }
+  };
 
   const qrDeliver = async () => {
     if (!image || !singleCanvasRef.current) { toast.error("Önce fotoğraf yükleyin"); return; }
@@ -932,6 +946,10 @@ const AdminPassportPhoto = ({ injected } = {}) => {
                 <Button onClick={() => setRetouchOpen(true)} disabled={!image || bgProcessing} variant="outline" className="border-fuchsia-600 text-fuchsia-700 hover:bg-fuchsia-50" data-testid="retouch-open-btn">
                   <Paintbrush className="w-4 h-4 mr-2" />Rötuş Fırçası
                 </Button>
+                <Button onClick={runIcao} disabled={!image || icaoRunning || bgProcessing} variant="outline" className="border-sky-600 text-sky-700 hover:bg-sky-50" data-testid="icao-check-btn">
+                  {icaoRunning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ScanFace className="w-4 h-4 mr-2" />}
+                  {icaoRunning ? "Kontrol ediliyor..." : "ICAO Kontrol"}
+                </Button>
                 <Button onClick={downloadSingle} disabled={bgProcessing} className="bg-slate-900 hover:bg-slate-800" data-testid="download-single-btn"><Download className="w-4 h-4 mr-2" />Tekli İndir</Button>
                 <Button onClick={digitalDownload} disabled={bgProcessing || !image} className="bg-indigo-600 hover:bg-indigo-700" data-testid="digital-download-btn"><Download className="w-4 h-4 mr-2" />Dijital İndir{spec?.exactPx ? ` (${spec.exactPx.w}×${spec.exactPx.h}px)` : spec?.maxKb ? ` (≤${spec.maxKb}KB)` : ""}</Button>
                 <Button onClick={qrDeliver} disabled={bgProcessing || !image || delivering} className="bg-fuchsia-600 hover:bg-fuchsia-700" data-testid="qr-deliver-btn">{delivering ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <QrCode className="w-4 h-4 mr-2" />}QR ile Teslim Et</Button>
@@ -941,6 +959,22 @@ const AdminPassportPhoto = ({ injected } = {}) => {
               {autoDetected && (
                 <div className="mt-3 text-xs text-emerald-700 bg-emerald-50 rounded px-3 py-2 inline-flex items-center gap-2" data-testid="detection-status">
                   <ScanFace className="w-3.5 h-3.5" /> Yüz tespiti uygulandı — ICAO uyumlu çerçeveleme
+                </div>
+              )}
+              {icao && (
+                <div className="mt-3 rounded-xl border border-slate-200 p-3" data-testid="icao-panel">
+                  <div className={`text-sm font-semibold flex items-center gap-2 mb-2 ${icao.ok ? "text-emerald-600" : "text-amber-600"}`}>
+                    {icao.ok ? <Check className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                    {icao.ok ? "ICAO uygunluk: TAMAM" : "ICAO uygunluk: Dikkat gerekiyor"}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {icao.checks.map((c) => (
+                      <span key={c.key} data-testid={`icao-badge-${c.key}`}
+                        className={`text-[11px] px-2 py-1 rounded-full inline-flex items-center gap-1 ${c.ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                        {c.ok ? <Check className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />} {c.label}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
             </CardContent>
