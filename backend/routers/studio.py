@@ -68,6 +68,25 @@ PLAN_MAP = {p["id"]: p for p in STUDIO_PLANS}
 _PLAN_OVERRIDES: dict = {}
 SECOND_MODULE_DISCOUNT_DEFAULT = 20
 _GLOBAL_CONFIG = {"second_module_discount": SECOND_MODULE_DISCOUNT_DEFAULT}
+# Per-module prices (admin-editable, independent of quota tiers). Example defaults.
+_MODULE_PRICING = {
+    "vesikalik": {"monthly": 499.0, "yearly": 4990.0},
+    "gallery": {"monthly": 699.0, "yearly": 6990.0},
+}
+
+
+def get_module_pricing() -> dict:
+    return {m: dict(v) for m, v in _MODULE_PRICING.items()}
+
+
+def set_module_pricing(data: dict):
+    for m in ("vesikalik", "gallery"):
+        d = (data or {}).get(m) or {}
+        if "monthly" in d and d["monthly"] is not None:
+            _MODULE_PRICING[m]["monthly"] = max(0.0, float(d["monthly"]))
+        if "yearly" in d and d["yearly"] is not None:
+            _MODULE_PRICING[m]["yearly"] = max(0.0, float(d["yearly"]))
+
 _OVERRIDABLE = {"price", "price_yearly", "ai_credits", "storage_gb", "max_events",
                 "max_users", "max_devices", "link_days", "del_days"}
 
@@ -91,6 +110,8 @@ async def load_plan_overrides(db):
         async for row in db.studio_plan_config.find({}, {"_id": 0}):
             if row.get("id") == "_global":
                 _GLOBAL_CONFIG.update({k: v for k, v in row.items() if k != "id"})
+            elif row.get("id") == "_module_pricing":
+                set_module_pricing({m: row.get(m) for m in ("vesikalik", "gallery")})
             else:
                 _PLAN_OVERRIDES[row["id"]] = {k: v for k, v in row.items() if k in _OVERRIDABLE}
     except Exception:
@@ -777,11 +798,17 @@ def get_router(db, deps):
             return None
         owns_other = bool((mods or {}).get("gallery" if mod == "vesikalik" else "vesikalik", False))
         yearly = period == "yearly"
-        base = float(plan.get("price_yearly") or (float(plan["price"]) * 10)) if yearly else float(plan["price"])
+        mp = _MODULE_PRICING.get(mod)
+        if mp:  # per-module admin price (independent of tier)
+            base = float(mp["yearly"]) if yearly else float(mp["monthly"])
+            base_yearly = float(mp["yearly"])
+        else:
+            base = float(plan.get("price_yearly") or (float(plan["price"]) * 10)) if yearly else float(plan["price"])
+            base_yearly = float(plan.get("price_yearly") or (float(plan["price"]) * 10))
         disc = _second_module_discount()
         price = round(base * (1 - disc / 100.0), 2) if owns_other else base
         return {"plan": plan, "base": base, "price": price, "discount": disc if owns_other else 0,
-                "period": period, "price_yearly": float(plan.get("price_yearly") or (float(plan["price"]) * 10))}
+                "period": period, "price_yearly": base_yearly}
 
     @router.get("/modules/pricing")
     async def modules_pricing(acc: dict = Depends(get_current_studio)):

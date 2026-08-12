@@ -6384,6 +6384,33 @@ async def admin_update_site_pricing(payload: SitePricingIn, admin: dict = Depend
             "invite_premium": INVITE_PREMIUM_PRICE, "invite_extend": INVITE_EXTEND_PRICE}
 
 
+@api_router.get("/admin/module-pricing")
+async def admin_get_module_pricing(admin: dict = Depends(require_admin)):
+    from routers.studio import get_module_pricing
+    return {"modules": get_module_pricing(), "currency": "TRY"}
+
+
+class ModuleTierPriceIn(BaseModel):
+    monthly: Optional[float] = None
+    yearly: Optional[float] = None
+
+
+class ModulePricingIn(BaseModel):
+    vesikalik: Optional[ModuleTierPriceIn] = None
+    gallery: Optional[ModuleTierPriceIn] = None
+
+
+@api_router.put("/admin/module-pricing")
+async def admin_update_module_pricing(payload: ModulePricingIn, admin: dict = Depends(require_admin)):
+    from routers.studio import set_module_pricing, get_module_pricing
+    data = {m: (getattr(payload, m).model_dump() if getattr(payload, m) else None) for m in ("vesikalik", "gallery")}
+    set_module_pricing(data)
+    cur = get_module_pricing()
+    await db.studio_plan_config.update_one({"id": "_module_pricing"},
+                                           {"$set": {"id": "_module_pricing", **cur}}, upsert=True)
+    return {"ok": True, "modules": cur}
+
+
 class PhotowallTierIn(BaseModel):
     price: Optional[float] = None
     storage_gb: Optional[float] = None

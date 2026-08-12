@@ -15,17 +15,22 @@ const Field = ({ label, hint, value, onChange, testid }) => (
 
 export default function AdminSitePricing() {
   const [c, setC] = useState(null);
+  const [mp, setMp] = useState(null); // module pricing {vesikalik:{monthly,yearly}, gallery:{...}}
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
-    try { setC((await api.get("/admin/site-pricing")).data); }
+    try {
+      const [a, b] = await Promise.all([api.get("/admin/site-pricing"), api.get("/admin/module-pricing")]);
+      setC(a.data); setMp(b.data.modules);
+    }
     catch (e) { toast.error(formatApiError(e, "Yüklenemedi")); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
 
   const set = (k, v) => setC((p) => ({ ...p, [k]: v }));
+  const setMod = (m, k, v) => setMp((p) => ({ ...p, [m]: { ...p[m], [k]: v } }));
   const save = async () => {
     setSaving(true);
     try {
@@ -34,13 +39,19 @@ export default function AdminSitePricing() {
         invite_premium: Number(c.invite_premium), invite_extend: Number(c.invite_extend),
       });
       setC(data);
+      const r2 = await api.put("/admin/module-pricing", {
+        vesikalik: { monthly: Number(mp.vesikalik.monthly), yearly: Number(mp.vesikalik.yearly) },
+        gallery: { monthly: Number(mp.gallery.monthly), yearly: Number(mp.gallery.yearly) },
+      });
+      setMp(r2.data.modules);
       toast.success("Fiyatlar kaydedildi");
     } catch (e) { toast.error(formatApiError(e, "Kaydedilemedi")); }
     finally { setSaving(false); }
   };
 
-  if (loading || !c) return <div className="p-8 text-neutral-400">Yükleniyor…</div>;
+  if (loading || !c || !mp) return <div className="p-8 text-neutral-400">Yükleniyor…</div>;
   const savings = c.member_monthly > 0 ? Math.round((c.member_monthly * 12 - c.member_yearly) / (c.member_monthly * 12) * 100) : 0;
+  const modSavings = (m) => mp[m].monthly > 0 ? Math.round((mp[m].monthly * 12 - mp[m].yearly) / (mp[m].monthly * 12) * 100) : 0;
 
   return (
     <div data-testid="admin-site-pricing" className="p-4 sm:p-6 max-w-3xl">
@@ -64,6 +75,27 @@ export default function AdminSitePricing() {
           <div className="grid grid-cols-2 gap-4">
             <Field label="Premium Tema (tek seferlik ₺)" value={c.invite_premium} onChange={(v) => set("invite_premium", v)} testid="sp-invite-premium" />
             <Field label="Süre Uzatma (₺)" value={c.invite_extend} onChange={(v) => set("invite_extend", v)} testid="sp-invite-extend" />
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-neutral-200 p-5">
+          <h2 className="font-semibold flex items-center gap-2 mb-3"><Wallet size={18} className="text-blue-600" /> Stüdyo Modül Fiyatları (ayrı ayrı)</h2>
+          <p className="text-[11px] text-neutral-400 mb-3">Vesikalık ve Etkinlik Galerisi modüllerinin fiyatları bağımsızdır. Kota/içerik (AI kredisi, depolama, etkinlik) "Stüdyo Fiyat & Kota" sayfasından ayarlanır.</p>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="rounded-xl border border-neutral-200 p-3">
+              <div className="text-sm font-semibold text-neutral-800 mb-2">Vesikalık</div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Aylık (₺)" value={mp.vesikalik.monthly} onChange={(v) => setMod("vesikalik", "monthly", v)} testid="mp-vesikalik-monthly" />
+                <Field label="Yıllık (₺)" hint={modSavings("vesikalik") > 0 ? `~%${modSavings("vesikalik")} tasarruf` : ""} value={mp.vesikalik.yearly} onChange={(v) => setMod("vesikalik", "yearly", v)} testid="mp-vesikalik-yearly" />
+              </div>
+            </div>
+            <div className="rounded-xl border border-neutral-200 p-3">
+              <div className="text-sm font-semibold text-neutral-800 mb-2">Etkinlik Galerisi</div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Aylık (₺)" value={mp.gallery.monthly} onChange={(v) => setMod("gallery", "monthly", v)} testid="mp-gallery-monthly" />
+                <Field label="Yıllık (₺)" hint={modSavings("gallery") > 0 ? `~%${modSavings("gallery")} tasarruf` : ""} value={mp.gallery.yearly} onChange={(v) => setMod("gallery", "yearly", v)} testid="mp-gallery-yearly" />
+              </div>
+            </div>
           </div>
         </section>
       </div>

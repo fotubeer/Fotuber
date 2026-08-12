@@ -608,3 +608,12 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - Test: curl — GET/PUT çalışır, üyelik fiyatı canlı yansır (129/1290), premium güncellenir; varsayılana reset edildi.
 - **KALAN (AŞAMA 2 · kısım 2)**: Vesikalık ve Galeri için BİRBİRİNDEN FARKLI fiyat (şu an ikisi aynı tier fiyatını kullanıyor; tier fiyat+kotaları editable ama modül-bazlı ayrı fiyat için tier'dan bağımsız fiyat alanı gerekiyor) + paketler sayfası modern/sade redesign.
 
+
+
+## Session AL (Jun 2026) — Vesikalık & Galeri modül-bazlı AYRI fiyat (admin-editable, curl doğrulandı)
+- `studio.py`: `_MODULE_PRICING` globali (örnek varsayılan: Vesikalık 499/4990, Galeri 699/6990) + `get_module_pricing/set_module_pricing`. `load_plan_overrides` içinde db.studio_plan_config "_module_pricing"tan yüklenir. `_module_price` artık modülün kendi fiyatını (aylık/yıllık) tier'dan bağımsız kullanır → Vesikalık ve Galeri farklı fiyatlanabilir. Kotalar (AI kredisi/depolama/etkinlik) hâlâ tier'dan (Stüdyo Fiyat & Kota).
+- `server.py`: `GET/PUT /api/admin/module-pricing` (db.studio_plan_config "_module_pricing").
+- Admin UI: `/admin/genel-fiyatlar` (AdminSitePricing) altına "Stüdyo Modül Fiyatları (ayrı ayrı)" bölümü — Vesikalık ve Galeri için aylık/yıllık + tasarruf % ipucu.
+- Test: curl — GET defaults, PUT (Vesikalık 599/5990 ≠ Galeri 799/7990) → `/studio/modules/pricing` base/base_yearly/savings_pct doğru yansıdı; örnek varsayılanlara reset edildi. Frontend derlendi. (Admin UI login otomasyonu screenshot'ta doldurulamadı; backend tam doğrulandı, sayfa mevcut çalışan desenle aynı.)
+- **AŞAMA 2 kalan tek iş**: Paketler (StudioPackages) sayfasının daha sade/modern redesign'ı (iki büyük modül kartı, aylık/yıllık geçiş, tasarruf vurgusu) — fiyatlar zaten modül-bazlı geliyor.
+
