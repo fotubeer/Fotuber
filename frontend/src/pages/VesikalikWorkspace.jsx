@@ -37,9 +37,14 @@ export default function VesikalikWorkspace() {
           <Layers className="w-3.5 h-3.5" /> 3'lü İşleme
         </button>
       </div>
-      {mode === "single"
-        ? <AdminPassportPhoto injected={injected} />
-        : <VesikalikTriple onFineTune={handleFineTune} />}
+      {/* Keep BOTH panels mounted; toggle visibility so the 3'lü slots/results
+          are preserved when opening a photo in the single editor and coming back. */}
+      <div className={mode === "single" ? "" : "hidden"}>
+        <AdminPassportPhoto injected={injected} />
+      </div>
+      <div className={mode === "triple" ? "" : "hidden"}>
+        <VesikalikTriple onFineTune={handleFineTune} />
+      </div>
     </div>
   );
 }

@@ -1,55 +1,94 @@
-// Web-based one-click print. Opens a print window sized to the paper (mm)
-// and triggers the browser print dialog. No native/Electron dependency.
-export function printImageSheet(dataUrl, { widthMm, heightMm, title = "Baskı" } = {}) {
-  if (!dataUrl) return false;
-  const w = window.open("", "_blank", "width=900,height=700");
-  if (!w) return false;
+// Web-based one-click print. Renders the sheet into a hidden iframe (no popup
+// blocker) sized to the paper (mm) and triggers the browser print dialog.
+// Falls back to a popup window if the iframe path fails.
+function buildPrintHtml(imgsHtml, { widthMm, heightMm, title, multi }) {
   const pageSize =
     widthMm && heightMm
       ? `@page { size: ${widthMm}mm ${heightMm}mm; margin: 0; }`
       : `@page { margin: 0; }`;
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8" /><title>${title}</title>
+  const imgCss = multi
+    ? `.sheet { width: 100%; height: 100vh; object-fit: contain; display: block; page-break-after: always; }`
+    : `img { width: 100%; height: 100%; object-fit: contain; display: block; }`;
+  return `<!doctype html><html><head><meta charset="utf-8" /><title>${title || "Baskı"}</title>
     <style>
       ${pageSize}
       html, body { margin: 0; padding: 0; background: #fff; }
-      img { width: 100%; height: 100%; object-fit: contain; display: block; }
+      ${imgCss}
       @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-    </style></head><body>
-    <img src="${dataUrl}" onload="setTimeout(function(){ window.focus(); window.print(); }, 200)" />
-    <script>window.onafterprint = function(){ window.close(); };<\/script>
-    </body></html>`);
+    </style></head><body>${imgsHtml}</body></html>`;
+}
+
+function printViaIframe(html) {
+  try {
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("aria-hidden", "true");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    document.body.appendChild(iframe);
+    const doc = iframe.contentWindow?.document || iframe.contentDocument;
+    if (!doc) { iframe.remove(); return false; }
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    const cleanup = () => { setTimeout(() => { try { iframe.remove(); } catch {} }, 1000); };
+    const fire = () => {
+      const win = iframe.contentWindow;
+      if (!win) { cleanup(); return; }
+      try {
+        win.focus();
+        win.onafterprint = cleanup;
+        win.print();
+      } catch { cleanup(); }
+    };
+
+    // Wait for all images inside the iframe to load before printing.
+    const imgs = doc.images;
+    if (!imgs || imgs.length === 0) { setTimeout(fire, 200); return true; }
+    let loaded = 0;
+    const done = () => { loaded += 1; if (loaded >= imgs.length) setTimeout(fire, 200); };
+    for (let i = 0; i < imgs.length; i++) {
+      if (imgs[i].complete) done();
+      else { imgs[i].onload = done; imgs[i].onerror = done; }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function printViaPopup(html) {
+  const w = window.open("", "_blank", "width=900,height=700");
+  if (!w) return false;
+  w.document.write(html + `<script>
+      var imgs = document.images, loaded = 0;
+      function go(){ setTimeout(function(){ window.focus(); window.print(); }, 200); }
+      function done(){ loaded++; if (loaded >= imgs.length) go(); }
+      if (!imgs.length) go();
+      else for (var i=0;i<imgs.length;i++){ if(imgs[i].complete) done(); else imgs[i].onload = imgs[i].onerror = done; }
+      window.onafterprint = function(){ window.close(); };
+    <\/script>`);
   w.document.close();
   return true;
+}
+
+export function printImageSheet(dataUrl, { widthMm, heightMm, title = "Baskı" } = {}) {
+  if (!dataUrl) return false;
+  const html = buildPrintHtml(`<img src="${dataUrl}" />`, { widthMm, heightMm, title, multi: false });
+  return printViaIframe(html) || printViaPopup(html);
 }
 
 // Print multiple full-page sheets as a single multi-page print job.
 export function printMultiSheet(sheetDataUrls, { widthMm, heightMm, title = "Baskı" } = {}) {
   const sheets = (sheetDataUrls || []).filter(Boolean);
   if (!sheets.length) return false;
-  const w = window.open("", "_blank", "width=900,height=700");
-  if (!w) return false;
-  const pageSize =
-    widthMm && heightMm
-      ? `@page { size: ${widthMm}mm ${heightMm}mm; margin: 0; }`
-      : `@page { margin: 0; }`;
-  const imgs = sheets
-    .map((u, i) => `<img class="sheet" src="${u}" data-i="${i}" />`)
-    .join("");
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8" /><title>${title}</title>
-    <style>
-      ${pageSize}
-      html, body { margin: 0; padding: 0; background: #fff; }
-      .sheet { width: 100%; height: 100vh; object-fit: contain; display: block; page-break-after: always; }
-      @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-    </style></head><body>${imgs}
-    <script>
-      var imgs = document.images, loaded = 0;
-      function done(){ loaded++; if (loaded >= imgs.length){ setTimeout(function(){ window.focus(); window.print(); }, 200); } }
-      for (var i=0;i<imgs.length;i++){ if(imgs[i].complete) done(); else imgs[i].onload = imgs[i].onerror = done; }
-      window.onafterprint = function(){ window.close(); };
-    <\/script></body></html>`);
-  w.document.close();
-  return true;
+  const imgs = sheets.map((u, i) => `<img class="sheet" src="${u}" data-i="${i}" />`).join("");
+  const html = buildPrintHtml(imgs, { widthMm, heightMm, title, multi: true });
+  return printViaIframe(html) || printViaPopup(html);
 }
 
 // Tile a single processed photo `count` times onto one or more paper sheets.

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn, ZoomOut, Sparkles, ScanFace, Loader2, Eraser, Paintbrush, Move } from "lucide-react";
+import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn, ZoomOut, Sparkles, ScanFace, Loader2, Eraser, Paintbrush, Move, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { PHOTO_SPECS, PAPER_SIZES, suggestPaper, COUNT_PRESETS } from "@/lib/passportSpecs";
 import { printImageSheet } from "@/lib/printImage";
@@ -101,6 +101,7 @@ const AdminPassportPhoto = ({ injected } = {}) => {
   const [wmAlign, setWmAlign] = useState("center"); // per-photo watermark: left | center | right
   const [wmScale, setWmScale] = useState(14); // % of photo height
   const [wmOpacity, setWmOpacity] = useState(85); // 0-100
+  const [wmNudge, setWmNudge] = useState({ x: 0, y: 0 }); // mm offset inside the white strip
   const [sheetOffset, setSheetOffset] = useState({ x: 0, y: 0 }); // mm manual offset
   const [adj, setAdj] = useState({ brightness: 100, contrast: 100, saturation: 100, warmth: 0, sharpness: 0, retouch: false, retouchIntensity: 60 });
   const [cutColor, setCutColor] = useState("#9ca3af"); // thin gray dashed cut lines
@@ -223,7 +224,19 @@ const AdminPassportPhoto = ({ injected } = {}) => {
         const raw = await loadImageFromSrc(injected.src);
         if (cancelled) return;
         setOriginalImage(raw);
-        applyImage(raw);
+        setImage(raw);
+        // The injected photo is ALREADY background-removed + framed to the spec
+        // aspect. Fit it fully into the frame (contain) instead of re-cropping to
+        // 70% — this prevents the face/photo overflowing the target frame.
+        const tSpec = injected.specCode ? PHOTO_SPECS.find((s) => s.code === injected.specCode) : spec;
+        const ar = tSpec ? tSpec.h / tSpec.w : raw.h / raw.w; // height/width of target
+        let cw = raw.w;
+        let ch = cw * ar;
+        if (ch > raw.h) { ch = raw.h; cw = ch / ar; }
+        setCrop({ cx: raw.w / 2, cy: raw.h / 2, w: cw });
+        setZoom(1);
+        setRotate(0);
+        setAutoDetected(true);
         toast.success("Fotoğraf tekli editöre yüklendi — ince ayar yapabilirsiniz");
       } catch (e) {
         toast.error("Fotoğraf yüklenemedi");
@@ -533,27 +546,43 @@ const AdminPassportPhoto = ({ injected } = {}) => {
     }
     const hasWm = !!wmImg;
 
+    // When a watermark is present, open a 1 cm WHITE strip BELOW each photo
+    // (taken from the paper area — the photo itself is NOT cropped) and place
+    // the watermark there. The cut line falls under the watermark strip.
+    const wmStrip = hasWm ? mmToPx(10) : 0;
+    const cellTotalH = cellH + wmStrip;
+
     const blockW = cols * cellW + (cols - 1) * gap;
-    const blockH = rows * cellH + (rows - 1) * gap;
+    const blockH = rows * cellTotalH + (rows - 1) * gap;
     // True centering — allow overflow into the paper's bleed area on both sides.
     // `sheetOffset` lets the operator nudge the block with the mouse.
     const startX = (pw - blockW) / 2 + mmToPx(sheetOffset.x);
     const startY = (ph - blockH) / 2 + mmToPx(sheetOffset.y);
     const colX = (c) => startX + c * (cellW + gap);
-    const rowY = (r) => startY + r * (cellH + gap);
+    const rowY = (r) => startY + r * (cellTotalH + gap);
 
+    // Watermark drawn INSIDE the white strip (never over the photo). Position is
+    // aligned left/center/right + movable up/down/left/right via wmNudge (mm).
     const drawWm = (x, y) => {
       if (!hasWm) return;
       const ratio = wmImg.width / wmImg.height;
-      let wmH = cellH * (wmScale / 100);
+      const marg = mmToPx(1.5);
+      const availH = Math.max(1, wmStrip - marg * 2);
+      const f = Math.max(0.3, Math.min(1, (wmScale - 4) / 36 * 0.7 + 0.3));
+      let wmH = availH * f;
       let wmW = wmH * ratio;
-      const maxW = cellW * 0.9;
+      const maxW = cellW - marg * 2;
       if (wmW > maxW) { wmW = maxW; wmH = wmW / ratio; }
-      const marg = mmToPx(2);
-      const wx = wmAlign === "left" ? x + marg
-               : wmAlign === "right" ? x + cellW - wmW - marg
-               : x + (cellW - wmW) / 2;
-      const wy = y + cellH - wmH - marg;
+      const stripTop = y + cellH;
+      let wx = wmAlign === "left" ? x + marg
+             : wmAlign === "right" ? x + cellW - wmW - marg
+             : x + (cellW - wmW) / 2;
+      wx += mmToPx(wmNudge.x);
+      wx = Math.max(x, Math.min(x + cellW - wmW, wx));
+      let wy = stripTop + (wmStrip - wmH) / 2 + mmToPx(wmNudge.y);
+      const wyMin = stripTop + marg;
+      const wyMax = stripTop + wmStrip - wmH - marg;
+      wy = Math.max(wyMin, Math.min(Math.max(wyMin, wyMax), wy));
       ctx.save();
       ctx.globalAlpha = Math.max(0, Math.min(1, wmOpacity / 100));
       ctx.drawImage(wmImg, wx, wy, wmW, wmH);
@@ -565,13 +594,18 @@ const AdminPassportPhoto = ({ injected } = {}) => {
       for (let c = 0; c < cols && idx < count; c++) {
         const x = colX(c), y = rowY(r);
         ctx.drawImage(single, x, y, cellW, cellH);
-        drawWm(x, y); // one watermark per photo
+        if (hasWm) {
+          // white strip (from paper) below the photo
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(x, y + cellH, cellW, wmStrip);
+          drawWm(x, y);
+        }
         idx++;
       }
     }
 
-    // BUG 4: cutting lines — thin gray dashed (or solid), every photo boundary
-    // INCLUDING the outer edges, each line spanning the full paper edge-to-edge.
+    // Cutting lines — thin gray dashed (or solid) at every cell boundary
+    // INCLUDING the outer edges. Horizontal lines fall UNDER the watermark strip.
     if (cutWidth > 0) {
       ctx.strokeStyle = cutColor;
       ctx.lineWidth = Math.max(1, mmToPx(cutWidth));
@@ -584,7 +618,7 @@ const AdminPassportPhoto = ({ injected } = {}) => {
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ph); ctx.stroke();
       }
       for (let r = 0; r <= rows; r++) {
-        let y = startY + r * (cellH + gap);
+        let y = startY + r * (cellTotalH + gap);
         if (r > 0 && r < rows) y -= off;
         if (r === rows) y -= gap;
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(pw, y); ctx.stroke();
@@ -597,7 +631,7 @@ const AdminPassportPhoto = ({ injected } = {}) => {
     ctx.font = `${mmToPx(2.5)}px sans-serif`;
     ctx.fillText(code, mmToPx(2), ph - mmToPx(2));
     return canvas;
-  }, [image, spec, paper, layout, count, cutColor, cutWidth, cutStyle, watermark, code, drawSingle, photoGap, sheetOffset, wmAlign, wmScale, wmOpacity]);
+  }, [image, spec, paper, layout, count, cutColor, cutWidth, cutStyle, watermark, code, drawSingle, photoGap, sheetOffset, wmAlign, wmScale, wmOpacity, wmNudge]);
 
   // When spec changes, re-run auto detection so the aspect matches the new format
   useEffect(() => {
@@ -921,7 +955,7 @@ const AdminPassportPhoto = ({ injected } = {}) => {
               </div>
 
               <div>
-                <Label className="text-xs">Filigran PNG (her fotoğrafın içine)</Label>
+                <Label className="text-xs">Filigran PNG (fotoğrafın ALTINDAKİ beyaz alana)</Label>
                 <Input type="file" accept="image/png,image/jpeg" onChange={(e) => {
                   const f = e.target.files?.[0]; if (!f) return;
                   const r = new FileReader(); r.onload = () => setWatermark(r.result); r.readAsDataURL(f);
@@ -929,15 +963,20 @@ const AdminPassportPhoto = ({ injected } = {}) => {
                 {watermark && (
                   <div className="mt-2 flex items-center gap-2">
                     <img src={watermark} alt="wm" className="h-10 border" />
-                    <Button size="sm" variant="outline" onClick={() => setWatermark(null)} data-testid="watermark-remove">Kaldır</Button>
+                    <Button size="sm" variant="outline" onClick={() => { setWatermark(null); setWmNudge({ x: 0, y: 0 }); }} data-testid="watermark-remove">Kaldır</Button>
                   </div>
+                )}
+                {watermark && (
+                  <p className="mt-2 text-[10px] text-slate-500 leading-relaxed">
+                    Filigran seçildiğinde her fotoğrafın <b>altında 1 cm beyaz alan</b> açılır (fotoğraf kırpılmaz, alan kağıttan açılır) ve filigran oraya yerleştirilir. Kesim çizgisi filigranın altından geçer.
+                  </p>
                 )}
               </div>
 
               {watermark && (
                 <>
                   <div>
-                    <Label className="text-xs">Filigran Konumu (her fotoğrafın alt kısmı)</Label>
+                    <Label className="text-xs">Filigran Konumu (beyaz alan içinde)</Label>
                     <div className="grid grid-cols-3 gap-1 mt-1 p-1 bg-slate-100 rounded-lg text-xs" data-testid="wm-align-switch">
                       {[
                         { k: "left", label: "Sol" },
@@ -956,6 +995,26 @@ const AdminPassportPhoto = ({ injected } = {}) => {
                       ))}
                     </div>
                   </div>
+
+                  {/* Fine movement inside the white strip — up/down/left/right/center */}
+                  <div>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <Label className="flex items-center gap-1"><Move className="w-3 h-3" /> Filigran İnce Konum</Label>
+                      <span className="text-slate-500">{wmNudge.x}·{wmNudge.y} mm</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 w-32 mx-auto">
+                      <span />
+                      <button type="button" data-testid="wm-move-up" onClick={() => setWmNudge((n) => ({ ...n, y: Math.round((n.y - 0.5) * 10) / 10 }))} className="py-1.5 rounded-md bg-slate-100 hover:bg-emerald-50 text-slate-700 grid place-items-center"><ChevronUp className="w-4 h-4" /></button>
+                      <span />
+                      <button type="button" data-testid="wm-move-left" onClick={() => setWmNudge((n) => ({ ...n, x: Math.round((n.x - 0.5) * 10) / 10 }))} className="py-1.5 rounded-md bg-slate-100 hover:bg-emerald-50 text-slate-700 grid place-items-center"><ChevronLeft className="w-4 h-4" /></button>
+                      <button type="button" data-testid="wm-move-center" onClick={() => { setWmAlign("center"); setWmNudge({ x: 0, y: 0 }); }} className="py-1.5 rounded-md bg-slate-100 hover:bg-emerald-50 text-slate-700 grid place-items-center text-[10px] font-semibold">Orta</button>
+                      <button type="button" data-testid="wm-move-right" onClick={() => setWmNudge((n) => ({ ...n, x: Math.round((n.x + 0.5) * 10) / 10 }))} className="py-1.5 rounded-md bg-slate-100 hover:bg-emerald-50 text-slate-700 grid place-items-center"><ChevronRight className="w-4 h-4" /></button>
+                      <span />
+                      <button type="button" data-testid="wm-move-down" onClick={() => setWmNudge((n) => ({ ...n, y: Math.round((n.y + 0.5) * 10) / 10 }))} className="py-1.5 rounded-md bg-slate-100 hover:bg-emerald-50 text-slate-700 grid place-items-center"><ChevronDown className="w-4 h-4" /></button>
+                      <span />
+                    </div>
+                  </div>
+
                   <div>
                     <div className="flex items-center justify-between text-xs mb-1">
                       <Label>Filigran Boyutu</Label>
