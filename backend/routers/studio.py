@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 import jwt
-from fastapi import APIRouter, HTTPException, Depends, Request, Response
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Form
 from pydantic import BaseModel, EmailStr, Field
 
 EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
@@ -32,6 +32,9 @@ from starlette.responses import Response as StarletteResponse
 STUDIO_TRIAL_DAYS = int(os.environ.get("STUDIO_TRIAL_DAYS", "3"))
 STUDIO_TRIAL_STORAGE_GB = int(os.environ.get("STUDIO_TRIAL_STORAGE_GB", "10"))
 STUDIO_TRIAL_MAX_EVENTS = int(os.environ.get("STUDIO_TRIAL_MAX_EVENTS", "2"))
+
+# In-memory chunk buffer for uniform (PSD/PNG) uploads (single-process dev/preview).
+_UNIFORM_UPLOADS: dict = {}
 
 # Subscription plans. Prices in TRY; PayTR handles the actual charge later.
 STUDIO_PLANS = [
@@ -1109,5 +1112,162 @@ def get_router(db, deps):
         }
         await db.vesikalik_deliveries.insert_one(doc)
         return {"token": token, "path": f"/api/v/{token}", "expires_at": doc["expires_at"]}
+
+    # =========================================================================
+    # Faz 5-A: Askeri Üniforma Kütüphanesi (PSD/PNG + isim; admin onaylı paylaşım)
+    # =========================================================================
+    def _is_admin(acc: dict) -> bool:
+        return bool(acc.get("is_admin_super"))
+
+    def _uniform_out(u: dict) -> dict:
+        return {
+            "id": u["id"], "name": u.get("name"), "status": u.get("status"),
+            "png_url": f"/api/studio/uniforms/{u['id']}/file/png" if u.get("png_path") else None,
+            "has_psd": bool(u.get("psd_path")),
+            "psd_url": f"/api/studio/uniforms/{u['id']}/file/psd" if u.get("psd_path") else None,
+            "uploader_name": u.get("uploader_name"), "uploaded_by": u.get("uploaded_by"),
+            "created_at": u.get("created_at"),
+        }
+
+    @router.get("/uniforms")
+    async def list_uniforms(acc: dict = Depends(get_current_studio)):
+        if _is_admin(acc):
+            docs = await db.military_uniforms.find({"is_deleted": {"$ne": True}}, {"_id": 0}).sort("created_at", -1).to_list(500)
+        else:
+            docs = await db.military_uniforms.find(
+                {"is_deleted": {"$ne": True}, "$or": [{"status": "approved"}, {"uploaded_by": acc["id"]}]},
+                {"_id": 0},
+            ).sort("created_at", -1).to_list(500)
+        return {"items": [_uniform_out(d) for d in docs], "is_admin": _is_admin(acc)}
+
+    @router.post("/uniforms/upload-init")
+    async def uniform_upload_init(kind: str = Form(...), filename: str = Form(""),
+                                  total_chunks: int = Form(...), acc: dict = Depends(get_current_studio)):
+        if kind not in ("png", "psd"):
+            raise HTTPException(status_code=400, detail="Geçersiz dosya türü")
+        upload_id = new_id()
+        ext = (filename.rsplit(".", 1)[-1].lower() if "." in filename else kind)
+        _UNIFORM_UPLOADS[upload_id] = {"kind": kind, "ext": ext, "owner": acc["id"], "total": total_chunks, "chunks": {}}
+        return {"upload_id": upload_id}
+
+    @router.post("/uniforms/upload-chunk/{upload_id}")
+    async def uniform_upload_chunk(upload_id: str, index: int = Form(...), chunk: UploadFile = File(...),
+                                   acc: dict = Depends(get_current_studio)):
+        u = _UNIFORM_UPLOADS.get(upload_id)
+        if not u or u["owner"] != acc["id"]:
+            raise HTTPException(status_code=404, detail="Yükleme oturumu bulunamadı")
+        u["chunks"][index] = await chunk.read()
+        return {"received": index, "count": len(u["chunks"]), "total": u["total"]}
+
+    @router.post("/uniforms/upload-complete/{upload_id}")
+    async def uniform_upload_complete(upload_id: str, acc: dict = Depends(get_current_studio)):
+        u = _UNIFORM_UPLOADS.get(upload_id)
+        if not u or u["owner"] != acc["id"]:
+            raise HTTPException(status_code=404, detail="Yükleme oturumu bulunamadı")
+        if len(u["chunks"]) != u["total"]:
+            raise HTTPException(status_code=400, detail="Eksik parça var")
+        u["data"] = b"".join(u["chunks"][i] for i in sorted(u["chunks"].keys()))
+        u["chunks"] = {}
+        return {"ok": True, "size": len(u["data"])}
+
+    class UniformSubmitIn(BaseModel):
+        name: str
+        png_upload_id: str
+        psd_upload_id: Optional[str] = None
+
+    @router.post("/uniforms")
+    async def create_uniform(payload: UniformSubmitIn, acc: dict = Depends(get_current_studio)):
+        name = (payload.name or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Üniforma adı gerekli")
+        png = _UNIFORM_UPLOADS.get(payload.png_upload_id)
+        if not png or png["owner"] != acc["id"] or not png.get("data"):
+            raise HTTPException(status_code=400, detail="PNG yüklemesi eksik")
+        psd = None
+        if payload.psd_upload_id:
+            psd = _UNIFORM_UPLOADS.get(payload.psd_upload_id)
+            if not psd or psd["owner"] != acc["id"] or not psd.get("data"):
+                raise HTTPException(status_code=400, detail="PSD yüklemesi eksik")
+        uid = new_id()
+        png_path = f"fotuber/uniforms/{uid}/uniform.png"
+        try:
+            await asyncio.to_thread(put_object, png_path, png["data"], "image/png")
+            psd_path = None
+            if psd:
+                psd_path = f"fotuber/uniforms/{uid}/uniform.psd"
+                await asyncio.to_thread(put_object, psd_path, psd["data"], "image/vnd.adobe.photoshop")
+        except Exception as e:
+            _log.error(f"uniform upload failed: {e}")
+            raise HTTPException(status_code=502, detail="Depolamaya yüklenemedi")
+        is_admin = _is_admin(acc)
+        doc = {
+            "id": uid, "name": name, "status": "approved" if is_admin else "pending",
+            "png_path": png_path, "psd_path": psd_path,
+            "png_size": len(png["data"]), "psd_size": len(psd["data"]) if psd else 0,
+            "uploaded_by": "admin" if is_admin else acc["id"],
+            "uploader_name": acc.get("brand_name") or acc.get("firma_adi") or "—",
+            "created_at": now_iso(), "approved_at": now_iso() if is_admin else None,
+            "is_deleted": False,
+        }
+        await db.military_uniforms.insert_one(doc)
+        _UNIFORM_UPLOADS.pop(payload.png_upload_id, None)
+        if payload.psd_upload_id:
+            _UNIFORM_UPLOADS.pop(payload.psd_upload_id, None)
+        return {"ok": True, "uniform": _uniform_out(doc), "pending": not is_admin}
+
+    @router.get("/uniforms/{uid}/file/{kind}")
+    async def uniform_file(uid: str, kind: str, acc: dict = Depends(get_current_studio)):
+        u = await db.military_uniforms.find_one({"id": uid, "is_deleted": {"$ne": True}}, {"_id": 0})
+        if not u:
+            raise HTTPException(status_code=404, detail="Üniforma bulunamadı")
+        if u.get("status") != "approved" and not _is_admin(acc) and u.get("uploaded_by") != acc["id"]:
+            raise HTTPException(status_code=403, detail="Yetki yok")
+        path = u.get("png_path") if kind == "png" else u.get("psd_path")
+        if not path:
+            raise HTTPException(status_code=404, detail="Dosya yok")
+        try:
+            data, ct = await asyncio.to_thread(get_object, path)
+        except Exception:
+            raise HTTPException(status_code=502, detail="Dosya alınamadı")
+        if kind == "psd":
+            return StarletteResponse(content=data, media_type="image/vnd.adobe.photoshop",
+                                     headers={"Content-Disposition": f'attachment; filename="{u.get("name","uniforma")}.psd"'})
+        return StarletteResponse(content=data, media_type="image/png")
+
+    class UniformPatchIn(BaseModel):
+        name: Optional[str] = None
+
+    @router.post("/uniforms/{uid}/approve")
+    async def approve_uniform(uid: str, acc: dict = Depends(get_current_studio)):
+        if not _is_admin(acc):
+            raise HTTPException(status_code=403, detail="Yalnızca site yöneticisi")
+        r = await db.military_uniforms.update_one({"id": uid}, {"$set": {"status": "approved", "approved_at": now_iso()}})
+        if not r.matched_count:
+            raise HTTPException(status_code=404, detail="Bulunamadı")
+        return {"ok": True}
+
+    @router.post("/uniforms/{uid}/reject")
+    async def reject_uniform(uid: str, acc: dict = Depends(get_current_studio)):
+        if not _is_admin(acc):
+            raise HTTPException(status_code=403, detail="Yalnızca site yöneticisi")
+        r = await db.military_uniforms.update_one({"id": uid}, {"$set": {"status": "rejected"}})
+        if not r.matched_count:
+            raise HTTPException(status_code=404, detail="Bulunamadı")
+        return {"ok": True}
+
+    @router.patch("/uniforms/{uid}")
+    async def patch_uniform(uid: str, payload: UniformPatchIn, acc: dict = Depends(get_current_studio)):
+        if not _is_admin(acc):
+            raise HTTPException(status_code=403, detail="Yalnızca site yöneticisi")
+        if payload.name is not None and payload.name.strip():
+            await db.military_uniforms.update_one({"id": uid}, {"$set": {"name": payload.name.strip()}})
+        return {"ok": True}
+
+    @router.delete("/uniforms/{uid}")
+    async def delete_uniform(uid: str, acc: dict = Depends(get_current_studio)):
+        if not _is_admin(acc):
+            raise HTTPException(status_code=403, detail="Yalnızca site yöneticisi")
+        await db.military_uniforms.update_one({"id": uid}, {"$set": {"is_deleted": True}})
+        return {"ok": True}
 
     return router

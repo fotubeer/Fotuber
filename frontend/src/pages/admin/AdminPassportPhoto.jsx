@@ -14,6 +14,7 @@ import { detectBiometricCrop, loadFaceModels } from "@/lib/faceDetect";
 import { removeBackground, compositeOnColor } from "@/lib/bgRemove";
 import { QRCodeCanvas } from "qrcode.react";
 import RetouchBrush from "@/components/RetouchBrush";
+import UniformLibrary from "@/components/UniformLibrary";
 import PhotoStudio from "@/components/PhotoStudio";
 
 // IndexedDB helpers for last-10 archive
@@ -1265,6 +1266,8 @@ const AdminPassportPhoto = ({ injected } = {}) => {
               )}
             </CardContent>
           </Card>
+
+          <UniformLibrary />
         </div>
       </div>
 
