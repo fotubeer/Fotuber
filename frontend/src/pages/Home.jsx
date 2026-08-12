@@ -8,6 +8,7 @@ import { useSettings } from "@/context/SettingsContext";
 import { SEO, buildLocalBusinessLd } from "@/components/SEO";
 import IntroSplash from "@/components/IntroSplash";
 import InstagramSlideshow from "@/components/InstagramSlideshow";
+import AdBanners from "@/components/AdBanners";
 
 const DEFAULT_HERO = "https://images.pexels.com/photos/5762880/pexels-photo-5762880.jpeg";
 
@@ -418,6 +419,12 @@ const Home = () => {
               Randevu Oluştur
             </Button>
           </Link>
+        </div>
+      </section>
+      {/* Admin-managed ad banners (footer) */}
+      <section className="py-10 border-t border-neutral-900">
+        <div className="max-w-5xl mx-auto px-6">
+          <AdBanners placement="home_footer" dark />
         </div>
       </section>
     </div>

@@ -61,6 +61,251 @@ class ServicePackIn(BaseModel):
     max_qty: int = 0             # 0 = sınırsız; müşterinin bu hizmet için seçebileceği maks. adet
 
 
+class PaymentMethodIn(BaseModel):
+    provider: str                  # paytr | iyzico | odeal | link | iban | cash
+    label: str = ""
+    active: bool = True
+    config: dict = {}              # provider'a göre alanlar (gizli anahtarlar dahil)
+
+
+# Sağlayıcı meta verisi — fotoğrafçıya yöntem eklerken bilgi olarak gösterilir.
+PAYMENT_PROVIDERS = [
+    {"provider": "paytr", "label": "PayTR", "auto": True, "kind": "Sanal POS (Otomatik)",
+     "help": "PayTR mağazanız üzerinden müşteriden otomatik KART tahsilatı. Ödeme tamamlanınca sipariş kendiliğinden 'Ödendi' olur.",
+     "steps": [
+         "paytr.com adresinden Üye İş Yeri (mağaza) hesabınıza giriş yapın. Hesabınız yoksa başvuru yapıp mağazanızı onaylatın.",
+         "Sol menüden 'Bilgi' (veya 'Ayarlar') → 'Entegrasyon Bilgileri / API Bilgileri' bölümüne girin.",
+         "Buradaki üç değeri kopyalayın: Mağaza No (merchant_id), Mağaza Parolası (merchant_key), Mağaza Gizli Anahtarı (merchant_salt).",
+         "PayTR destekten 'Link API' özelliğinin mağazanız için AKTİF edilmesini isteyin (Link ile Ödeme kapalıysa link üretilemez).",
+         "Üç değeri aşağıdaki alanlara yapıştırıp kaydedin. Test için önce küçük bir tutarla deneyin.",
+     ],
+     "docs": "https://www.paytr.com",
+     "fields": [
+         {"key": "merchant_id", "label": "Mağaza No (merchant_id)", "secret": False},
+         {"key": "merchant_key", "label": "Mağaza Parolası (merchant_key)", "secret": True},
+         {"key": "merchant_salt", "label": "Mağaza Gizli Anahtarı (merchant_salt)", "secret": True},
+     ]},
+    {"provider": "iyzico", "label": "iyzico", "auto": True, "kind": "Sanal POS (Otomatik)",
+     "help": "iyzico hesabınız üzerinden otomatik KART tahsilatı (iyziLink). Ödeme tamamlanınca sipariş kendiliğinden 'Ödendi' olur.",
+     "steps": [
+         "merchant.iyzico.com adresinden iyzico işletme hesabınıza giriş yapın.",
+         "'Ayarlar' → 'API Anahtarları' menüsüne gidin.",
+         "API Key ve Secret Key değerlerini kopyalayın (Gerçek tahsilat için 'Production/Canlı', deneme için 'Sandbox' anahtarları farklıdır).",
+         "Hesabınızda 'iyzico Link (iyziLink)' ürününün aktif olduğundan emin olun; değilse iyzico destekten aktifleştirin.",
+         "Anahtarları aşağı yapıştırın ve Ortam alanına gerçek tahsilat için 'production', deneme için 'sandbox' yazın.",
+     ],
+     "docs": "https://merchant.iyzico.com",
+     "fields": [
+         {"key": "api_key", "label": "API Key", "secret": False},
+         {"key": "secret_key", "label": "Secret Key", "secret": True},
+         {"key": "environment", "label": "Ortam (production / sandbox)", "secret": False, "default": "production"},
+     ]},
+    {"provider": "odeal", "label": "Ödeal", "auto": True, "kind": "Sanal POS (Otomatik)",
+     "help": "Ödeal Sanal POS üzerinden otomatik KART tahsilatı. Müşteri 3D güvenli sayfada öder, ödeme doğrulanınca sipariş 'Ödendi' olur.",
+     "steps": [
+         "Ödeal ile Sanal POS / online ödeme sözleşmeniz olmalı. Yoksa odeal.com üzerinden başvurun.",
+         "Ödeal entegrasyon/teknik ekibinden hesabınıza ait API Key ve Secret Key bilgilerini talep edin.",
+         "Test için 'stage', gerçek tahsilat için 'production' anahtarları ayrıdır; hangisini kullanacaksanız onu isteyin.",
+         "'Link ile Ödeme (Pay by Link)' özelliğinin hesabınızda açık olduğunu teyit edin.",
+         "Anahtarları aşağı yapıştırın ve Ortam alanına 'production' (veya deneme için 'stage') yazıp kaydedin.",
+     ],
+     "docs": "https://docs.odeal.com",
+     "fields": [
+         {"key": "api_key", "label": "API Key", "secret": False},
+         {"key": "secret_key", "label": "Secret Key", "secret": True},
+         {"key": "environment", "label": "Ortam (production / stage)", "secret": False, "default": "production"},
+     ]},
+    {"provider": "link", "label": "Ödeme Linki (PayPal / iyzico / Ödeal / Banka POS)", "auto": False, "kind": "Ödeme Linki",
+     "help": "Herhangi bir sağlayıcının hazır ödeme linkini kullanın. Müşteri linke tıklayıp öder, dönüp 'Ödedim' der, siz onaylarsınız.",
+     "steps": [
+         "Kullandığınız ödeme sağlayıcısının (PayPal, iyzico, Ödeal, bankanızın Sanal POS'u vb.) paneline girin.",
+         "Oradan bir 'Ödeme Linki' / 'Ödeme Talebi' / 'Payment Link' oluşturun (çoğu sağlayıcıda tek tıkla yapılır).",
+         "Oluşan linki (https://... ile başlayan) kopyalayın.",
+         "Linki aşağıdaki alana yapıştırıp kaydedin. Aynı link tüm müşterilere gösterilir; tutarı müşteriyle ayrıca teyit edin.",
+         "Müşteri ödedikten sonra Siparişler sekmesinden 'Ödemeyi Onayla' ile onaylayın.",
+     ],
+     "docs": "",
+     "fields": [
+         {"key": "url", "label": "Ödeme Linki (https://...)", "secret": False},
+     ]},
+    {"provider": "iban", "label": "Havale / EFT (IBAN)", "auto": False, "kind": "Manuel Onay",
+     "help": "Müşteriye IBAN bilgilerinizi gösterir. Para hesabınıza geçince siparişten onaylarsınız.",
+     "steps": [
+         "Tahsilat yapmak istediğiniz banka hesabınızın IBAN numarasını hazırlayın.",
+         "IBAN, hesap sahibinin adı-soyadı/ünvanı ve (isteğe bağlı) banka adını aşağıya girin.",
+         "Kaydedin. Müşteri bu bilgileri görüp havale/EFT yapar ve 'Ödedim' der.",
+         "Para hesabınıza geçtiğini gördüğünüzde Siparişler sekmesinden 'Ödemeyi Onayla' butonuna basın.",
+     ],
+     "docs": "",
+     "fields": [
+         {"key": "iban", "label": "IBAN", "secret": False},
+         {"key": "holder", "label": "Ad Soyad / Ünvan", "secret": False},
+         {"key": "bank", "label": "Banka (opsiyonel)", "secret": False},
+     ]},
+    {"provider": "cash", "label": "Nakit / Elden Ödeme", "auto": False, "kind": "Manuel Onay",
+     "help": "Müşteri teslimatta elden öder. Ödeme alınınca siparişten onaylarsınız.",
+     "steps": [
+         "Bu yöntemi eklemek için ek bilgi gerekmez; sadece bir etiket (örn. 'Elden Ödeme') yazıp kaydedin.",
+         "Müşteri bu seçeneği seçtiğinde sipariş 'Onay bekliyor' durumuna geçer.",
+         "Ödemeyi elden aldığınızda Siparişler sekmesinden 'Ödemeyi Onayla' butonuna basın.",
+     ],
+     "docs": "",
+     "fields": []},
+]
+_AUTO_PROVIDERS = {"paytr", "iyzico", "odeal"}
+_SECRET_KEYS = {"merchant_key", "merchant_salt", "secret_key"}
+
+
+def _redact_method(m: dict) -> dict:
+    """Studio-facing: mask secret config values (never return raw secrets)."""
+    cfg = dict(m.get("config") or {})
+    for k in list(cfg.keys()):
+        if k in _SECRET_KEYS and cfg[k]:
+            cfg[k] = "••••••" + str(cfg[k])[-2:]
+    return {"id": m.get("id"), "provider": m.get("provider"), "label": m.get("label", ""),
+            "active": m.get("active", True), "config": cfg}
+
+
+def _public_method(m: dict) -> dict:
+    """Client-facing: expose only what the buyer needs (never secrets)."""
+    prov = m.get("provider")
+    cfg = m.get("config") or {}
+    out = {"id": m.get("id"), "provider": prov, "label": m.get("label") or _provider_label(prov),
+           "auto": prov in _AUTO_PROVIDERS, "info": {}}
+    if prov == "iban":
+        out["info"] = {"iban": cfg.get("iban", ""), "holder": cfg.get("holder", ""), "bank": cfg.get("bank", "")}
+    elif prov == "cash":
+        out["info"] = {}
+    elif prov == "link":
+        out["info"] = {"url": cfg.get("url", "")}
+    return out
+
+
+def _provider_label(prov: str) -> str:
+    for p in PAYMENT_PROVIDERS:
+        if p["provider"] == prov:
+            return p["label"]
+    return prov or "Ödeme"
+
+
+# ---- Gateway link creators (per-merchant credentials, multi-tenant) --------
+def _hmac_b64(key: str, msg: str) -> str:
+    import base64
+    import hashlib
+    import hmac
+    return base64.b64encode(hmac.new(key.encode(), msg.encode(), hashlib.sha256).digest()).decode()
+
+
+async def _paytr_gallery_link(cfg: dict, title: str, price_kurus: str, callback_url: str, callback_id: str) -> str:
+    import httpx
+    mid = cfg.get("merchant_id", ""); mkey = cfg.get("merchant_key", ""); msalt = cfg.get("merchant_salt", "")
+    if not (mid and mkey and msalt):
+        raise HTTPException(status_code=400, detail="PayTR bilgileri eksik")
+    currency, max_inst, link_type, lang, min_count = "TL", "1", "product", "tr", "1"
+    required = title + price_kurus + currency + max_inst + link_type + lang + min_count
+    token = _hmac_b64(mkey, required + msalt)
+    data = {"merchant_id": mid, "name": title, "price": price_kurus, "currency": currency,
+            "max_installment": max_inst, "link_type": link_type, "lang": lang, "min_count": min_count,
+            "max_count": "1", "callback_link": callback_url, "callback_id": callback_id,
+            "debug_on": "0", "get_qr": "0", "paytr_token": token}
+    async with httpx.AsyncClient(timeout=25) as http:
+        r = await http.post("https://www.paytr.com/odeme/api/link/create", data=data)
+    try:
+        res = r.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail=f"PayTR yanıtı okunamadı: {r.text[:150]}")
+    if res.get("status") != "success":
+        raise HTTPException(status_code=502, detail=res.get("err_msg") or res.get("reason") or "PayTR link oluşturulamadı")
+    return res.get("link")
+
+
+async def _iyzico_gallery_link(cfg: dict, order_id: str, title: str, price: str) -> tuple:
+    import httpx
+    import json as _json
+    import secrets as _secrets
+    api_key = cfg.get("api_key", ""); secret = cfg.get("secret_key", "")
+    env = (cfg.get("environment") or "production").lower()
+    if not (api_key and secret):
+        raise HTTPException(status_code=400, detail="iyzico bilgileri eksik")
+    base = "https://sandbox-api.iyzipay.com" if env == "sandbox" else "https://api.iyzipay.com"
+    path = "/v2/iyzilink/products"
+    payload = {"conversationId": order_id, "locale": "tr", "name": title[:120],
+               "description": title[:400], "price": price, "currencyCode": "TRY",
+               "encodedImageFile": "", "addressIgnorable": True,
+               "installmentRequested": False, "stockEnabled": False, "categoryType": "UNKNOWN"}
+    body = _json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    rnd = _secrets.token_urlsafe(18)
+    import base64
+    import hashlib
+    import hmac
+    sig = hmac.new(secret.encode(), f"{rnd}{path}{body}".encode(), hashlib.sha256).hexdigest()
+    auth = base64.b64encode(f"apiKey:{api_key}&randomKey:{rnd}&signature:{sig}".encode()).decode()
+    headers = {"Authorization": f"IYZWSv2 {auth}", "x-iyzi-rnd": rnd, "Content-Type": "application/json"}
+    async with httpx.AsyncClient(timeout=25) as http:
+        r = await http.post(base + path, content=body.encode(), headers=headers)
+    try:
+        res = r.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail=f"iyzico yanıtı okunamadı: {r.text[:150]}")
+    if res.get("status") != "success":
+        raise HTTPException(status_code=502, detail=res.get("errorMessage") or "iyzico link oluşturulamadı")
+    d = res.get("data") or {}
+    return d.get("url"), d.get("token")
+
+
+async def _odeal_gallery_link(cfg: dict, external_id: str, amount: float, return_url: str,
+                              buyer_name: str = "", buyer_mail: str = "") -> tuple:
+    import httpx
+    api_key = cfg.get("api_key", ""); secret = cfg.get("secret_key", "")
+    env = (cfg.get("environment") or "production").lower()
+    if not (api_key and secret):
+        raise HTTPException(status_code=400, detail="Ödeal bilgileri eksik")
+    base = "https://api.odeal.com" if env == "production" else "https://api-stg.odeal.com"
+    token_url = "https://auth-sandbox.odeal.com/api/v1/token" if env != "production" else "https://auth.odeal.com/api/v1/token"
+    async with httpx.AsyncClient(timeout=20) as http:
+        tr = await http.post(token_url, json={"apiKey": api_key, "secretKey": secret})
+        if tr.status_code >= 400:
+            raise HTTPException(status_code=502, detail="Ödeal kimlik doğrulama başarısız")
+        tb = tr.json()
+        token = (tb.get("result") or {}).get("accessToken") or tb.get("accessToken")
+        if not token:
+            raise HTTPException(status_code=502, detail="Ödeal token alınamadı")
+        payload = {"amount": float(amount), "currency": "TRY", "externalId": external_id, "returnUrl": return_url}
+        if buyer_name:
+            payload["buyerName"] = buyer_name
+        if buyer_mail:
+            payload["buyerMail"] = buyer_mail
+        pr = await http.post(base + "/vpos/pay-by-link",
+                             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+                             json=payload)
+    try:
+        pb = pr.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail=f"Ödeal yanıtı okunamadı: {pr.text[:150]}")
+    if pr.status_code >= 400 or not pb.get("checkout3DUrl"):
+        raise HTTPException(status_code=502, detail=pb.get("message") or "Ödeal link oluşturulamadı")
+    return pb.get("checkout3DUrl"), pb.get("id")
+
+
+async def _odeal_check_status(cfg: dict, external_id: str, odeal_id: str) -> str:
+    import httpx
+    env = (cfg.get("environment") or "production").lower()
+    base = "https://api.odeal.com" if env == "production" else "https://api-stg.odeal.com"
+    token_url = "https://auth-sandbox.odeal.com/api/v1/token" if env != "production" else "https://auth.odeal.com/api/v1/token"
+    async with httpx.AsyncClient(timeout=20) as http:
+        tr = await http.post(token_url, json={"apiKey": cfg.get("api_key", ""), "secretKey": cfg.get("secret_key", "")})
+        tb = tr.json()
+        token = (tb.get("result") or {}).get("accessToken") or tb.get("accessToken")
+        r = await http.post(base + "/vpos/check-status",
+                            headers={"Authorization": f"Bearer {token}"},
+                            json={"id": odeal_id} if odeal_id else {"externalId": external_id})
+    try:
+        rb = r.json()
+    except Exception:
+        return ""
+    return (rb.get("result") or {}).get("payment_status") or rb.get("payment_status") or ""
+
+
 class SelectionItem(BaseModel):
     photo_id: str
     album: bool = False
@@ -634,6 +879,7 @@ def get_router(db, deps):
         packs = [{"name": p["name"], "price": p["price"]} for p in pack_details]
 
         order_no = "SIP-" + secrets.token_hex(3).upper()
+        needs_payment = upsell_total > 0
         order = {
             "id": new_id(), "order_no": order_no, "event_id": ev["id"], "studio_id": ev["studio_id"],
             "event_name": ev["name"], "client_name": ev.get("client_name", ""),
@@ -642,6 +888,9 @@ def get_router(db, deps):
             "pack_details": pack_details,
             "upsells": packs, "upsell_total": upsell_total, "note": payload.note,
             "status": "new", "created_at": now_iso(),
+            "payment_status": "unpaid" if needs_payment else "none",
+            "payment_provider": None, "payment_method_id": None,
+            "payment_ref": None, "paid_at": None,
         }
         await db.gallery_orders.insert_one(order)
         await db.gallery_events.update_one({"id": ev["id"]}, {"$set": {"submitted": True, "order_status": "new"}})
@@ -693,7 +942,16 @@ def get_router(db, deps):
         except Exception:
             pass
 
-        return {"ok": True, "order_no": order_no}
+        # Payment options for the client (only when there are paid services)
+        pay_methods = []
+        if needs_payment:
+            raw = await db.studio_payment_methods.find(
+                {"studio_id": ev["studio_id"], "active": True}, {"_id": 0}).sort("created_at", 1).to_list(50)
+            pay_methods = [_public_method(m) for m in raw]
+
+        return {"ok": True, "order_no": order_no, "order_id": order["id"],
+                "upsell_total": upsell_total, "needs_payment": needs_payment,
+                "payment_methods": pay_methods}
 
     # ==================== PUBLIC: PHOTO SERVING ====================
     @router.get("/gallery/photo/{photo_id}")
@@ -713,6 +971,215 @@ def get_router(db, deps):
         data, ctype = get_object(p["thumb_path"])
         return StarletteResponse(content=data, media_type="image/jpeg",
                                  headers={"Cache-Control": "public, max-age=86400"})
+
+    # ===================== ÖDEME YÖNTEMLERİ (Stüdyoya Özel Ödeme) =====================
+    @router.get("/studio/gallery/payment-providers")
+    async def payment_providers(acc: dict = Depends(get_current_studio)):
+        return {"providers": PAYMENT_PROVIDERS}
+
+    @router.get("/studio/gallery/payment-methods")
+    async def list_payment_methods(acc: dict = Depends(get_current_studio)):
+        raw = await db.studio_payment_methods.find({"studio_id": acc["id"]}, {"_id": 0}).sort("created_at", 1).to_list(50)
+        return [_redact_method(m) for m in raw]
+
+    @router.post("/studio/gallery/payment-methods")
+    async def create_payment_method(payload: PaymentMethodIn, acc: dict = Depends(get_current_studio)):
+        if payload.provider not in {p["provider"] for p in PAYMENT_PROVIDERS}:
+            raise HTTPException(status_code=400, detail="Geçersiz ödeme sağlayıcısı")
+        doc = {"id": new_id(), "studio_id": acc["id"], "provider": payload.provider,
+               "label": payload.label or _provider_label(payload.provider),
+               "active": payload.active, "config": payload.config or {}, "created_at": now_iso()}
+        await db.studio_payment_methods.insert_one(doc)
+        return _redact_method(doc)
+
+    @router.put("/studio/gallery/payment-methods/{mid}")
+    async def update_payment_method(mid: str, payload: PaymentMethodIn, acc: dict = Depends(get_current_studio)):
+        cur = await db.studio_payment_methods.find_one({"id": mid, "studio_id": acc["id"]}, {"_id": 0})
+        if not cur:
+            raise HTTPException(status_code=404, detail="Yöntem bulunamadı")
+        # Keep existing secret values if the incoming config left them masked/blank.
+        new_cfg = dict(payload.config or {})
+        old_cfg = cur.get("config") or {}
+        for k in _SECRET_KEYS:
+            v = new_cfg.get(k)
+            if k in new_cfg and (not v or str(v).startswith("••••••")):
+                new_cfg[k] = old_cfg.get(k, "")
+        await db.studio_payment_methods.update_one(
+            {"id": mid, "studio_id": acc["id"]},
+            {"$set": {"label": payload.label or _provider_label(payload.provider),
+                      "active": payload.active, "config": new_cfg, "provider": payload.provider}})
+        doc = await db.studio_payment_methods.find_one({"id": mid}, {"_id": 0})
+        return _redact_method(doc)
+
+    @router.delete("/studio/gallery/payment-methods/{mid}")
+    async def delete_payment_method(mid: str, acc: dict = Depends(get_current_studio)):
+        r = await db.studio_payment_methods.delete_one({"id": mid, "studio_id": acc["id"]})
+        if r.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Yöntem bulunamadı")
+        return {"ok": True}
+
+    async def _finalize_paid(order: dict, ref: str = ""):
+        if order.get("payment_status") == "paid":
+            return
+        await db.gallery_orders.update_one(
+            {"id": order["id"], "payment_status": {"$ne": "paid"}},
+            {"$set": {"payment_status": "paid", "paid_at": now_iso(), "payment_ref": ref}})
+        try:
+            _st = await db.studio_accounts.find_one({"id": order["studio_id"]}, {"_id": 0, "firma_adi": 1})
+            _firma = (_st or {}).get("firma_adi", "Stüdyo")
+            await db.notifications.insert_one({
+                "id": new_id(), "kind": "gallery_payment", "title": "Galeri ödemesi alındı",
+                "message": f"{_firma} · {order.get('event_name','')} ({order.get('order_no','')}) · {order.get('upsell_total',0):.0f}₺ ödendi",
+                "severity": "info", "firma_adi": _firma, "link": "/studyo/galeri",
+                "read": False, "read_at": None, "created_at": now_iso()})
+        except Exception:
+            pass
+
+    @router.put("/studio/gallery/orders/{oid}/confirm-payment")
+    async def confirm_payment(oid: str, acc: dict = Depends(get_current_studio)):
+        """Manuel yöntemler (IBAN/Nakit/Ödeme Linki) için fotoğrafçının ödemeyi onaylaması."""
+        order = await db.gallery_orders.find_one({"id": oid, "studio_id": acc["id"]}, {"_id": 0})
+        if not order:
+            raise HTTPException(status_code=404, detail="Sipariş bulunamadı")
+        await _finalize_paid(order, ref="manual")
+        return {"ok": True, "payment_status": "paid"}
+
+    # ===================== PUBLIC ÖDEME AKIŞI =====================
+    @router.post("/gallery/public/{token}/orders/{oid}/pay")
+    async def public_pay(token: str, oid: str, payload: dict, request: Request):
+        ev = await db.gallery_events.find_one({"share_token": token}, {"_id": 0})
+        if not ev:
+            raise HTTPException(status_code=404, detail="Galeri bulunamadı")
+        order = await db.gallery_orders.find_one({"id": oid, "event_id": ev["id"]}, {"_id": 0})
+        if not order:
+            raise HTTPException(status_code=404, detail="Sipariş bulunamadı")
+        if order.get("payment_status") == "paid":
+            return {"paid": True}
+        method = await db.studio_payment_methods.find_one(
+            {"id": payload.get("method_id"), "studio_id": ev["studio_id"], "active": True}, {"_id": 0})
+        if not method:
+            raise HTTPException(status_code=400, detail="Ödeme yöntemi bulunamadı")
+        prov = method["provider"]
+        cfg = method.get("config") or {}
+        amount = float(order.get("upsell_total") or 0)
+        title = f"{ev['name']} - Ek Hizmet ({order['order_no']})"
+        await db.gallery_orders.update_one({"id": oid}, {"$set": {
+            "payment_provider": prov, "payment_method_id": method["id"], "payment_status": "pending"}})
+
+        origin = f"{request.base_url}".rstrip("/").replace("http://", "https://")
+        if prov == "paytr":
+            cb_id = "gal" + secrets.token_hex(10)
+            cb = f"{origin}/api/gallery/pay/paytr-callback"
+            link = await _paytr_gallery_link(cfg, title[:60], str(int(round(amount * 100))), cb, cb_id)
+            await db.gallery_orders.update_one({"id": oid}, {"$set": {"payment_callback_id": cb_id}})
+            return {"redirect_url": link, "auto": True}
+        if prov == "iyzico":
+            url, tok = await _iyzico_gallery_link(cfg, oid, title, f"{amount:.2f}")
+            await db.gallery_orders.update_one({"id": oid}, {"$set": {"payment_token": tok}})
+            return {"redirect_url": url, "auto": True}
+        if prov == "odeal":
+            ext = f"{ev['studio_id']}:{oid}"
+            cb = f"{origin}/api/gallery/pay/odeal-callback/{ev['studio_id']}"
+            url, odid = await _odeal_gallery_link(cfg, ext, amount, cb,
+                                                  buyer_name=order.get("client_name", ""),
+                                                  buyer_mail=payload.get("email", ""))
+            await db.gallery_orders.update_one({"id": oid}, {"$set": {"payment_ref": odid, "payment_external_id": ext}})
+            return {"redirect_url": url, "auto": True}
+        if prov == "link":
+            return {"redirect_url": cfg.get("url", ""), "auto": False, "requires_confirm": True}
+        # iban / cash → manual
+        return {"auto": False, "requires_confirm": True, "info": _public_method(method)["info"]}
+
+    @router.post("/gallery/public/{token}/orders/{oid}/mark-paid")
+    async def public_mark_paid(token: str, oid: str):
+        """Müşteri manuel yöntemlerde 'Ödedim' dediğinde sipariş onay bekler duruma geçer."""
+        ev = await db.gallery_events.find_one({"share_token": token}, {"_id": 0})
+        if not ev:
+            raise HTTPException(status_code=404, detail="Galeri bulunamadı")
+        order = await db.gallery_orders.find_one({"id": oid, "event_id": ev["id"]}, {"_id": 0})
+        if not order:
+            raise HTTPException(status_code=404, detail="Sipariş bulunamadı")
+        if order.get("payment_status") != "paid":
+            await db.gallery_orders.update_one({"id": oid}, {"$set": {"payment_status": "awaiting_confirm"}})
+        return {"ok": True, "payment_status": "awaiting_confirm"}
+
+    @router.get("/gallery/public/{token}/orders/{oid}/status")
+    async def public_order_status(token: str, oid: str):
+        ev = await db.gallery_events.find_one({"share_token": token}, {"_id": 0})
+        if not ev:
+            raise HTTPException(status_code=404, detail="Galeri bulunamadı")
+        order = await db.gallery_orders.find_one({"id": oid, "event_id": ev["id"]}, {"_id": 0, "payment_status": 1})
+        if not order:
+            raise HTTPException(status_code=404, detail="Sipariş bulunamadı")
+        return {"payment_status": order.get("payment_status", "none")}
+
+    # ---- Gateway callbacks (server-to-server, no auth) ----
+    @router.post("/gallery/pay/paytr-callback")
+    async def paytr_gallery_callback(request: Request):
+        form = await request.form()
+        post = {k: str(v) for k, v in form.items()}
+        cb_id = post.get("callback_id", "")
+        order = await db.gallery_orders.find_one({"payment_callback_id": cb_id}, {"_id": 0})
+        if not order:
+            return StarletteResponse("OK", media_type="text/plain")
+        method = await db.studio_payment_methods.find_one({"id": order.get("payment_method_id")}, {"_id": 0})
+        cfg = (method or {}).get("config") or {}
+        if post.get("merchant_id") and cfg.get("merchant_id") and post["merchant_id"] != str(cfg["merchant_id"]):
+            return StarletteResponse("PAYTR merchant mismatch", media_type="text/plain")
+        msg = cb_id + post.get("merchant_oid", "") + cfg.get("merchant_salt", "") + post.get("status", "") + post.get("total_amount", "")
+        expected = _hmac_b64(cfg.get("merchant_key", ""), msg)
+        import hmac as _hmac
+        if not _hmac.compare_digest(expected, post.get("hash", "")):
+            return StarletteResponse("PAYTR bad hash", media_type="text/plain")
+        if post.get("status") == "success":
+            await _finalize_paid(order, ref=post.get("merchant_oid", "paytr"))
+        return StarletteResponse("OK", media_type="text/plain")
+
+    @router.post("/gallery/pay/iyzico-webhook")
+    async def iyzico_gallery_webhook(request: Request):
+        try:
+            payload = await request.json()
+        except Exception:
+            return {"received": True}
+        conv = payload.get("paymentConversationId") or payload.get("conversationId")
+        tok = payload.get("token")
+        order = await db.gallery_orders.find_one(
+            {"$or": [{"id": conv}, {"payment_token": tok}]}, {"_id": 0})
+        if not order:
+            return {"received": True}
+        method = await db.studio_payment_methods.find_one({"id": order.get("payment_method_id")}, {"_id": 0})
+        secret = ((method or {}).get("config") or {}).get("secret_key", "")
+        sig = request.headers.get("X-IYZ-SIGNATURE-V3", "")
+        import hashlib
+        import hmac as _hmac
+        raw = secret + str(payload.get("iyziEventType", "")) + str(payload.get("iyziPaymentId", "")) + \
+            str(payload.get("token", "")) + str(payload.get("paymentConversationId", "")) + str(payload.get("status", ""))
+        expected = _hmac.new(secret.encode(), raw.encode(), hashlib.sha256).hexdigest()
+        if sig and _hmac.compare_digest(expected.lower(), sig.lower()) and payload.get("status") == "SUCCESS":
+            await _finalize_paid(order, ref=str(payload.get("iyziPaymentId", "iyzico")))
+        return {"received": True}
+
+    @router.post("/gallery/pay/odeal-callback/{studio_id}")
+    async def odeal_gallery_callback(studio_id: str, request: Request):
+        try:
+            event = await request.json()
+        except Exception:
+            return {"received": True}
+        ext = event.get("externalId", "")
+        odid = event.get("id")
+        order = await db.gallery_orders.find_one(
+            {"$or": [{"payment_external_id": ext}, {"payment_ref": str(odid)}], "studio_id": studio_id}, {"_id": 0})
+        if not order:
+            return {"received": True}
+        method = await db.studio_payment_methods.find_one({"id": order.get("payment_method_id")}, {"_id": 0})
+        cfg = (method or {}).get("config") or {}
+        try:
+            status = await _odeal_check_status(cfg, ext, str(odid))
+        except Exception:
+            status = ""
+        if str(status).upper() == "COMPLETED":
+            await _finalize_paid(order, ref=str(odid))
+        return {"received": True}
 
     return router
 

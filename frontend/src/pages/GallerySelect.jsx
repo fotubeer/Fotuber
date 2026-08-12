@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   Check, Album, Frame, Sparkles, CheckCircle2, Camera, Clock, Download,
   X, ChevronLeft, ChevronRight, Maximize2, Tag,
+  CreditCard, Landmark, Banknote, ExternalLink, Loader2, Copy, ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,6 +21,7 @@ export default function GallerySelect() {
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(null);
+  const [payFinished, setPayFinished] = useState(false);
   const [lightbox, setLightbox] = useState(-1); // index in data.photos
 
   useEffect(() => {
@@ -79,7 +81,7 @@ export default function GallerySelect() {
     setSubmitting(true);
     try {
       const r = await axios.post(`${API_BASE}/gallery/public/${token}/select`, { selections, upsells: [], note });
-      setDone(r.data.order_no);
+      setDone(r.data);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Gönderilemedi");
     } finally { setSubmitting(false); }
@@ -102,12 +104,21 @@ export default function GallerySelect() {
   const orderStatus = data.event?.order_status;
   const flow = data.order_flow || [];
 
-  if (done) return (
+  if (done) {
+    const isObj = typeof done === "object" && done !== null;
+    const orderNo = isObj ? done.order_no : null;
+    const needsPay = isObj && done.needs_payment && (done.payment_methods || []).length > 0 && !payFinished;
+    if (needsPay) return <PaymentStep token={token} order={done} firma={data.firma_adi} onDone={() => setPayFinished(true)} />;
+    return (
     <div data-testid="gs-success" className="min-h-screen grid place-items-center bg-neutral-950 text-white p-6 text-center">
       <div className="max-w-md w-full">
         <CheckCircle2 size={56} className="mx-auto text-emerald-400" />
-        <h1 className="mt-4 text-2xl font-semibold">{done === "already" ? "Seçiminiz alındı" : "Seçiminiz alındı!"}</h1>
-        {done !== "already" && <p className="mt-2 text-white/60">Sipariş No: <b className="text-amber-300">{done}</b></p>}
+        <h1 className="mt-4 text-2xl font-semibold">Seçiminiz alındı!</h1>
+        {orderNo && <p className="mt-2 text-white/60">Sipariş No: <b className="text-amber-300">{orderNo}</b></p>}
+        {payFinished && <p className="mt-1 text-sm text-emerald-300">Ödeme bilginiz iletildi. Fotoğrafçı onayladığında bilgilendirileceksiniz.</p>}
+        {isObj && done.needs_payment && (done.payment_methods || []).length === 0 && (
+          <p className="mt-1 text-sm text-amber-300/80">Ek hizmet ücreti için fotoğrafçınız sizinle iletişime geçecek.</p>
+        )}
         <p className="mt-2 text-white/50">{data.firma_adi} sizinle iletişime geçecek. Teşekkürler.</p>
         {flow.length > 0 && (
           <div data-testid="gs-order-status" className="mt-6 text-left">
@@ -130,7 +141,8 @@ export default function GallerySelect() {
         )}
       </div>
     </div>
-  );
+    );
+  }
 
   const ev = data.event;
   return (
@@ -355,5 +367,122 @@ function Toggle({ testid, on, label, onClick }) {
       className={`flex-1 py-2 flex items-center justify-center gap-1 border-t border-white/10 transition-colors ${on ? "bg-amber-500 text-neutral-900 font-semibold" : "text-white/60 hover:bg-white/5"}`}>
       {on && <Check size={11} />} {label}
     </button>
+  );
+}
+
+const PAY_ICON = { paytr: CreditCard, iyzico: CreditCard, odeal: CreditCard, link: ExternalLink, iban: Landmark, cash: Banknote };
+
+function PaymentStep({ token, order, firma, onDone }) {
+  const [stage, setStage] = useState("choose"); // choose | auto | manual_link | manual_info
+  const [picked, setPicked] = useState(null);
+  const [info, setInfo] = useState({});
+  const [busy, setBusy] = useState(false);
+
+  const pick = async (m) => {
+    setBusy(true); setPicked(m);
+    try {
+      const r = await axios.post(`${API_BASE}/gallery/public/${token}/orders/${order.order_id}/pay`, { method_id: m.id });
+      const d = r.data;
+      if (d.paid) { onDone(); return; }
+      if (d.auto && d.redirect_url) { window.open(d.redirect_url, "_blank", "noopener"); setStage("auto"); }
+      else if (m.provider === "link" && d.redirect_url) { window.open(d.redirect_url, "_blank", "noopener"); setStage("manual_link"); }
+      else { setInfo(d.info || m.info || {}); setStage("manual_info"); }
+    } catch (e) { toast.error(e?.response?.data?.detail || "Ödeme başlatılamadı"); setPicked(null); }
+    finally { setBusy(false); }
+  };
+
+  const markPaid = async () => {
+    setBusy(true);
+    try { await axios.post(`${API_BASE}/gallery/public/${token}/orders/${order.order_id}/mark-paid`); onDone(); }
+    catch { toast.error("İşlem başarısız"); } finally { setBusy(false); }
+  };
+
+  const checkStatus = async () => {
+    setBusy(true);
+    try {
+      const r = await axios.get(`${API_BASE}/gallery/public/${token}/orders/${order.order_id}/status`);
+      if (r.data.payment_status === "paid") { toast.success("Ödemeniz alındı!"); onDone(); }
+      else toast.info("Ödeme henüz görünmüyor. Tamamladıysanız birkaç dakika sonra tekrar deneyin.");
+    } catch { toast.error("Kontrol edilemedi"); } finally { setBusy(false); }
+  };
+
+  const copyIban = async () => { try { await navigator.clipboard.writeText((info.iban || "").replace(/\s/g, "")); toast.success("IBAN kopyalandı"); } catch { /* noop */ } };
+
+  return (
+    <div data-testid="gs-payment-step" className="min-h-screen bg-neutral-950 text-white p-6">
+      <div className="max-w-md mx-auto">
+        <div className="text-center mb-6">
+          <CheckCircle2 size={44} className="mx-auto text-emerald-400" />
+          <h1 className="mt-3 text-xl font-semibold">Seçiminiz alındı — Ödeme</h1>
+          <p className="mt-1 text-sm text-white/50">Sipariş No: <b className="text-amber-300">{order.order_no}</b></p>
+          <p className="mt-1 text-2xl font-bold text-amber-300">{order.upsell_total}₺</p>
+          <p className="text-xs text-white/40">Ek hizmet tutarı · {firma}</p>
+        </div>
+
+        {stage === "choose" && (
+          <div className="space-y-2" data-testid="gs-pay-methods">
+            <div className="text-xs text-white/50 mb-1">Ödeme yöntemini seçin</div>
+            {(order.payment_methods || []).map((m) => {
+              const Icon = PAY_ICON[m.provider] || CreditCard;
+              return (
+                <button key={m.id} data-testid={`gs-pay-method-${m.id}`} disabled={busy} onClick={() => pick(m)}
+                  className="w-full flex items-center gap-3 rounded-xl border border-white/12 bg-white/5 hover:bg-white/10 p-4 text-left transition-colors disabled:opacity-50">
+                  <span className="w-9 h-9 rounded-lg bg-amber-500/15 grid place-items-center"><Icon size={18} className="text-amber-300" /></span>
+                  <span className="font-medium">{m.label}</span>
+                  {m.auto && <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300">Kart ile</span>}
+                </button>
+              );
+            })}
+            <button data-testid="gs-pay-later" onClick={onDone} className="w-full text-center text-xs text-white/40 hover:text-white/70 mt-3 py-2">Daha sonra ödeyeceğim</button>
+          </div>
+        )}
+
+        {stage === "auto" && (
+          <div className="text-center space-y-4" data-testid="gs-pay-auto">
+            <p className="text-sm text-white/70">Ödeme sayfası yeni sekmede açıldı. Kart ödemenizi orada tamamlayın.</p>
+            <p className="text-xs text-white/40">Açılmadıysa açılır pencere izni verin.</p>
+            <Button data-testid="gs-pay-check" onClick={checkStatus} disabled={busy} className="w-full gap-1.5 bg-amber-500 hover:bg-amber-600 text-neutral-900 font-semibold">
+              {busy ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} Ödememi Kontrol Et
+            </Button>
+            <button onClick={() => setStage("choose")} className="text-xs text-white/40 hover:text-white/70 inline-flex items-center gap-1"><ArrowLeft size={12} /> Yöntemi değiştir</button>
+          </div>
+        )}
+
+        {stage === "manual_link" && (
+          <div className="text-center space-y-4" data-testid="gs-pay-manual-link">
+            <p className="text-sm text-white/70">Ödeme sayfası yeni sekmede açıldı. Ödemenizi tamamladıktan sonra aşağıdaki butona basın.</p>
+            <Button data-testid="gs-pay-mark-paid" onClick={markPaid} disabled={busy} className="w-full gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-neutral-900 font-semibold">
+              {busy ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} Ödedim
+            </Button>
+            <button onClick={() => setStage("choose")} className="text-xs text-white/40 hover:text-white/70 inline-flex items-center gap-1"><ArrowLeft size={12} /> Yöntemi değiştir</button>
+          </div>
+        )}
+
+        {stage === "manual_info" && (
+          <div className="space-y-4" data-testid="gs-pay-manual-info">
+            {picked?.provider === "iban" ? (
+              <div className="rounded-xl border border-white/12 bg-white/5 p-4 space-y-2">
+                <div className="text-xs text-white/50">Aşağıdaki hesaba havale/EFT yapın:</div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-amber-200 break-all">{info.iban}</span>
+                  <button onClick={copyIban} className="p-1.5 rounded bg-white/10 hover:bg-white/20"><Copy size={13} /></button>
+                </div>
+                {info.holder && <div className="text-sm">Alıcı: <b>{info.holder}</b></div>}
+                {info.bank && <div className="text-sm text-white/60">Banka: {info.bank}</div>}
+                <div className="text-xs text-amber-300/80">Açıklamaya sipariş no yazın: {order.order_no}</div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-white/12 bg-white/5 p-4 text-sm text-white/70">
+                Ödemeyi teslimatta elden yapacaksınız. Onaya göndermek için aşağıdaki butona basın.
+              </div>
+            )}
+            <Button data-testid="gs-pay-mark-paid" onClick={markPaid} disabled={busy} className="w-full gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-neutral-900 font-semibold">
+              {busy ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} {picked?.provider === "iban" ? "Havaleyi Yaptım" : "Onaya Gönder"}
+            </Button>
+            <button onClick={() => setStage("choose")} className="w-full text-center text-xs text-white/40 hover:text-white/70 inline-flex items-center justify-center gap-1"><ArrowLeft size={12} /> Yöntemi değiştir</button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

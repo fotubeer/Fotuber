@@ -1480,6 +1480,112 @@ async def delete_gallery(item_id: str, admin: dict = Depends(require_admin)):
 
 
 # ---------------------------------------------------------------------------
+# Reklam Banner'ları (Admin yönetimli) — stüdyo paneli + anasayfa footer
+# ---------------------------------------------------------------------------
+AD_PLACEMENTS = {"studio_panel", "home_footer"}
+
+
+class AdBannerUpdate(BaseModel):
+    title: str = ""
+    target_url: str = ""
+    placement: str = "home_footer"
+    orientation: str = "horizontal"   # horizontal (yatay/dikdörtgen) | vertical (dikey)
+    active: bool = True
+    sort: int = 0
+
+
+@api_router.post("/admin/ad-banners")
+async def create_ad_banner(
+    title: str = Form(""),
+    target_url: str = Form(""),
+    placement: str = Form("home_footer"),
+    orientation: str = Form("horizontal"),
+    sort: int = Form(0),
+    file: UploadFile = File(...),
+    admin: dict = Depends(require_admin),
+):
+    if placement not in AD_PLACEMENTS:
+        raise HTTPException(status_code=400, detail="Geçersiz yerleşim")
+    content_type = file.content_type or "image/png"
+    if not (content_type.startswith("image") or content_type.startswith("video")):
+        raise HTTPException(status_code=400, detail="Sadece görsel, GIF veya video yükleyebilirsiniz")
+    media_type = "video" if content_type.startswith("video") else "image"
+    ext = (file.filename or "png").split(".")[-1].lower()
+    bid = new_id()
+    path = f"{APP_NAME}/ads/{bid}.{ext}"
+    data = await file.read()
+    put_object(path, data, content_type)
+    doc = {
+        "id": bid, "title": title, "target_url": target_url,
+        "placement": placement, "orientation": orientation, "sort": sort,
+        "image_path": path, "content_type": content_type, "media_type": media_type,
+        "active": True, "clicks": 0, "created_at": now_iso(),
+    }
+    await db.ad_banners.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/admin/ad-banners")
+async def list_ad_banners_admin(admin: dict = Depends(require_admin)):
+    rows = await db.ad_banners.find({}, {"_id": 0}).sort([("placement", 1), ("sort", 1)]).to_list(200)
+    for r in rows:
+        r["image_url"] = f"/api/ad-banners/img/{r['id']}"
+    return rows
+
+
+@api_router.put("/admin/ad-banners/{bid}")
+async def update_ad_banner(bid: str, payload: AdBannerUpdate, admin: dict = Depends(require_admin)):
+    if payload.placement not in AD_PLACEMENTS:
+        raise HTTPException(status_code=400, detail="Geçersiz yerleşim")
+    r = await db.ad_banners.update_one({"id": bid}, {"$set": payload.model_dump()})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Banner bulunamadı")
+    return {"ok": True}
+
+
+@api_router.delete("/admin/ad-banners/{bid}")
+async def delete_ad_banner(bid: str, admin: dict = Depends(require_admin)):
+    doc = await db.ad_banners.find_one({"id": bid}, {"_id": 0, "image_path": 1})
+    if doc and doc.get("image_path"):
+        try:
+            delete_object(doc["image_path"])
+        except Exception:
+            pass
+    await db.ad_banners.delete_one({"id": bid})
+    return {"ok": True}
+
+
+@api_router.get("/ad-banners/img/{bid}")
+async def serve_ad_banner(bid: str):
+    doc = await db.ad_banners.find_one({"id": bid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Banner bulunamadı")
+    data, ct = get_object(doc["image_path"])
+    return StarletteResponse(content=data, media_type=doc.get("content_type", ct),
+                             headers={"Cache-Control": "public, max-age=86400"})
+
+
+@api_router.get("/ad-banners")
+async def list_ad_banners_public(placement: str):
+    if placement not in AD_PLACEMENTS:
+        return []
+    rows = await db.ad_banners.find({"placement": placement, "active": True}, {"_id": 0}).sort("sort", 1).to_list(50)
+    return [{"id": r["id"], "title": r.get("title", ""), "target_url": r.get("target_url", ""),
+             "orientation": r.get("orientation", "horizontal"),
+             "media_type": r.get("media_type", "image"),
+             "image_url": f"/api/ad-banners/img/{r['id']}"} for r in rows]
+
+
+@api_router.post("/ad-banners/{bid}/click")
+async def click_ad_banner(bid: str):
+    await db.ad_banners.update_one({"id": bid}, {"$inc": {"clicks": 1}})
+    doc = await db.ad_banners.find_one({"id": bid}, {"_id": 0, "target_url": 1})
+    return {"target_url": (doc or {}).get("target_url", "")}
+
+
+
+# ---------------------------------------------------------------------------
 # Site Settings (branding, contact, hero)
 # ---------------------------------------------------------------------------
 @api_router.get("/settings")

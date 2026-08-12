@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Plus, Upload, Trash2, Copy, Image as ImageIcon, Package, ClipboardList,
   FileDown, Link2, Loader2, AlertTriangle, X, Settings as SettingsIcon,
-  BellRing, MessageCircle, MailCheck, Clock, ArrowUpCircle, Download,
+  BellRing, MessageCircle, MailCheck, Clock, ArrowUpCircle, Download, CheckCircle2, CreditCard, Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { studioApi } from "@/lib/studioApi";
+import AdBanners from "@/components/AdBanners";
 import { API_BASE, formatApiError } from "@/lib/api";
 import { TrDatePicker } from "@/components/TrDatePicker";
 
@@ -143,7 +144,7 @@ export default function StudioGallery() {
         </div>
 
         <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.04] border border-white/10 w-full sm:w-fit mb-6 overflow-x-auto no-scrollbar">
-          {[["events", "Etkinlikler", ImageIcon], ["packs", "Servis Paketleri", Package], ["orders", "Siparişler", ClipboardList], ["reminders", "Hatırlatmalar", BellRing], ["settings", "Ayarlar", SettingsIcon]].map(([k, label, Icon]) => (
+          {[["events", "Etkinlikler", ImageIcon], ["packs", "Servis Paketleri", Package], ["orders", "Siparişler", ClipboardList], ["payments", "Ödeme Yöntemleri", CreditCard], ["reminders", "Hatırlatmalar", BellRing], ["settings", "Ayarlar", SettingsIcon]].map(([k, label, Icon]) => (
             <button key={k} data-testid={`sg-tab-${k}`} onClick={() => switchTab(k)}
               className={`px-4 h-9 rounded-xl text-sm font-medium flex items-center gap-1.5 relative whitespace-nowrap transition-colors ${tab === k ? "bg-white text-neutral-900 shadow-sm" : "text-white/55 hover:text-white hover:bg-white/5"}`}>
               <Icon size={15} /> {label}
@@ -160,10 +161,12 @@ export default function StudioGallery() {
             {tab === "events" && active && <EventDetail eventId={active.id} onBack={() => { setActive(null); loadEvents(); }} onCopy={copyLink} onQuota={onQuota} />}
             {tab === "packs" && <PacksTab packs={packs} reload={loadPacks} />}
             {tab === "orders" && <OrdersTab orders={orders} reload={loadOrders} employees={employees} isOwner={isOwner} />}
+            {tab === "payments" && <PaymentsTab />}
             {tab === "reminders" && <RemindersTab reminders={reminders} reload={loadReminders} />}
             {tab === "settings" && <SettingsTab />}
           </>
         )}
+        <AdBanners placement="studio_panel" dark className="mt-10" />
       </div>
     </div>
   );
@@ -463,6 +466,15 @@ function PacksTab({ packs, reload }) {
 function OrdersTab({ orders, reload, employees, isOwner }) {
   const setStatus = async (id, status) => { await studioApi.put(`/studio/gallery/orders/${id}/status`, { status }); toast.success("Durum güncellendi"); reload(); };
   const assign = async (id, employee_id) => { await studioApi.put(`/studio/gallery/orders/${id}/assign`, { employee_id: employee_id === "none" ? null : employee_id }); toast.success("Personel atandı"); reload(); };
+  const confirmPay = async (id) => { await studioApi.put(`/studio/gallery/orders/${id}/confirm-payment`); toast.success("Ödeme onaylandı"); reload(); };
+  const copyCodes = async (o) => {
+    const all = [...(o.album_codes || []), ...(o.canvas_codes || []), ...(o.retouch_codes || []),
+      ...((o.pack_details || []).flatMap((d) => d.codes || []))];
+    const uniq = [...new Set(all)];
+    if (uniq.length === 0) { toast.error("Kopyalanacak kod yok"); return; }
+    try { await navigator.clipboard.writeText(uniq.join("\n")); toast.success(`${uniq.length} kod kopyalandı`); }
+    catch { toast.success(uniq.join(", ")); }
+  };
   const pdf = async (o) => {
     const res = await studioApi.get(`/studio/gallery/orders/${o.id}/pdf`, { responseType: "blob" });
     const url = URL.createObjectURL(res.data); const a = document.createElement("a"); a.href = url; a.download = `siparis-${o.order_no}.pdf`; a.click(); URL.revokeObjectURL(url);
@@ -478,12 +490,17 @@ function OrdersTab({ orders, reload, employees, isOwner }) {
       {orders.map((o) => (
         <div key={o.id} data-testid={`sg-order-${o.id}`} className="rounded-xl border border-white/12 bg-white/5 p-4 flex flex-wrap items-center gap-3">
           <div className="min-w-0">
-            <div className="font-semibold">{o.order_no} · {o.event_name}</div>
+            <div className="font-semibold flex items-center gap-2 flex-wrap">{o.order_no} · {o.event_name} <PayBadge o={o} /></div>
             <div className="text-xs text-white/50">{o.client_name || "-"} · Albüm {o.album_count} · Kanvas {o.canvas_count} · Retouch {o.retouch_count}{o.upsell_total ? ` · Ek Hizmet ${o.upsell_total}₺` : ""}</div>
+            {o.payment_provider && <div className="text-[11px] text-white/40 mt-0.5">Ödeme yöntemi: {PROVIDER_LABELS[o.payment_provider] || o.payment_provider}</div>}
             {o.assigned_name && <div className="text-[11px] text-amber-200 mt-0.5">Sorumlu: {o.assigned_name}</div>}
             <OrderCodes o={o} />
           </div>
           <div className="ml-auto flex items-center gap-2 flex-wrap">
+            {(o.payment_status === "awaiting_confirm" || o.payment_status === "unpaid" || o.payment_status === "pending") && o.upsell_total > 0 && (
+              <Button data-testid={`sg-order-confirm-pay-${o.id}`} size="sm" onClick={() => confirmPay(o.id)} className="gap-1 bg-emerald-500 hover:bg-emerald-600 text-neutral-900 font-semibold"><CheckCircle2 size={13} /> Ödemeyi Onayla</Button>
+            )}
+            <Button data-testid={`sg-order-copy-codes-${o.id}`} size="sm" variant="outline" onClick={() => copyCodes(o)} className="gap-1 bg-transparent border-white/15 text-white hover:bg-white/10"><Copy size={13} /> Kodları Kopyala</Button>
             {isOwner && (
               <Select value={o.assigned_to || "none"} onValueChange={(v) => assign(o.id, v)}>
                 <SelectTrigger data-testid={`sg-order-assign-${o.id}`} className="h-8 w-40 bg-white/5 border-white/15 text-white text-xs"><SelectValue placeholder="Personel ata" /></SelectTrigger>
@@ -501,6 +518,166 @@ function OrdersTab({ orders, reload, employees, isOwner }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+const PROVIDER_LABELS = { paytr: "PayTR", iyzico: "iyzico", odeal: "Ödeal", link: "Ödeme Linki", iban: "Havale/EFT", cash: "Nakit/Elden" };
+const PAY_BADGE = {
+  paid: ["Ödendi", "bg-emerald-500/15 text-emerald-300 border-emerald-400/30"],
+  awaiting_confirm: ["Onay bekliyor", "bg-amber-500/15 text-amber-300 border-amber-400/30"],
+  pending: ["Ödeme bekleniyor", "bg-sky-500/15 text-sky-300 border-sky-400/30"],
+  unpaid: ["Ödenmedi", "bg-red-500/15 text-red-300 border-red-400/30"],
+};
+function PayBadge({ o }) {
+  if (!o.upsell_total || o.payment_status === "none" || !o.payment_status) return null;
+  const [label, cls] = PAY_BADGE[o.payment_status] || PAY_BADGE.unpaid;
+  return <span data-testid={`sg-order-paybadge-${o.id}`} className={`text-[10px] px-2 py-0.5 rounded-full border ${cls}`}>{label}</span>;
+}
+
+function PaymentsTab() {
+  const [providers, setProviders] = useState([]);
+  const [methods, setMethods] = useState([]);
+  const [prov, setProv] = useState("");
+  const [label, setLabel] = useState("");
+  const [config, setConfig] = useState({});
+  const [editing, setEditing] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    const [p, m] = await Promise.all([
+      studioApi.get("/studio/gallery/payment-providers"),
+      studioApi.get("/studio/gallery/payment-methods"),
+    ]);
+    setProviders(p.data?.providers || []);
+    setMethods(m.data || []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const meta = providers.find((x) => x.provider === prov);
+
+  const reset = () => { setProv(""); setLabel(""); setConfig({}); setEditing(null); };
+
+  const startEdit = (m) => {
+    setEditing(m.id); setProv(m.provider); setLabel(m.label || "");
+    setConfig({ ...(m.config || {}) });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const save = async () => {
+    if (!prov) { toast.error("Bir ödeme sağlayıcısı seçin"); return; }
+    setBusy(true);
+    try {
+      const body = { provider: prov, label: label || (meta?.label || prov), active: true, config };
+      if (editing) await studioApi.put(`/studio/gallery/payment-methods/${editing}`, body);
+      else await studioApi.post("/studio/gallery/payment-methods", body);
+      toast.success(editing ? "Yöntem güncellendi" : "Ödeme yöntemi eklendi");
+      reset(); await load();
+    } catch (e) { toast.error(formatApiError(e, "Kaydedilemedi")); }
+    finally { setBusy(false); }
+  };
+
+  const toggleActive = async (m) => {
+    await studioApi.put(`/studio/gallery/payment-methods/${m.id}`, { provider: m.provider, label: m.label, active: !m.active, config: {} });
+    await load();
+  };
+  const del = async (id) => { if (!window.confirm("Bu ödeme yöntemi silinsin mi?")) return; await studioApi.delete(`/studio/gallery/payment-methods/${id}`); await load(); };
+
+  return (
+    <div className="space-y-6" data-testid="sg-payments-tab">
+      <div className="rounded-2xl border border-white/12 bg-white/[0.03] p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <CreditCard size={18} className="text-amber-300" />
+          <h3 className="font-semibold">{editing ? "Ödeme Yöntemini Düzenle" : "Yeni Ödeme Yöntemi Ekle"}</h3>
+          {editing && <button data-testid="sg-pay-cancel-edit" onClick={reset} className="ml-auto text-xs text-white/50 hover:text-white">İptal</button>}
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-white/50">Ödeme Sağlayıcısı</label>
+            <Select value={prov} onValueChange={(v) => { setProv(v); const mm = providers.find((x) => x.provider === v); setLabel(mm?.label || ""); const init = {}; (mm?.fields || []).forEach((f) => { if (f.default) init[f.key] = f.default; }); setConfig(init); }}>
+              <SelectTrigger data-testid="sg-pay-provider" className="h-9 mt-1 bg-white/5 border-white/15 text-white"><SelectValue placeholder="Seçin (PayTR, iyzico, Ödeal, Ödeme Linki, IBAN, Nakit)" /></SelectTrigger>
+              <SelectContent>
+                {providers.map((p) => <SelectItem key={p.provider} value={p.provider}>{p.label} — {p.kind}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-white/50">Görünen Ad (müşteriye gösterilir)</label>
+            <Input data-testid="sg-pay-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="örn. Kredi Kartı, Havale" className="h-9 mt-1 bg-white/5 border-white/15 text-white" />
+          </div>
+        </div>
+
+        {meta && (
+          <>
+            <div data-testid="sg-pay-guide" className="mt-4 rounded-xl border border-amber-400/25 bg-amber-500/[0.06] p-4">
+              <div className="flex items-center gap-2 text-amber-200 text-sm font-medium mb-1"><Info size={15} /> {meta.label} nasıl eklenir?</div>
+              <p className="text-xs text-white/60 mb-3">{meta.help}</p>
+              <ol className="space-y-2">
+                {(meta.steps || []).map((s, i) => (
+                  <li key={i} className="flex gap-2.5 text-[13px] text-white/75">
+                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-amber-500 text-neutral-900 text-[11px] font-bold grid place-items-center">{i + 1}</span>
+                    <span>{s}</span>
+                  </li>
+                ))}
+              </ol>
+              {meta.docs && <a href={meta.docs} target="_blank" rel="noreferrer" className="inline-block mt-3 text-xs text-amber-300 underline">Sağlayıcı sayfasını aç →</a>}
+              {meta.auto && <p className="mt-3 text-[11px] text-emerald-300/80">✓ Bu yöntemde ödeme tamamlanınca sipariş otomatik "Ödendi" olur.</p>}
+              {!meta.auto && meta.provider !== "cash" && <p className="mt-3 text-[11px] text-white/50">ℹ Bu yöntemde müşteri "Ödedim" der, ödemeyi siz onaylarsınız.</p>}
+            </div>
+
+            {(meta.fields || []).length > 0 && (
+              <div className="mt-4 grid sm:grid-cols-2 gap-3">
+                {meta.fields.map((f) => (
+                  <div key={f.key} className={f.key === "url" || f.key === "iban" ? "sm:col-span-2" : ""}>
+                    <label className="text-xs text-white/50">{f.label}</label>
+                    <Input data-testid={`sg-pay-field-${f.key}`} type={f.secret ? "password" : "text"}
+                      value={config[f.key] || ""} onChange={(e) => setConfig({ ...config, [f.key]: e.target.value })}
+                      placeholder={f.secret ? "••••••" : ""} className="h-9 mt-1 bg-white/5 border-white/15 text-white" />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <Button data-testid="sg-pay-save" onClick={save} disabled={busy} className="mt-4 gap-1.5 bg-amber-500 hover:bg-amber-600 text-neutral-900 font-semibold">
+              {busy ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} {editing ? "Güncelle" : "Yöntemi Ekle"}
+            </Button>
+          </>
+        )}
+      </div>
+
+      <div>
+        <h3 className="font-semibold mb-3 text-white/80">Kayıtlı Ödeme Yöntemleri</h3>
+        {methods.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-8 text-center text-sm text-white/40">
+            Henüz ödeme yöntemi eklemediniz. Ücretli galeri hizmetlerinde tahsilat için yukarıdan ekleyin.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {methods.map((m) => (
+              <div key={m.id} data-testid={`sg-pay-method-${m.id}`} className="rounded-xl border border-white/12 bg-white/5 p-4 flex flex-wrap items-center gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium flex items-center gap-2">{m.label}
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/50">{PROVIDER_LABELS[m.provider] || m.provider}</span>
+                    {!m.active && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/15 text-red-300">Pasif</span>}
+                  </div>
+                  <div className="text-[11px] text-white/45 mt-0.5">
+                    {m.provider === "iban" && `${m.config?.iban || ""} · ${m.config?.holder || ""}`}
+                    {m.provider === "link" && (m.config?.url || "")}
+                    {["paytr", "iyzico", "odeal"].includes(m.provider) && "Otomatik tahsilat · anahtarlar gizli"}
+                    {m.provider === "cash" && "Elden ödeme"}
+                  </div>
+                </div>
+                <div className="ml-auto flex items-center gap-2">
+                  <button data-testid={`sg-pay-toggle-${m.id}`} onClick={() => toggleActive(m)} className="text-xs px-3 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white/70">{m.active ? "Pasifleştir" : "Aktifleştir"}</button>
+                  <button data-testid={`sg-pay-edit-${m.id}`} onClick={() => startEdit(m)} className="text-xs px-3 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white/70">Düzenle</button>
+                  <button data-testid={`sg-pay-del-${m.id}`} onClick={() => del(m.id)} className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-300"><Trash2 size={14} /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
