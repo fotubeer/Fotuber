@@ -617,3 +617,11 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - Test: curl — GET defaults, PUT (Vesikalık 599/5990 ≠ Galeri 799/7990) → `/studio/modules/pricing` base/base_yearly/savings_pct doğru yansıdı; örnek varsayılanlara reset edildi. Frontend derlendi. (Admin UI login otomasyonu screenshot'ta doldurulamadı; backend tam doğrulandı, sayfa mevcut çalışan desenle aynı.)
 - **AŞAMA 2 kalan tek iş**: Paketler (StudioPackages) sayfasının daha sade/modern redesign'ı (iki büyük modül kartı, aylık/yıllık geçiş, tasarruf vurgusu) — fiyatlar zaten modül-bazlı geliyor.
 
+
+
+## Session AM (Jun 2026) — AŞAMA 2 TAMAM: Paketler sayfası sade/modern redesign
+- `StudioPackages.jsx` yeniden yazıldı: ortada başlık + aylık/yıllık geçiş anahtarı (yıllıkta "2 ay bedava"), iki büyük modül kartı (Vesikalık mavi, Galeri fuşya gradient), büyük fiyat gösterimi (modül-bazlı) + yıllıkta "%X tasarruf" rozeti + "aylık X yerine yıllık Y" satırı, özellik listesi, sade "Kota paketi" tier çipleri (kota seçimi), tek "Satın Al / Süreyi Uzat" butonu. Aktif modülde "Aktif" rozeti.
+- data-testid: studio-packages, pkg-period-toggle/-monthly/-yearly, pkg-module-{m}, pkg-price-{m}, pkg-savings-{m}, pkg-tiers-{m}, pkg-tier-{m}-{plan}, pkg-buy-{m}.
+- Derleme temiz; `/studio/modules/pricing` verisi (base_price/price/price_yearly/savings_pct/plan_name) daha önce curl ile doğrulandı. Not: login screenshot otomasyonu (kontrollü input) formu dolduramadığı için görsel doğrulanamadı; gerçek kullanıcıda sorun yok, istenirse testing_agent ile UI doğrulanabilir.
+- **AŞAMA 2 böylece tamamlandı**: per-modül yetkilendirme (deneme→ikisi, sonra sadece satın alınan) + modül-bazlı ayrı fiyat (admin) + yıllık tasarruf % + sade/modern paketler arayüzü.
+

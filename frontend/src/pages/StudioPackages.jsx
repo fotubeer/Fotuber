@@ -1,13 +1,15 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, ScanFace, Images, Check, Loader2, Tag } from "lucide-react";
+import { ArrowLeft, ScanFace, Images, Check, Loader2, Sparkles } from "lucide-react";
 import { studioApi } from "@/lib/studioApi";
 import { Button } from "@/components/ui/button";
 
 const MODULES = {
-  vesikalik: { label: "Vesikalık", icon: ScanFace, desc: "Biyometrik üretim, AI kıyafet, 3'lü işleme, firma arşivi." },
-  gallery: { label: "Etkinlik Galerisi", icon: Images, desc: "Müşteri foto seçimi, sipariş takibi, personel atama." },
+  vesikalik: { label: "Vesikalık", icon: ScanFace, accent: "from-blue-500 to-cyan-500",
+    features: ["Biyometrik vesikalık üretimi", "AI kıyafet değişimi", "3'lü toplu işleme", "Firma arşivi & tekrar baskı"] },
+  gallery: { label: "Etkinlik Galerisi", icon: Images, accent: "from-fuchsia-500 to-rose-500",
+    features: ["Müşteri foto seçim linki", "Sipariş & baskı takibi", "Personel atama", "Toplu yükleme (chunked)"] },
 };
 
 export default function StudioPackages() {
@@ -16,15 +18,28 @@ export default function StudioPackages() {
   const [mods, setMods] = useState({});
   const [busy, setBusy] = useState(null);
   const [period, setPeriod] = useState("monthly");
+  const [sel, setSel] = useState({});
 
   useEffect(() => {
     studioApi.get("/studio/modules/pricing")
-      .then((r) => { setPricing(r.data.pricing || []); setMods(r.data.modules || {}); })
+      .then((r) => {
+        const rows = r.data.pricing || [];
+        setPricing(rows);
+        setMods(r.data.modules || {});
+        const init = {};
+        Object.keys(MODULES).forEach((m) => {
+          const opts = rows.filter((p) => p.module === m);
+          if (opts.length) init[m] = opts[Math.min(2, opts.length - 1)].plan; // varsayılan orta/üst tier
+        });
+        setSel(init);
+      })
       .catch(() => navigate("/studyo"));
   }, [navigate]);
 
-  const buy = async (module, plan) => {
-    setBusy(`${module}-${plan}`);
+  const buy = async (module) => {
+    const plan = sel[module];
+    if (!plan) return;
+    setBusy(module);
     try {
       const { data } = await studioApi.post("/studio/payments/module/create", {
         module, plan, period, origin_url: window.location.origin + "/studyo/panel",
@@ -37,58 +52,82 @@ export default function StudioPackages() {
     } finally { setBusy(null); }
   };
 
-  const byModule = (m) => pricing.filter((p) => p.module === m);
-
   return (
     <div data-testid="studio-packages" className="min-h-screen bg-neutral-950 text-white">
-      <div className="max-w-5xl mx-auto p-4 sm:p-6">
-        <div className="flex items-center gap-3 mb-2">
-          <button data-testid="pkg-back" onClick={() => navigate("/studyo/panel")} className="inline-flex items-center gap-1.5 text-sm text-white/60 hover:text-white"><ArrowLeft className="w-4 h-4" /> Panel</button>
-          <h1 className="text-xl font-semibold ml-1">Paketler & Satın Al</h1>
-        </div>
-        <p className="text-sm text-white/50 mb-4 flex items-center gap-2"><Tag className="w-4 h-4 text-amber-400" /> İkinci modülü satın aldığınızda otomatik <b className="text-amber-300">%20 indirim</b> uygulanır.</p>
+      <div className="max-w-5xl mx-auto px-4 py-6 sm:py-10">
+        <button data-testid="pkg-back" onClick={() => navigate("/studyo/panel")} className="inline-flex items-center gap-1.5 text-sm text-white/50 hover:text-white mb-6"><ArrowLeft className="w-4 h-4" /> Panele Dön</button>
 
-        <div className="inline-flex items-center gap-1 p-1 rounded-full bg-white/5 mb-6" data-testid="pkg-period-toggle">
-          {[["monthly", "Aylık"], ["yearly", "Yıllık · ~2 ay bedava"]].map(([k, l]) => (
-            <button key={k} data-testid={`pkg-period-${k}`} onClick={() => setPeriod(k)}
-              className={`px-4 h-8 rounded-full text-sm font-medium ${period === k ? "bg-amber-500 text-neutral-900" : "text-white/60 hover:text-white"}`}>{l}</button>
-          ))}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">Modülünü Seç</h1>
+          <p className="text-white/50 mt-2 text-sm">Vesikalık ve Etkinlik Galerisi'ni ayrı ayrı satın al. 3 günlük denemede ikisi de açık; sonrasında yalnızca aldığın modül panelinde kalır.</p>
+        </div>
+
+        {/* Period toggle */}
+        <div className="flex justify-center mb-10">
+          <div className="inline-flex items-center gap-1 p-1 rounded-full bg-white/5 border border-white/10" data-testid="pkg-period-toggle">
+            {[["monthly", "Aylık"], ["yearly", "Yıllık"]].map(([k, l]) => (
+              <button key={k} data-testid={`pkg-period-${k}`} onClick={() => setPeriod(k)}
+                className={`px-6 h-9 rounded-full text-sm font-semibold transition-colors ${period === k ? "bg-amber-500 text-neutral-900" : "text-white/60 hover:text-white"}`}>
+                {l}{k === "yearly" && <span className="ml-1.5 text-[10px] font-bold text-emerald-300">2 ay bedava</span>}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="grid lg:grid-cols-2 gap-6">
           {Object.entries(MODULES).map(([mkey, m]) => {
-            const owned = mods[mkey];
+            const opts = pricing.filter((p) => p.module === mkey);
+            const chosen = opts.find((p) => p.plan === sel[mkey]) || opts[0];
             const Icon = m.icon;
+            const owned = mods[mkey];
+            if (!chosen) return null;
+            const price = period === "yearly" ? chosen.price_yearly : chosen.price;
+            const unit = period === "yearly" ? "/yıl" : "/ay";
             return (
-              <div key={mkey} data-testid={`pkg-module-${mkey}`} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-9 h-9 rounded-lg bg-white/10 grid place-items-center"><Icon className="w-4 h-4 text-amber-400" /></div>
-                  <h2 className="font-semibold">{m.label}</h2>
-                  {owned && <span className="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center gap-1"><Check className="w-3 h-3" /> Aktif</span>}
+              <div key={mkey} data-testid={`pkg-module-${mkey}`}
+                className="relative rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-transparent p-6 flex flex-col">
+                {owned && <span className="absolute top-4 right-4 text-[11px] px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center gap-1"><Check className="w-3 h-3" /> Aktif</span>}
+                <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${m.accent} grid place-items-center mb-4`}><Icon className="w-6 h-6 text-white" /></div>
+                <h2 className="text-xl font-semibold">{m.label}</h2>
+
+                {/* Price */}
+                <div className="mt-4 flex items-end gap-2">
+                  <span className="text-4xl font-bold text-amber-300" data-testid={`pkg-price-${mkey}`}>{price}₺</span>
+                  <span className="text-white/40 text-sm mb-1.5">{unit}</span>
+                  {period === "yearly" && chosen.savings_pct > 0 && (
+                    <span data-testid={`pkg-savings-${mkey}`} className="mb-2 text-[11px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 px-2 py-0.5">%{chosen.savings_pct} tasarruf</span>
+                  )}
                 </div>
-                <p className="text-xs text-white/50 mb-4">{m.desc}</p>
-                <div className="space-y-2">
-                  {byModule(mkey).map((p) => (
-                    <div key={p.plan} data-testid={`pkg-${mkey}-${p.plan}`} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
-                      <div className="min-w-0">
-                        <div className="font-medium text-sm">{p.plan_name}</div>
-                        {p.discount > 0 && <div className="text-[11px] text-amber-300">%{p.discount} indirim uygulandı</div>}
-                      </div>
-                      <div className="ml-auto text-right">
-                        {period === "monthly"
-                          ? <>{p.discount > 0 && <div className="text-[11px] text-white/40 line-through">{p.base_price}₺</div>}
-                              <div className="font-semibold text-amber-300">{p.price}₺<span className="text-[10px] text-white/40">/ay</span></div></>
-                          : <>{p.discount > 0 && <div className="text-[11px] text-white/40 line-through">{p.base_yearly}₺</div>}
-                              <div className="font-semibold text-amber-300">{p.price_yearly}₺<span className="text-[10px] text-white/40">/yıl</span></div>
-                              {p.savings_pct > 0 && <div data-testid={`pkg-savings-${mkey}-${p.plan}`} className="inline-block mt-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5">%{p.savings_pct} tasarruf</div>}</>}
-                      </div>
-                      <Button data-testid={`pkg-buy-${mkey}-${p.plan}`} size="sm" onClick={() => buy(mkey, p.plan)} disabled={busy === `${mkey}-${p.plan}`}
-                        className="gap-1 bg-amber-500 hover:bg-amber-600 text-neutral-900 font-semibold">
-                        {busy === `${mkey}-${p.plan}` ? <Loader2 className="w-4 h-4 animate-spin" /> : "Satın Al"}
-                      </Button>
-                    </div>
+                {period === "yearly" && (
+                  <p className="text-[11px] text-white/40 mt-1">Aylık {chosen.price}₺ yerine yıllık {chosen.price_yearly}₺</p>
+                )}
+
+                {/* Features */}
+                <ul className="mt-5 space-y-2">
+                  {m.features.map((f) => (
+                    <li key={f} className="flex items-center gap-2 text-sm text-white/70"><Check className="w-4 h-4 text-emerald-400 shrink-0" /> {f}</li>
                   ))}
-                </div>
+                </ul>
+
+                {/* Quota tier selector */}
+                {opts.length > 1 && (
+                  <div className="mt-5">
+                    <p className="text-[11px] text-white/40 mb-1.5 flex items-center gap-1"><Sparkles className="w-3 h-3 text-amber-400" /> Kota paketi</p>
+                    <div className="flex flex-wrap gap-2" data-testid={`pkg-tiers-${mkey}`}>
+                      {opts.map((p) => (
+                        <button key={p.plan} data-testid={`pkg-tier-${mkey}-${p.plan}`} onClick={() => setSel((s) => ({ ...s, [mkey]: p.plan }))}
+                          className={`px-3 h-8 rounded-full text-xs font-medium border transition-colors ${sel[mkey] === p.plan ? "bg-white text-neutral-900 border-white" : "border-white/15 text-white/60 hover:text-white"}`}>
+                          {p.plan_name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <Button data-testid={`pkg-buy-${mkey}`} onClick={() => buy(mkey)} disabled={busy === mkey}
+                  className={`mt-6 w-full h-11 gap-2 font-semibold bg-gradient-to-r ${m.accent} text-white hover:opacity-90`}>
+                  {busy === mkey ? <Loader2 className="w-4 h-4 animate-spin" /> : owned ? "Süreyi Uzat" : "Satın Al"}
+                </Button>
               </div>
             );
           })}
