@@ -9,6 +9,7 @@ import { Camera, Upload, Download, Trash2, ImageIcon, Printer, RotateCw, ZoomIn,
 import { toast } from "sonner";
 import { PHOTO_SPECS, PAPER_SIZES, suggestPaper, COUNT_PRESETS } from "@/lib/passportSpecs";
 import { printImageSheet } from "@/lib/printImage";
+import { loadCustomSpecs, saveCustomSpec, deleteCustomSpec, canvasToJpegMaxKb, exportExactPx, drawComboSheet } from "@/lib/passportLayout";
 import { detectBiometricCrop, loadFaceModels } from "@/lib/faceDetect";
 import { removeBackground, compositeOnColor } from "@/lib/bgRemove";
 import RetouchBrush from "@/components/RetouchBrush";
@@ -115,7 +116,13 @@ const AdminPassportPhoto = ({ injected } = {}) => {
   const sheetCanvasRef = useRef(null);
   const wrapRef = useRef(null);
 
-  const spec = useMemo(() => PHOTO_SPECS.find((s) => s.code === specCode), [specCode]);
+  const [customSpecs, setCustomSpecs] = useState(() => loadCustomSpecs());
+  const [customForm, setCustomForm] = useState({ label: "", w: "", h: "", dpi: 300 });
+  const [layoutMode, setLayoutMode] = useState("standart"); // standart | kombin
+  const [comboItems, setComboItems] = useState([]); // [{specCode, count}]
+  const [sheetMargin, setSheetMargin] = useState(3); // mm — kombin kenar boşluğu
+  const allSpecs = useMemo(() => [...PHOTO_SPECS, ...customSpecs], [customSpecs]);
+  const spec = useMemo(() => allSpecs.find((s) => s.code === specCode) || PHOTO_SPECS[0], [allSpecs, specCode]);
   const layout = useMemo(() => suggestPaper(spec, count), [spec, count]);
   const paper = useMemo(() => (paperCode ? PAPER_SIZES.find((p) => p.code === paperCode) : layout.paper), [paperCode, layout]);
 
@@ -642,7 +649,7 @@ const AdminPassportPhoto = ({ injected } = {}) => {
   }, [specCode]);
 
   // Redraw whenever inputs change
-  useEffect(() => { if (image) { drawSingle(); drawSheet(); } }, [image, spec, crop, rotate, adj, cutColor, cutWidth, cutStyle, watermark, count, paperCode, fgMask, drawSingle, drawSheet]);
+  useEffect(() => { if (image) { drawSingle(); if (layoutMode === "standart") drawSheet(); } }, [image, spec, crop, rotate, adj, cutColor, cutWidth, cutStyle, watermark, count, paperCode, fgMask, drawSingle, drawSheet, layoutMode]);
 
   const downloadCanvas = (canvas, filename) => {
     canvas.toBlob((blob) => {
@@ -688,11 +695,79 @@ const AdminPassportPhoto = ({ injected } = {}) => {
 
   const quickPrint = async () => {
     if (!image) { toast.error("Önce fotoğraf yükleyin"); return; }
+    if (spec?.digitalOnly) { toast.error("Bu ebat yalnızca dijital indirilebilir, baskıya girmez."); return; }
     await drawSheet();
     const dataUrl = sheetCanvasRef.current?.toDataURL("image/jpeg", 0.95);
+    if (!dataUrl) { toast.error("Baskı verisi hazırlanamadı"); return; }
     const ok = printImageSheet(dataUrl, { widthMm: paper.w, heightMm: paper.h, title: `${code} · ${count}'li Baskı` });
     if (!ok) { toast.error("Baskı penceresi açılamadı — açılır pencere iznini verin"); return; }
     toast.success("Baskı penceresi açıldı");
+  };
+
+  // ---- Faz 1: Özel ebat (mm + DPI) ----------------------------------------
+  const addCustomSpec = () => {
+    const w = parseFloat(customForm.w), h = parseFloat(customForm.h), dpi = parseInt(customForm.dpi, 10) || 300;
+    if (!(w > 0 && h > 0)) { toast.error("Geçerli en/boy (mm) girin"); return; }
+    const label = (customForm.label || `Özel ${w}×${h}mm`).trim();
+    const codeId = `custom-${Date.now()}`;
+    const newSpec = { code: codeId, country: "ÖZEL", label: `${label} (${w}×${h}mm · ${dpi}dpi)`, w, h, bg: "#ffffff", format: "biometric", dpi, custom: true };
+    setCustomSpecs(saveCustomSpec(newSpec));
+    setCustomForm({ label: "", w: "", h: "", dpi: 300 });
+    setSpecCode(codeId);
+    toast.success("Özel ebat kaydedildi ve seçildi");
+  };
+  const removeCustomSpec = (codeId) => {
+    setCustomSpecs(deleteCustomSpec(codeId));
+    if (specCode === codeId) setSpecCode("tr-bio");
+    toast.info("Özel ebat silindi");
+  };
+
+  // ---- Faz 1: Dijital indirme (tam px + max KB) ----------------------------
+  const digitalDownload = async () => {
+    if (!image || !singleCanvasRef.current) { toast.error("Önce fotoğraf yükleyin"); return; }
+    drawSingle();
+    const src = singleCanvasRef.current;
+    let dataUrl;
+    if (spec?.exactPx) dataUrl = exportExactPx(src, spec.exactPx, spec.maxKb || 100);
+    else dataUrl = canvasToJpegMaxKb(src, spec?.maxKb || 200);
+    const a = document.createElement("a");
+    a.href = dataUrl; a.download = `${code}_dijital.jpg`; a.click();
+    await saveToArchive();
+    toast.success(spec?.exactPx ? `Dijital indirildi (${spec.exactPx.w}×${spec.exactPx.h}px)` : "Dijital indirildi");
+  };
+
+  // ---- Faz 1: Kombin (AutoLayout) baskı ------------------------------------
+  const addComboItem = () => setComboItems((it) => [...it, { specCode: specCode, count: 1 }]);
+  const updateComboItem = (i, patch) => setComboItems((it) => it.map((x, idx) => idx === i ? { ...x, ...patch } : x));
+  const removeComboItem = (i) => setComboItems((it) => it.filter((_, idx) => idx !== i));
+
+  const drawCombo = useCallback(() => {
+    if (layoutMode !== "kombin" || !image || !sheetCanvasRef.current || !paper) return;
+    if (!comboItems.length) return;
+    drawSingle();
+    const source = singleCanvasRef.current;
+    if (!source) return;
+    const items = comboItems
+      .map((ci) => ({ spec: allSpecs.find((s) => s.code === ci.specCode), count: Math.max(1, ci.count | 0) }))
+      .filter((x) => x.spec && !x.spec.digitalOnly);
+    if (!items.length) return;
+    drawComboSheet(sheetCanvasRef.current, source, items, paper, {
+      marginMm: sheetMargin, gapMm: photoGap, dpi: 300,
+      cutMarks: cutWidth > 0, cutColor, cutWidthMm: cutWidth, cutStyle, code,
+    });
+  }, [layoutMode, image, comboItems, paper, allSpecs, sheetMargin, photoGap, cutWidth, cutColor, cutStyle, code, drawSingle]);
+
+  useEffect(() => { if (layoutMode === "kombin") drawCombo(); }, [layoutMode, drawCombo]);
+
+  const printCombo = async () => {
+    if (!image) { toast.error("Önce fotoğraf yükleyin"); return; }
+    if (!comboItems.length) { toast.error("Dizilime en az bir ebat ekleyin"); return; }
+    drawCombo();
+    const dataUrl = sheetCanvasRef.current?.toDataURL("image/jpeg", 0.95);
+    if (!dataUrl) { toast.error("Baskı verisi hazırlanamadı"); return; }
+    const ok = printImageSheet(dataUrl, { widthMm: paper.w, heightMm: paper.h, title: `${code} · Kombin Baskı` });
+    if (!ok) { toast.error("Baskı penceresi açılamadı"); return; }
+    toast.success("Kombin baskı penceresi açıldı");
   };
 
   return (
@@ -802,8 +877,9 @@ const AdminPassportPhoto = ({ injected } = {}) => {
                   <Paintbrush className="w-4 h-4 mr-2" />Rötuş Fırçası
                 </Button>
                 <Button onClick={downloadSingle} disabled={bgProcessing} className="bg-slate-900 hover:bg-slate-800" data-testid="download-single-btn"><Download className="w-4 h-4 mr-2" />Tekli İndir</Button>
-                <Button onClick={downloadSheet} disabled={bgProcessing} className="bg-emerald-600 hover:bg-emerald-700" data-testid="download-sheet-btn"><Printer className="w-4 h-4 mr-2" />Baskıya Hazır İndir</Button>
-                <Button onClick={quickPrint} disabled={bgProcessing} className="bg-blue-600 hover:bg-blue-700" data-testid="quick-print-btn"><Printer className="w-4 h-4 mr-2" />Hızlı Baskı</Button>
+                <Button onClick={digitalDownload} disabled={bgProcessing || !image} className="bg-indigo-600 hover:bg-indigo-700" data-testid="digital-download-btn"><Download className="w-4 h-4 mr-2" />Dijital İndir{spec?.exactPx ? ` (${spec.exactPx.w}×${spec.exactPx.h}px)` : spec?.maxKb ? ` (≤${spec.maxKb}KB)` : ""}</Button>
+                <Button onClick={downloadSheet} disabled={bgProcessing || spec?.digitalOnly} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40" data-testid="download-sheet-btn"><Printer className="w-4 h-4 mr-2" />Baskıya Hazır İndir</Button>
+                <Button onClick={quickPrint} disabled={bgProcessing || spec?.digitalOnly} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40" data-testid="quick-print-btn"><Printer className="w-4 h-4 mr-2" />Hızlı Baskı</Button>
               </div>
               {autoDetected && (
                 <div className="mt-3 text-xs text-emerald-700 bg-emerald-50 rounded px-3 py-2 inline-flex items-center gap-2" data-testid="detection-status">
@@ -824,10 +900,28 @@ const AdminPassportPhoto = ({ injected } = {}) => {
                 <Select value={specCode} onValueChange={setSpecCode}>
                   <SelectTrigger data-testid="select-spec"><SelectValue /></SelectTrigger>
                   <SelectContent className="max-h-72">
-                    {PHOTO_SPECS.map((s) => <SelectItem key={s.code} value={s.code}>{s.label} ({s.w}×{s.h}mm)</SelectItem>)}
+                    {allSpecs.map((s) => <SelectItem key={s.code} value={s.code}>{s.label}{s.custom ? "" : ` (${s.w}×${s.h}mm)`}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {spec?.digitalOnly && <div className="mt-1 text-[10px] text-indigo-700 bg-indigo-50 rounded px-2 py-1">Bu ebat yalnızca dijital indirilir, baskıya girmez.</div>}
+                {spec?.custom && (
+                  <button type="button" onClick={() => removeCustomSpec(spec.code)} data-testid="custom-spec-remove" className="mt-1 text-[10px] text-red-600 hover:underline">Bu özel ebatı sil</button>
+                )}
               </div>
+
+              {/* Özel ebat tanımlama (mm + DPI) */}
+              <details className="rounded-lg border border-slate-200 bg-slate-50 p-2" data-testid="custom-spec-panel">
+                <summary className="text-xs font-medium text-slate-700 cursor-pointer">+ Özel Ebat Tanımla (mm & DPI)</summary>
+                <div className="mt-2 space-y-2">
+                  <Input value={customForm.label} onChange={(e) => setCustomForm((f) => ({ ...f, label: e.target.value }))} placeholder="Ad (örn. Ehliyet)" className="h-8 text-xs" data-testid="custom-spec-label" />
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <Input type="number" step="0.1" value={customForm.w} onChange={(e) => setCustomForm((f) => ({ ...f, w: e.target.value }))} placeholder="En mm" className="h-8 text-xs" data-testid="custom-spec-w" />
+                    <Input type="number" step="0.1" value={customForm.h} onChange={(e) => setCustomForm((f) => ({ ...f, h: e.target.value }))} placeholder="Boy mm" className="h-8 text-xs" data-testid="custom-spec-h" />
+                    <Input type="number" step="1" value={customForm.dpi} onChange={(e) => setCustomForm((f) => ({ ...f, dpi: e.target.value }))} placeholder="DPI" className="h-8 text-xs" data-testid="custom-spec-dpi" />
+                  </div>
+                  <Button size="sm" onClick={addCustomSpec} className="w-full h-8 bg-slate-900 hover:bg-slate-800 text-xs" data-testid="custom-spec-add">Ebatı Kaydet & Seç</Button>
+                </div>
+              </details>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <Label className="text-xs">Adet</Label>
@@ -849,6 +943,41 @@ const AdminPassportPhoto = ({ injected } = {}) => {
               </div>
               <div className="text-xs text-emerald-700 bg-emerald-50 rounded p-2">
                 {count} adet {spec?.w}×{spec?.h}mm için önerilen: <b>{layout.paper.label}</b> ({layout.cols}×{layout.rows})
+              </div>
+
+              {/* Kağıt Dizilim Sihirbazı — Standart / Kombin */}
+              <div className="pt-2 border-t border-slate-200">
+                <Label className="text-xs flex items-center gap-1"><ImageIcon className="w-3 h-3" /> Kağıt Dizilimi</Label>
+                <div className="grid grid-cols-2 gap-1 mt-1 p-1 bg-slate-100 rounded-lg text-xs" data-testid="layout-mode-switch">
+                  <button type="button" data-testid="layout-mode-standart" onClick={() => setLayoutMode("standart")}
+                    className={`py-2 rounded-md transition-colors ${layoutMode === "standart" ? "bg-slate-900 text-white font-semibold" : "text-slate-600 hover:bg-slate-200"}`}>Standart</button>
+                  <button type="button" data-testid="layout-mode-kombin" onClick={() => setLayoutMode("kombin")}
+                    className={`py-2 rounded-md transition-colors ${layoutMode === "kombin" ? "bg-emerald-600 text-white font-semibold" : "text-slate-600 hover:bg-emerald-50"}`}>Kombin</button>
+                </div>
+
+                {layoutMode === "kombin" && (
+                  <div className="mt-2 space-y-2" data-testid="combo-builder">
+                    <p className="text-[10px] text-slate-500">Aynı kişinin fotoğrafını tek kağıda farklı ebatlarda dizin (örn. 2 Biyometrik + 2 Vesikalık).</p>
+                    {comboItems.map((ci, i) => (
+                      <div key={i} className="flex items-center gap-1.5" data-testid={`combo-item-${i}`}>
+                        <Select value={ci.specCode} onValueChange={(v) => updateComboItem(i, { specCode: v })}>
+                          <SelectTrigger data-testid={`combo-spec-${i}`} className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
+                          <SelectContent className="max-h-64">
+                            {allSpecs.filter((s) => !s.digitalOnly).map((s) => <SelectItem key={s.code} value={s.code}>{s.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <Input type="number" min={1} max={20} value={ci.count} onChange={(e) => updateComboItem(i, { count: Math.max(1, Number(e.target.value) || 1) })} className="h-8 w-14 text-xs" data-testid={`combo-count-${i}`} />
+                        <button type="button" onClick={() => removeComboItem(i)} data-testid={`combo-remove-${i}`} className="text-red-500 hover:bg-red-50 rounded p-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ))}
+                    <Button size="sm" variant="outline" onClick={addComboItem} data-testid="combo-add" className="w-full h-8 text-xs">+ Ebat Ekle</Button>
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] mb-1"><Label>Kenar boşluğu</Label><span className="text-slate-500">{sheetMargin} mm</span></div>
+                      <input type="range" min={0} max={10} step={0.5} value={sheetMargin} onChange={(e) => setSheetMargin(Number(e.target.value))} className="w-full" data-testid="combo-margin" />
+                    </div>
+                    <Button onClick={printCombo} data-testid="combo-print-btn" className="w-full h-9 bg-blue-600 hover:bg-blue-700 gap-1.5"><Printer className="w-4 h-4" /> Kombin Baskı</Button>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

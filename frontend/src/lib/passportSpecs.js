@@ -6,6 +6,10 @@ export const PHOTO_SPECS = [
   { code: "tr-bio", country: "TR", label: "Türkiye — Biyometrik", w: 50, h: 60, bg: "#ffffff", format: "biometric" },
   { code: "tr-vesikalik", country: "TR", label: "Türkiye — Vesikalık", w: 45, h: 60, bg: "#ffffff", format: "vesikalik" },
   { code: "tr-4x6", country: "TR", label: "Türkiye — Vesikalık 4×6", w: 40, h: 60, bg: "#ffffff", format: "vesikalik" },
+  // Türkiye Askeri Kimlik — ICAO/biyometrik kırpma (kravat altından çerçeveleme).
+  // 2.5×3.2 cm: hem baskı hem dijital (max 100 KB). 297×378 px: yalnızca dijital.
+  { code: "tr-military", country: "TR", label: "Türkiye — Askeri Kimlik (2.5×3.2 cm)", w: 25, h: 32, bg: "#ffffff", format: "biometric", maxKb: 100, military: true },
+  { code: "tr-military-digital", country: "TR", label: "Türkiye — Askeri Kimlik (297×378 px · dijital)", w: 25, h: 32, bg: "#ffffff", format: "biometric", digitalOnly: true, exactPx: { w: 297, h: 378 }, maxKb: 100, military: true },
   // USA
   { code: "us-passport", country: "US", label: "ABD — Pasaport 2×2\"", w: 51, h: 51, bg: "#ffffff", format: "biometric" },
   // Schengen / EU

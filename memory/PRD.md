@@ -655,3 +655,19 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - **Filigran revizyonu**: Filigran seçilince `drawSheet` her fotoğrafın ALTINDA 1 cm beyaz şerit açıyor (fotoğraf kırpılmıyor, alan kağıttan açılır), filigran o şeride yerleşiyor; kesim çizgisi şeridin altından geçiyor. Konum: sol/orta/sağ hizalama + yeni ince konum pad'i (wm-move-up/down/left/right/center, wmNudge mm). Filigran asla fotoğrafın üzerine gelmiyor; "Kaldır" ile tamamen kaldırılıyor.
 - **Korunanlar**: arka plan temizleme API'si ve genel işleme yapısı DEĞİŞMEDİ. Filigran değişikliği yalnızca filigran mevcutken devreye giriyor (geri uyumlu).
 - **Test**: testing_agent iter_51 → frontend %100 (5/5 must-pass): state persistence, canvas render, filigran şerit kontrolleri+redraw, hızlı baskı toast, baskıya hazır indir. Inject/overflow alt-testi sandbox bg-model kısıtı nedeniyle atlandı (fix deterministik, kod incelemesiyle doğrulandı).
+
+## Session AP (12 Haz 2026) — B2B Stüdyo Vesikalık: FAZ 1 (Ebat kütüphanesi + Özel ebat + Kağıt dizilim sihirbazı)
+Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay arşiv + 24 saat QR (Faz 2/4/5). Tüm vesikalık modüllü stüdyolara açık. Faz 5 askeri kıyafet = Nano Banana AI giydirme, tasarım hakkından düşer (sonraki faz).
+- **Ebat kütüphanesi** (`passportSpecs.js`): Askeri Kimlik eklendi — `tr-military` 2.5×3.2 cm (baskı+dijital, ≤100KB, biyometrik kırpma), `tr-military-digital` 297×378 px (YALNIZCA dijital, baskıya girmez, ≤100KB).
+- **Özel ebat (mm+DPI)**: Fotoğrafçı panelden en/boy(mm)+DPI girip kaydediyor (localStorage `fotuber_custom_specs`), dropdown'a ekleniyor, silinebiliyor.
+- **Dijital indirme**: `Dijital İndir` — exactPx (297×378) + `canvasToJpegMaxKb` ile ≤100KB JPEG. digitalOnly ebatlarda baskı butonları devre dışı.
+- **Kağıt Dizilim Sihirbazı** (`passportLayout.js`): Standart/Kombin. Kombin = aynı kişinin fotoğrafını tek kağıda farklı ebatlarda dizme (shelf packing `packLayout`, `drawComboSheet`, cover-crop), kenar boşluğu + kesim çizgileri, `Kombin Baskı`. Standart mod mevcut `drawSheet` ile aynen korunuyor.
+- **Korundu**: arka plan temizleme, biyometrik, 3'lü işleme, filigran şeridi — hepsi değişmedi (ek/additive). drawCombo TDZ'den kaçınmak için ayrı effect'te.
+- **Test**: testing_agent iter_52 → frontend %100 (13/13), 0 konsol hatası, regresyon temiz.
+- Not: iter_51'deki 2 hata düzeltmesi + filigran revizyonu bu oturumun başında yapıldı ve deploy edildi (canlı: fotuber.com.tr).
+
+### Bekleyen (kullanıcı onaylı sıradaki fazlar)
+- FAZ 2: Dijital teslimat + QR kod (backend geçici güvenli link 24s + Object Storage; ekranda/baskıda QR).
+- FAZ 3: ICAO yüz/kalite kontrolü (yüz oranı %70-80, göz/bakış, gölge; yeşil onay/rozet).
+- FAZ 4: Stüdyo CRM arşivi (ad/telefon kayıt + hızlı arama + yeniden baskı/QR; 6 ay arşiv).
+- FAZ 5: Askeri rütbeli kıyafet AI giydirme (admin üniforma yükleme + Nano Banana kafa birleştirme; tasarım hakkından düşer).
