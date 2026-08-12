@@ -42,7 +42,7 @@ const items = [
   { to: "/admin/ani-duvari", label: "Anı Duvarı Paketleri", icon: Images, ownerOnly: true },
   { to: "/admin/duyurular", label: "Duyuru & Telafi", icon: Megaphone, ownerOnly: true },
   { to: "/admin/gmail", label: "Gmail Kutusu", icon: Inbox, ownerOnly: true },
-  { to: "/admin/reklamlar", label: "Reklam Alanları", icon: Megaphone, ownerOnly: true },
+  { to: "/admin/reklamlar", label: "Reklam Alanları", icon: Megaphone },
 ];
 
 export const AdminLayout = ({ children }) => {

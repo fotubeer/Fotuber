@@ -7,12 +7,27 @@ const BE = process.env.REACT_APP_BACKEND_URL;
 // Admin-managed clickable image/GIF ad banners. Mobile-friendly, rectangular.
 export default function AdBanners({ placement, className = "", dark = false }) {
   const [banners, setBanners] = useState([]);
+  const seen = React.useRef(new Set());
 
   useEffect(() => {
     axios.get(`${API_BASE}/ad-banners`, { params: { placement } })
       .then((r) => setBanners(r.data || []))
       .catch(() => setBanners([]));
   }, [placement]);
+
+  const trackImpression = (id, el) => {
+    if (!el || seen.current.has(id)) return;
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting && !seen.current.has(id)) {
+          seen.current.add(id);
+          axios.post(`${API_BASE}/ad-banners/${id}/impression`).catch(() => {});
+          io.disconnect();
+        }
+      });
+    }, { threshold: 0.5 });
+    io.observe(el);
+  };
 
   const onClick = (b) => {
     axios.post(`${API_BASE}/ad-banners/${b.id}/click`).catch(() => {});
@@ -24,7 +39,7 @@ export default function AdBanners({ placement, className = "", dark = false }) {
   return (
     <div data-testid={`ad-banners-${placement}`} className={`w-full flex flex-col items-center gap-3 ${className}`}>
       {banners.map((b) => (
-        <button key={b.id} data-testid={`ad-banner-${b.id}`} onClick={() => onClick(b)}
+        <button key={b.id} data-testid={`ad-banner-${b.id}`} ref={(el) => trackImpression(b.id, el)} onClick={() => onClick(b)}
           className={`group block w-full ${b.orientation === "vertical" ? "max-w-[220px]" : "max-w-4xl"} ${b.target_url ? "cursor-pointer" : "cursor-default"}`}
           title={b.title || "Reklam"}>
           <span className="sr-only">{b.title || "Reklam"}</span>

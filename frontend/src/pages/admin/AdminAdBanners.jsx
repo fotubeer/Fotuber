@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Upload, Trash2, ExternalLink, Megaphone, MousePointerClick } from "lucide-react";
+import { Upload, Trash2, ExternalLink, Megaphone, MousePointerClick, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 const PLACEMENTS = { home_footer: "Anasayfa (Alt / Footer)", studio_panel: "Stüdyo Paneli" };
@@ -19,14 +19,27 @@ const SIZE_HINTS = {
   "studio_panel|vertical": "300 × 600 px (dikey).",
 };
 
+function StatCard({ label, value, testid, accent }) {
+  return (
+    <div data-testid={testid} className={`rounded-xl border p-4 ${accent ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"}`}>
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className={`text-2xl font-semibold mt-1 ${accent ? "text-amber-600" : "text-slate-900"}`}>{value}</div>
+    </div>
+  );
+}
+
 export default function AdminAdBanners() {
   const [items, setItems] = useState([]);
+  const [stats, setStats] = useState(null);
   const [form, setForm] = useState({ title: "", target_url: "", placement: "home_footer", orientation: "horizontal", sort: 0 });
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef();
 
-  const load = () => api.get("/admin/ad-banners").then((r) => setItems(r.data)).catch(() => {});
+  const load = () => {
+    api.get("/admin/ad-banners").then((r) => setItems(r.data)).catch(() => {});
+    api.get("/admin/ad-banners/stats").then((r) => setStats(r.data)).catch(() => {});
+  };
   useEffect(() => { load(); }, []);
 
   const upload = async () => {
@@ -59,8 +72,17 @@ export default function AdminAdBanners() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight" data-testid="admin-ads-title">Reklam Alanları</h1>
-        <p className="text-sm text-slate-500 mt-1">Anasayfa altına ve stüdyo paneline tıklanabilir görsel/GIF reklam banner'ları ekleyin. Mobil uyumludur.</p>
+        <p className="text-sm text-slate-500 mt-1">Anasayfa altına ve stüdyo paneline tıklanabilir görsel/GIF/video reklam banner'ları ekleyin. Mobil uyumludur.</p>
       </div>
+
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="ad-stats-panel">
+          <StatCard label="Toplam Gösterim" value={stats.total_impressions.toLocaleString("tr-TR")} testid="ad-stat-impressions" />
+          <StatCard label="Toplam Tıklama" value={stats.total_clicks.toLocaleString("tr-TR")} testid="ad-stat-clicks" />
+          <StatCard label="Ortalama CTR" value={`%${stats.ctr}`} testid="ad-stat-ctr" accent />
+          <StatCard label="Aktif / Toplam" value={`${stats.active_banners} / ${stats.total_banners}`} testid="ad-stat-active" />
+        </div>
+      )}
 
       <Card className="border-slate-200">
         <CardHeader><CardTitle className="text-base font-semibold flex items-center gap-2"><Upload className="w-4 h-4" /> Yeni Reklam Ekle</CardTitle></CardHeader>
@@ -125,7 +147,11 @@ export default function AdminAdBanners() {
                 <div className="font-medium">{b.title || "(başlıksız)"}</div>
                 <div className="text-xs text-slate-500">{PLACEMENTS[b.placement]} · {ORIENTATIONS[b.orientation]} · {b.media_type === "video" ? "Video" : "Görsel"} · sıra {b.sort}</div>
                 {b.target_url && <a href={b.target_url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 inline-flex items-center gap-1 mt-0.5"><ExternalLink className="w-3 h-3" /> {b.target_url}</a>}
-                <div className="text-[11px] text-slate-400 mt-0.5 inline-flex items-center gap-1"><MousePointerClick className="w-3 h-3" /> {b.clicks || 0} tıklama</div>
+                <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-3">
+                  <span className="inline-flex items-center gap-1"><Eye className="w-3 h-3" /> {(b.impressions || 0).toLocaleString("tr-TR")} gösterim</span>
+                  <span className="inline-flex items-center gap-1"><MousePointerClick className="w-3 h-3" /> {(b.clicks || 0).toLocaleString("tr-TR")} tıklama</span>
+                  <span className="inline-flex items-center gap-1 font-medium text-slate-600">CTR %{b.ctr || 0}</span>
+                </div>
               </div>
               <div className="ml-auto flex items-center gap-2">
                 <button data-testid={`ad-toggle-${b.id}`} onClick={() => toggle(b)} className={`text-xs px-3 h-8 rounded-lg ${b.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{b.active ? "Aktif" : "Pasif"}</button>

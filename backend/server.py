@@ -1519,7 +1519,7 @@ async def create_ad_banner(
         "id": bid, "title": title, "target_url": target_url,
         "placement": placement, "orientation": orientation, "sort": sort,
         "image_path": path, "content_type": content_type, "media_type": media_type,
-        "active": True, "clicks": 0, "created_at": now_iso(),
+        "active": True, "clicks": 0, "impressions": 0, "created_at": now_iso(),
     }
     await db.ad_banners.insert_one(doc)
     doc.pop("_id", None)
@@ -1531,7 +1531,26 @@ async def list_ad_banners_admin(admin: dict = Depends(require_admin)):
     rows = await db.ad_banners.find({}, {"_id": 0}).sort([("placement", 1), ("sort", 1)]).to_list(200)
     for r in rows:
         r["image_url"] = f"/api/ad-banners/img/{r['id']}"
+        imp = int(r.get("impressions", 0) or 0)
+        clk = int(r.get("clicks", 0) or 0)
+        r["impressions"] = imp
+        r["clicks"] = clk
+        r["ctr"] = round((clk / imp) * 100, 2) if imp > 0 else 0.0
     return rows
+
+
+@api_router.get("/admin/ad-banners/stats")
+async def ad_banner_stats(admin: dict = Depends(require_admin)):
+    rows = await db.ad_banners.find({}, {"_id": 0, "impressions": 1, "clicks": 1, "active": 1}).to_list(500)
+    total_imp = sum(int(r.get("impressions", 0) or 0) for r in rows)
+    total_clk = sum(int(r.get("clicks", 0) or 0) for r in rows)
+    return {
+        "total_banners": len(rows),
+        "active_banners": sum(1 for r in rows if r.get("active")),
+        "total_impressions": total_imp,
+        "total_clicks": total_clk,
+        "ctr": round((total_clk / total_imp) * 100, 2) if total_imp > 0 else 0.0,
+    }
 
 
 @api_router.put("/admin/ad-banners/{bid}")
@@ -1575,6 +1594,12 @@ async def list_ad_banners_public(placement: str):
              "orientation": r.get("orientation", "horizontal"),
              "media_type": r.get("media_type", "image"),
              "image_url": f"/api/ad-banners/img/{r['id']}"} for r in rows]
+
+
+@api_router.post("/ad-banners/{bid}/impression")
+async def impression_ad_banner(bid: str):
+    await db.ad_banners.update_one({"id": bid}, {"$inc": {"impressions": 1}})
+    return {"ok": True}
 
 
 @api_router.post("/ad-banners/{bid}/click")
