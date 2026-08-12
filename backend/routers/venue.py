@@ -16,9 +16,25 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 
 
+async def ensure_admin_venue(db, sub: str, email: str) -> dict:
+    """Get-or-create a full-access venue account for the site admin/staff."""
+    aid = f"admin-{sub}"
+    acc = await db.venue_accounts.find_one({"id": aid}, {"_id": 0})
+    if not acc:
+        acc = {
+            "id": aid, "email": email or "admin@fotuber.com.tr",
+            "salon_adi": "Fotuber Yönetim", "phone": "", "city": "",
+            "role": "venue", "active": True, "is_admin_super": True,
+            "kvkk_consent": True, "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.venue_accounts.update_one({"id": aid}, {"$setOnInsert": acc}, upsert=True)
+        acc = await db.venue_accounts.find_one({"id": aid}, {"_id": 0})
+    return acc
+
+
 def build_get_current_venue(db, JWT_SECRET, JWT_ALGORITHM):
     async def get_current_venue(request: Request) -> dict:
-        token = request.cookies.get("venue_token")
+        token = request.cookies.get("venue_token") or request.cookies.get("access_token")
         if not token:
             auth = request.headers.get("Authorization", "")
             if auth.startswith("Bearer "):
@@ -27,7 +43,12 @@ def build_get_current_venue(db, JWT_SECRET, JWT_ALGORITHM):
             raise HTTPException(status_code=401, detail="Salon girişi gerekli")
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-            if payload.get("type") != "access" or payload.get("role") != "venue":
+            if payload.get("type") != "access":
+                raise HTTPException(status_code=401, detail="Geçersiz salon oturumu")
+            role = payload.get("role")
+            if role in ("admin", "staff"):
+                return await ensure_admin_venue(db, payload.get("sub"), payload.get("email"))
+            if role != "venue":
                 raise HTTPException(status_code=401, detail="Geçersiz salon oturumu")
             acc = await db.venue_accounts.find_one({"id": payload["sub"]}, {"_id": 0})
             if not acc or not acc.get("active", True):
@@ -127,14 +148,22 @@ def get_router(db, deps):
 
     @router.post("/login")
     async def login(payload: VenueLoginIn, response: Response):
-        acc = await db.venue_accounts.find_one({"email": payload.email.lower().strip()})
-        if not acc or not verify_password(payload.password, acc.get("password_hash", "")):
-            raise HTTPException(status_code=401, detail="E-posta veya şifre hatalı")
-        if not acc.get("active", True):
-            raise HTTPException(status_code=403, detail="Hesabınız pasif durumda.")
-        access = create_access_token(acc["id"], acc["email"], "venue")
-        _set_cookie(response, access)
-        return {"account": _strip_venue(acc), "token": access}
+        ident = payload.email.lower().strip()
+        # Site admin / staff ALWAYS get a full-access venue session first.
+        admin_user = await db.users.find_one({"email": ident, "role": {"$in": ["admin", "staff"]}})
+        if admin_user and verify_password(payload.password, admin_user.get("password_hash", "")):
+            adm = await ensure_admin_venue(db, admin_user["id"], admin_user.get("email"))
+            access = create_access_token(adm["id"], admin_user.get("email") or ident, "venue")
+            _set_cookie(response, access)
+            return {"account": _strip_venue(adm), "token": access}
+        acc = await db.venue_accounts.find_one({"email": ident})
+        if acc and verify_password(payload.password, acc.get("password_hash", "")):
+            if not acc.get("active", True):
+                raise HTTPException(status_code=403, detail="Hesabınız pasif durumda.")
+            access = create_access_token(acc["id"], acc["email"], "venue")
+            _set_cookie(response, access)
+            return {"account": _strip_venue(acc), "token": access}
+        raise HTTPException(status_code=401, detail="E-posta veya şifre hatalı")
 
     @router.post("/logout")
     async def logout(response: Response):

@@ -547,3 +547,13 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
   - Stüdyo Paneli: `routers/studio.build_get_current_studio` artık ana site admin/staff token'ını (cookie `access_token`) kabul eder → `_ensure_admin_studio()` kalıcı tam-yetkili studio hesabı (`id=admin-{sub}`, `is_admin_super`, plan=gold, paid_until +3650g, tüm modüller, design_rights/ai_credits=10M, bonus_events=1M). studioApi withCredentials olduğu için admin ana site girişiyle /studyo/panel otomatik açılır. Normal member token'ı hâlâ 401 (gated).
 - **Testler**: iteration_44 backend 8/8 (yeni /app/backend/tests/test_iter44.py) + frontend %100. Sıfır issue.
 
+
+## Session AG (Jun 2026) — Admin/Personel TÜM Panellerde Tam Ücretsiz Erişim (curl doğrulandı)
+- **Kök neden**: (1) `_membership_state` admin/staff için active=False dönüyordu → `/vesikalik` üyelik/satın alma gate'i çıkıyordu. (2) Admin'in aynı e-posta (admin@fotuber.com.tr) ile kayıtlı ESKİ trial/expired studio ("fotuber") ve venue ("xl") hesapları vardı; panel login önce onları buluyordu → satın alma isteniyordu.
+- **Düzeltmeler**:
+  - `server.py _membership_state`: role in (admin, staff) → daima {active:true, status:"active", plan:"admin", unlimited:true}. `/vesikalik` (MemberVesikalik `me.membership.active`) editörü açar, gate atlanır.
+  - `routers/studio.py`: `ensure_admin_studio` modül seviyesine taşındı. `get_current_studio` admin/staff main-site token'ını (cookie `access_token`) kabul eder. `studio_login` artık **önce** db.users admin/staff kimliğini doğrular → tam-yetkili admin-super studio (`admin-{uid}`, gold, sınırsız) döner; eski aynı-email studio hesabı gölgede kalır.
+  - `routers/venue.py`: `ensure_admin_venue` + `get_current_venue` admin/staff token kabulü + `venue_login` admin/staff-öncelikli fallback (`admin-{uid}` venue).
+- **Doğrulama (curl)**: /api/member/me admin → active/unlimited/plan=admin; /api/studio/login admin → "Fotuber Yönetim" gold+active; /api/venue/login admin → "Fotuber Yönetim". Artık admin/personel hiçbir panelde üyelik/ödeme görmez.
+- **NOT**: Canlıya yansıması için kullanıcının yeniden Deploy/Re-publish yapması gerekir. Tarayıcıda eski `studio_token` cookie'si varsa panele yeniden giriş yapılmalı (yeni token admin-super'a döner).
+

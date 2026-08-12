@@ -229,40 +229,40 @@ def _strip_studio(acc: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Router factory (no server.py import → no circular dependency)
 # ---------------------------------------------------------------------------
+async def ensure_admin_studio(db, sub: str, email: str) -> dict:
+    """Get-or-create a persistent full-access studio account for the site admin/staff.
+    Grants every module, Gold plan, unlimited quotas and free everything so the admin
+    uses ALL studio features without a separate signup or payment."""
+    aid = f"admin-{sub}"
+    acc = await db.studio_accounts.find_one({"id": aid}, {"_id": 0})
+    if not acc:
+        far = (datetime.now(timezone.utc) + timedelta(days=3650)).isoformat()
+        acc = {
+            "id": aid, "role": "studio", "is_admin_super": True,
+            "email": email or "admin@fotuber.com.tr",
+            "firma_adi": "Fotuber Yönetim", "brand_name": "Fotuber Yönetim",
+            "ftb_code": "FTB-ADMIN", "plan": "gold", "paid_until": far,
+            "modules": {"vesikalik": True, "gallery": True},
+            "design_rights": 10_000_000, "ai_credits": 10_000_000,
+            "bonus_events": 1_000_000,
+            "gallery_watermark": False, "gallery_allow_originals": True,
+            "notify_enabled": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.studio_accounts.update_one({"id": aid}, {"$setOnInsert": acc}, upsert=True)
+        acc = await db.studio_accounts.find_one({"id": aid}, {"_id": 0})
+    if int(acc.get("design_rights", 0) or 0) < 1000 or int(acc.get("ai_credits", 0) or 0) < 1000:
+        await db.studio_accounts.update_one({"id": aid}, {"$set": {"design_rights": 10_000_000, "ai_credits": 10_000_000}})
+        acc["design_rights"] = 10_000_000
+        acc["ai_credits"] = 10_000_000
+    acc["_emp_id"] = None
+    acc["_emp_name"] = acc.get("firma_adi")
+    acc["_is_owner"] = True
+    return acc
+
+
 def build_get_current_studio(db, JWT_SECRET, JWT_ALGORITHM):
     """Module-level factory so other routers (e.g. gallery) can reuse studio auth."""
-    async def _ensure_admin_studio(sub: str, email: str) -> dict:
-        """Get-or-create a persistent full-access studio account for the site admin.
-        Gives every module, Gold plan, unlimited quotas and free everything so the
-        admin uses ALL studio features without a separate signup or payment."""
-        aid = f"admin-{sub}"
-        acc = await db.studio_accounts.find_one({"id": aid}, {"_id": 0})
-        if not acc:
-            far = (datetime.now(timezone.utc) + timedelta(days=3650)).isoformat()
-            acc = {
-                "id": aid, "role": "studio", "is_admin_super": True,
-                "email": email or "admin@fotuber.com.tr",
-                "firma_adi": "Fotuber Yönetim", "brand_name": "Fotuber Yönetim",
-                "ftb_code": "FTB-ADMIN", "plan": "gold", "paid_until": far,
-                "modules": {"vesikalik": True, "gallery": True},
-                "design_rights": 10_000_000, "ai_credits": 10_000_000,
-                "bonus_events": 1_000_000,
-                "gallery_watermark": False, "gallery_allow_originals": True,
-                "notify_enabled": False,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-            await db.studio_accounts.update_one({"id": aid}, {"$setOnInsert": acc}, upsert=True)
-            acc = await db.studio_accounts.find_one({"id": aid}, {"_id": 0})
-        # Keep the admin account topped up so deductions never block it.
-        if int(acc.get("design_rights", 0) or 0) < 1000 or int(acc.get("ai_credits", 0) or 0) < 1000:
-            await db.studio_accounts.update_one({"id": aid}, {"$set": {"design_rights": 10_000_000, "ai_credits": 10_000_000}})
-            acc["design_rights"] = 10_000_000
-            acc["ai_credits"] = 10_000_000
-        acc["_emp_id"] = None
-        acc["_emp_name"] = acc.get("firma_adi")
-        acc["_is_owner"] = True
-        return acc
-
     async def get_current_studio(request: Request) -> dict:
         token = request.cookies.get("studio_token") or request.cookies.get("access_token")
         if not token:
@@ -282,7 +282,7 @@ def build_get_current_studio(db, JWT_SECRET, JWT_ALGORITHM):
                 raise HTTPException(status_code=401, detail="Geçersiz stüdyo oturumu")
             role = payload.get("role")
             if role in ("admin", "staff"):
-                return await _ensure_admin_studio(payload.get("sub"), payload.get("email"))
+                return await ensure_admin_studio(db, payload.get("sub"), payload.get("email"))
             if role != "studio":
                 raise HTTPException(status_code=401, detail="Geçersiz stüdyo oturumu")
             acc = await db.studio_accounts.find_one({"id": payload["sub"]}, {"_id": 0})
@@ -409,6 +409,14 @@ def get_router(db, deps):
     @router.post("/login")
     async def studio_login(payload: StudioLoginIn, response: Response):
         ident = payload.email.strip()
+        # Site admin / staff ALWAYS get a full-access studio session first — even if
+        # a regular (trial/expired) studio account exists under the same email.
+        admin_user = await db.users.find_one({"email": ident.lower(), "role": {"$in": ["admin", "staff"]}})
+        if admin_user and verify_password(payload.password, admin_user.get("password_hash", "")):
+            adm = await ensure_admin_studio(db, admin_user["id"], admin_user.get("email"))
+            access = create_access_token(adm["id"], admin_user.get("email") or ident.lower(), "studio")
+            _set_studio_cookie(response, access)
+            return {"account": _strip_studio(adm), "token": access}
         acc = await db.studio_accounts.find_one({"email": ident.lower()})
         if acc and verify_password(payload.password, acc.get("password_hash", "")):
             access = create_access_token(acc["id"], ident.lower(), "studio")

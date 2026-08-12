@@ -269,6 +269,12 @@ TRIAL_DAYS = 30
 
 def _membership_state(user: dict) -> dict:
     now = datetime.now(timezone.utc)
+    # Site admin / staff have FULL unlimited access to every paid feature — no
+    # membership or purchase is ever required for them.
+    if (user or {}).get("role") in ("admin", "staff"):
+        return {"active": True, "status": "active", "until": None, "plan": "admin",
+                "unlimited": True, "price": MEMBER_MONTHLY_PRICE,
+                "yearly_price": MEMBER_YEARLY_PRICE, "currency": "TRY", "trial_days": TRIAL_DAYS}
     def _parse(v):
         try:
             return datetime.fromisoformat(v) if v else None
