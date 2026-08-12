@@ -1,0 +1,20 @@
+{
+  "summary": "Frontend-only test of Studio Gallery 'Servis Paketleri' tab. All acceptance criteria met: login with admin@fotuber.com.tr via /personel-girisi works; /studyo/galeri loads; sg-tab-packs is selectable; add form contains sg-pack-kind (select with 8 options: Baskı, Çerçeve, Ahşap Tablo, Cam Tablo, Albüm, Kanvas, Retouch, Diğer), sg-pack-name, sg-pack-price, sg-pack-limit and sg-create-pack. Created 'Cam Tablo / 30x40 Cam Tablo / 500 / limit 2' -> success toast 'Hizmet eklendi' shown, new row displays 'Cam Tablo' badge + name + '+500₺' + 'maks 2 adet'. Created second service with empty price and limit 0 -> row shows 'Ücretsiz' and '· sınırsız'. Deleted a service via trash button -> row disappeared (row count went from 7 to 6 including form testids). No console errors from the packs feature (only pre-existing unrelated 401 for public endpoints and SVG circle warnings from another page).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 via /personel-girisi",
+  "seed_data_creation": "Created 2 gallery service packs during test (30x40 Cam Tablo, TEST_Ucretsiz); TEST_Ucretsiz was deleted at end; 30x40 Cam Tablo remains.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Login route is /personel-girisi (not /login). Packs tab UI works fully with kind badge, price display, limit display, delete flow, and success toast.",
+  "rca of the issue": "n/a"
+}

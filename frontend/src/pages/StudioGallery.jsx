@@ -19,6 +19,37 @@ import { TrDatePicker } from "@/components/TrDatePicker";
 
 const BE = process.env.REACT_APP_BACKEND_URL;
 const CHUNK = 512 * 1024;
+
+// Dialog içinde sorunsuz çalışan gün/ay/yıl seçimi (native select).
+const TR_MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+function DateSelects({ value, onChange, testid }) {
+  const [y, m, d] = (value || "").split("-");
+  const now = new Date();
+  const years = Array.from({ length: 6 }, (_, i) => now.getFullYear() - 1 + i);
+  const set = (part, val) => {
+    const cur = { y: y || "", m: m || "", d: d || "" };
+    cur[part] = val;
+    if (cur.y && cur.m && cur.d) onChange(`${cur.y}-${String(cur.m).padStart(2, "0")}-${String(cur.d).padStart(2, "0")}`);
+    else onChange(`${cur.y || ""}-${cur.m ? String(cur.m).padStart(2, "0") : ""}-${cur.d ? String(cur.d).padStart(2, "0") : ""}`);
+  };
+  const cls = "h-10 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm px-2";
+  return (
+    <div className="grid grid-cols-3 gap-2" data-testid={testid}>
+      <select data-testid={`${testid}-day`} className={cls} value={d ? String(parseInt(d, 10)) : ""} onChange={(e) => set("d", e.target.value)}>
+        <option value="">Gün</option>
+        {Array.from({ length: 31 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+      </select>
+      <select data-testid={`${testid}-month`} className={cls} value={m ? String(parseInt(m, 10)) : ""} onChange={(e) => set("m", e.target.value)}>
+        <option value="">Ay</option>
+        {TR_MONTHS.map((mn, i) => <option key={i} value={i + 1}>{mn}</option>)}
+      </select>
+      <select data-testid={`${testid}-year`} className={cls} value={y || ""} onChange={(e) => set("y", e.target.value)}>
+        <option value="">Yıl</option>
+        {years.map((yr) => <option key={yr} value={yr}>{yr}</option>)}
+      </select>
+    </div>
+  );
+}
 const ORDER_STATUS = { new: "İnceleniyor", preparing: "Hazırlanıyor", printing: "Baskıda", shipping: "Kargoda", completed: "Tamamlandı",
   processing: "Hazırlanıyor", ready: "Baskıda", delivered: "Tamamlandı" };
 const ORDER_STATUS_OPTIONS = { new: "İnceleniyor", preparing: "Hazırlanıyor", printing: "Baskıda", shipping: "Kargoda", completed: "Tamamlandı" };
@@ -189,7 +220,7 @@ function EventsList({ events, onOpen, onCopy, onCreated, onDeleted, onQuota }) {
             <Input data-testid="sg-event-email" type="email" placeholder="Müşteri e-postası (süre bitiş bildirimi için)" value={form.client_email} onChange={(e) => setForm({ ...form, client_email: e.target.value })} />
             <div>
               <label className="text-xs text-neutral-500">Etkinlik tarihi</label>
-              <TrDatePicker testid="sg-event-date" value={form.event_date} onChange={(v) => setForm({ ...form, event_date: v })} placeholder="gg.aa.yyyy" />
+              <DateSelects testid="sg-event-date" value={form.event_date} onChange={(v) => setForm({ ...form, event_date: v })} />
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div><label className="text-xs text-neutral-500">Albüm limiti</label><Input data-testid="sg-event-albumlimit" type="number" value={form.album_limit} onChange={(e) => setForm({ ...form, album_limit: e.target.value })} /></div>
@@ -351,32 +382,41 @@ function EventDetail({ eventId, onBack, onCopy, onQuota }) {
 }
 
 function PacksTab({ packs, reload }) {
-  const [form, setForm] = useState({ name: "", price: "", description: "" });
+  const KINDS = ["Baskı", "Çerçeve", "Ahşap Tablo", "Cam Tablo", "Albüm", "Kanvas", "Retouch", "Diğer"];
+  const [form, setForm] = useState({ name: "", price: "", description: "", kind: "Baskı", max_qty: "" });
   const create = async () => {
-    if (!form.name.trim()) { toast.error("Paket adı gerekli"); return; }
-    await studioApi.post("/studio/gallery/service-packs", { name: form.name, price: +form.price || 0, description: form.description, active: true });
-    setForm({ name: "", price: "", description: "" }); toast.success("Paket eklendi"); reload();
+    if (!form.name.trim()) { toast.error("Hizmet adı gerekli"); return; }
+    await studioApi.post("/studio/gallery/service-packs", { name: form.name, price: +form.price || 0, description: form.description, kind: form.kind, max_qty: +form.max_qty || 0, active: true });
+    setForm({ name: "", price: "", description: "", kind: "Baskı", max_qty: "" }); toast.success("Hizmet eklendi"); reload();
   };
   const del = async (id) => { await studioApi.delete(`/studio/gallery/service-packs/${id}`); reload(); };
+  const inputCls = "bg-white/5 border-white/15 text-white";
   return (
     <div className="max-w-2xl">
+      <p className="text-xs text-white/45 mb-2">Müşteriye sunacağınız hizmetleri tanımlayın (Baskı, Çerçeve, Ahşap/Cam Tablo…). Ekstra ücret ve adet limiti belirleyebilirsiniz.</p>
       <div className="rounded-xl border border-white/12 bg-white/5 p-4 mb-4 flex flex-wrap items-end gap-2">
-        <div className="flex-1 min-w-[140px]"><label className="text-xs text-white/50">Paket adı</label><Input data-testid="sg-pack-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-white/5 border-white/15 text-white" /></div>
-        <div className="w-28"><label className="text-xs text-white/50">Fiyat ₺</label><Input data-testid="sg-pack-price" type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className="bg-white/5 border-white/15 text-white" /></div>
-        <div className="flex-1 min-w-[140px]"><label className="text-xs text-white/50">Açıklama</label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="bg-white/5 border-white/15 text-white" /></div>
+        <div className="w-36"><label className="text-xs text-white/50">Tür</label>
+          <select data-testid="sg-pack-kind" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })} className="w-full h-10 rounded-md bg-white/5 border border-white/15 text-white text-sm px-2">
+            {KINDS.map((k) => <option key={k} value={k} className="bg-neutral-900">{k}</option>)}
+          </select>
+        </div>
+        <div className="flex-1 min-w-[130px]"><label className="text-xs text-white/50">Hizmet adı</label><Input data-testid="sg-pack-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputCls} /></div>
+        <div className="w-24"><label className="text-xs text-white/50">Ekstra ₺</label><Input data-testid="sg-pack-price" type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className={inputCls} /></div>
+        <div className="w-24"><label className="text-xs text-white/50">Adet limiti</label><Input data-testid="sg-pack-limit" type="number" value={form.max_qty} onChange={(e) => setForm({ ...form, max_qty: e.target.value })} placeholder="0=∞" className={inputCls} /></div>
         <Button data-testid="sg-create-pack" onClick={create} className="gap-1 bg-amber-500 hover:bg-amber-600 text-neutral-900"><Plus size={15} /> Ekle</Button>
       </div>
       {packs.length === 0 ? (
         <div data-testid="sg-packs-empty" className="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-10 text-center">
           <div className="w-12 h-12 rounded-2xl bg-white/5 grid place-items-center mx-auto mb-2"><Package size={22} className="text-white/40" /></div>
-          <div className="text-sm text-white/50">Henüz upsell paketi yok. Yukarıdan ekleyin.</div>
+          <div className="text-sm text-white/50">Henüz hizmet yok. Yukarıdan ekleyin.</div>
         </div>
       ) : (
         <div className="space-y-2">
           {packs.map((p) => (
             <div key={p.id} data-testid={`sg-pack-${p.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3 flex items-center gap-3">
-              <div><div className="font-medium">{p.name}</div><div className="text-xs text-white/50">{p.description}</div></div>
-              <div className="ml-auto font-semibold text-amber-300">{p.price}₺</div>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 shrink-0">{p.kind || "Diğer"}</span>
+              <div className="min-w-0"><div className="font-medium truncate">{p.name}</div><div className="text-xs text-white/50 truncate">{p.description}{p.max_qty ? ` · maks ${p.max_qty} adet` : " · sınırsız"}</div></div>
+              <div className="ml-auto font-semibold text-amber-300 shrink-0">{p.price > 0 ? `+${p.price}₺` : "Ücretsiz"}</div>
               <Button size="sm" variant="ghost" onClick={() => del(p.id)} className="text-red-300 hover:bg-red-500/10"><Trash2 size={14} /></Button>
             </div>
           ))}

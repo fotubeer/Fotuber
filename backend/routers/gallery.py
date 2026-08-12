@@ -56,6 +56,8 @@ class ServicePackIn(BaseModel):
     price: float = Field(ge=0)
     description: str = ""
     active: bool = True
+    kind: str = "Diğer"          # Baskı / Çerçeve / Ahşap Tablo / Cam Tablo / Albüm / Diğer
+    max_qty: int = 0             # 0 = sınırsız; müşterinin bu hizmet için seçebileceği maks. adet
 
 
 class SelectionItem(BaseModel):

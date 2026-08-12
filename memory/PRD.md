@@ -715,3 +715,24 @@ Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay
 - **Editör dönüşüm modalı** (`conversion-modal`): AI giydirme 402 (hak bitti) dönerse doğrudan açılır — "Ücretsiz AI haklarınız doldu", "Paketleri Gör" (→ /studyo/paketler) + "Sonra".
 - **Kütüphane banner CTA**: trial aktif & ai_trial_credits===0 → `ai-trial-conversion` gradient banner + "Paketler" butonu (→ /studyo/paketler). Hak>0 iken normal `ai-trial-banner` (kalan hak).
 - **Doğrulama**: curl — hakları sıfırlanmış hesap apply → 402 (AI çağrısı yok), /uniforms trial_active=false & credits=0. Frontend derleme temiz. 402→modal ve banner CTA basit UI (doğrulanmış state'e bağlı).
+
+## Session AX (12 Haz 2026) — BUG FIX: Etkinlik tarih seçici + Büyük Etkinlik Paneli backlog
+- **BUG FIX (doğrulandı)**: Etkinlik Galerisi "Yeni Etkinlik" dialogunda gün/ay/yıl seçimi çalışmıyordu. Kök neden: TrDatePicker (Radix Popover) Radix Dialog içinde pointer/focus çakışması. Çözüm: `StudioGallery.jsx` içinde native <select> tabanlı `DateSelects` (gün/ay/yıl) → YYYY-MM-DD. testing_agent iter_58 → %100 (etkinlik 2026-06-15 ile oluşturuldu, event_date doğru POST edildi). TrDatePicker diğer sayfalarda (InvitationCreate) aynen duruyor.
+
+### YENİ BACKLOG — Etkinlik Paneli B2B genişletmeleri (kullanıcı talebi, HENÜZ YAPILMADI)
+Öncelik sırası kullanıcıdan alınacak:
+1. **Özel hizmet ekleme**: Fotoğrafçı Albüm/Kanvas/Retouch dışında (Baskı, Çerçeve, Ahşap Tablo, Cam Tablo…) kendi hizmetlerini ekleyip isim/limit/ekstra ücret ayarlayabilsin (etkinlik veya stüdyo bazında).
+2. **Seçim kodları + orijinal indirme**: Müşterinin seçtiği foto KODLARI (DSC002635…) hangi hizmet için seçildiğiyle fotoğrafçıya gelsin; fotoğrafçı orijinalleri (izin verdiyse filigranlı/filigransız) panelinden indirebilsin.
+3. **Thumbnail arşivi**: Süre dolup orijinaller silinse bile küçük boyut (thumbnail) + kodlar fotoğrafçı panelinde saklansın.
+4. **Müşteri görünümü**: ızgara + kaydırmalı (carousel) görünüm; foto tıklayınca büyüt/incele (lightbox); "Siparişi Gönder" sonrası süre dolana dek orijinalleri görüp indirebilsin; süre bitince sadece bilgi ekranı.
+5. **Tekrar link**: Fotoğrafçı, kendi etkinlik süresi (örn. 8 gün) dolana dek müşteriye (örn. 4 gün) 2. kez link verebilsin.
+6. **Stüdyoya özel ödeme**: Fotoğrafçı kendi Sanal POS / IBAN / Elden Ödeme yöntemlerini müşteriye tanımlasın.
+7. **Gold aylık davetiye kodu**: Gold stüdyolara her ay otomatik 3 ücretsiz davetiye tasarım kodu.
+8. **Admin reklam alanları**: Stüdyo panelinde uygun yerlere + site anasayfası en altına, admin'in eklediği yatay/dikey animasyonlu (video/gif/düz) tıklanınca reklam sahibine yönlendiren banner'lar; mobil uyumlu.
+
+## Session AY (12 Haz 2026) — Grup A #1: Özel Hizmet Kataloğu (foundation)
+- `gallery.py ServicePackIn` + `kind` (Baskı/Çerçeve/Ahşap Tablo/Cam Tablo/Albüm/Kanvas/Retouch/Diğer) + `max_qty` (0=sınırsız). model_dump ile saklanıp listeleniyor.
+- `StudioGallery.jsx PacksTab`: tür select (sg-pack-kind), isim, ekstra ₺ (sg-pack-price), adet limiti (sg-pack-limit); kartta tür rozeti + '+X₺/Ücretsiz' + 'maks N adet'.
+- Test: backend curl + testing_agent iter_59 → %100.
+- ÖDEME SPESİFİKASYONU (kullanıcı, sıradaki iş): Fotoğrafçı kendi Sanal POS ekleyip ücretli hizmetlerde KART ödemesi alsın (başarılı olursa hizmet fotoğrafçıya bildirilsin); Havale/EFT (fotoğrafçı IBAN) ve Nakit/Elden → fotoğrafçı ONAY versin. Yöntemler stüdyo bazında tanımlanmalı.
+- KALAN GRUP A: #2 seçim kodları+hangi hizmet için (fotoğrafçıya), orijinal indirme (filigranlı/filigransız, izinli), #3 carousel+lightbox müşteri görünümü, #4 sipariş sonrası süreye dek erişim + bitince bilgi ekranı, #5 thumbnail+kod arşivi + 2. kez link (foto süresi < fotoğrafçı süresi). GRUP B: özel ödeme (yukarıdaki spec), Gold aylık 3 davetiye kodu. GRUP C: admin reklam banner alanları (panel + anasayfa altı, mobil, tıklanabilir).
