@@ -710,3 +710,8 @@ Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay
 - **Tek tık WhatsApp**: Arşivde `archive-whatsapp-*` → relink ile taze 24s link + normalize telefon (0 at, 10 hane ise +90) → wa.me/<numara>?text=... otomatik açılır. Telefon yoksa wa.me/?text=... fallback.
 - **Deneme AI hakkı (3 gün)**: Trial hesapları `ai_trial_credits=3` (erkek/kadın/askeri birer kez). `apply_uniform` trial aktifse önce ücretsiz deneme hakkını kullanır (design_rights düşmez), hata/boşta iade eder. `/uniforms` trial_active + ai_trial_credits döner; UniformLibrary'de `ai-trial-banner`.
 - **Test**: backend curl (trial account: 3 hak→apply trial_used=true, kalan 2, design_rights değişmedi; kategori filtre) + testing_agent iter_57 → frontend %100 (12/12), regresyon temiz.
+
+## Session AW (12 Haz 2026) — Deneme → Ücretli Dönüşüm
+- **Editör dönüşüm modalı** (`conversion-modal`): AI giydirme 402 (hak bitti) dönerse doğrudan açılır — "Ücretsiz AI haklarınız doldu", "Paketleri Gör" (→ /studyo/paketler) + "Sonra".
+- **Kütüphane banner CTA**: trial aktif & ai_trial_credits===0 → `ai-trial-conversion` gradient banner + "Paketler" butonu (→ /studyo/paketler). Hak>0 iken normal `ai-trial-banner` (kalan hak).
+- **Doğrulama**: curl — hakları sıfırlanmış hesap apply → 402 (AI çağrısı yok), /uniforms trial_active=false & credits=0. Frontend derleme temiz. 402→modal ve banner CTA basit UI (doğrulanmış state'e bağlı).

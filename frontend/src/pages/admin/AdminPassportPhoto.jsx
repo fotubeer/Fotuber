@@ -777,6 +777,7 @@ const AdminPassportPhoto = ({ injected } = {}) => {
   // ---- Faz 5-B: Askeri kıyafet AI giydirme (öncesi/sonrası onaylı) --------
   const [applyingUniform, setApplyingUniform] = useState(null);
   const [uniformResult, setUniformResult] = useState(null); // {before, after, uid, rights}
+  const [convOpen, setConvOpen] = useState(false); // deneme→ücretli dönüşüm ekranı
 
   const applyUniform = async (uid) => {
     if (!image || !singleCanvasRef.current) { toast.error("Önce fotoğraf yükleyin"); return; }
@@ -790,7 +791,11 @@ const AdminPassportPhoto = ({ injected } = {}) => {
       const resp = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/studio/uniforms/${uid}/apply`, {
         method: "POST", credentials: "include", headers, body: JSON.stringify({ image_b64: beforeUrl }),
       });
-      if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || "Giydirme başarısız"); }
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        if (resp.status === 402) { setConvOpen(true); return; }
+        throw new Error(err.detail || "Giydirme başarısız");
+      }
       const data = await resp.json();
       setUniformResult({ before: beforeUrl, after: data.image_b64, uid, rights: data.rights_remaining, trialUsed: data.trial_used, aiTrial: data.ai_trial_credits });
     } catch (e) {
@@ -1403,6 +1408,20 @@ const AdminPassportPhoto = ({ injected } = {}) => {
               <Button onClick={acceptUniformResult} className="flex-1 bg-emerald-600 hover:bg-emerald-700 gap-1" data-testid="uniform-accept"><Check className="w-4 h-4" /> Kabul Et</Button>
               <Button onClick={() => { const uid = uniformResult.uid; setUniformResult(null); applyUniform(uid); }} variant="outline" className="flex-1 gap-1" data-testid="uniform-retry"><Sparkles className="w-4 h-4" /> Tekrar Dene</Button>
               <Button onClick={() => setUniformResult(null)} variant="ghost" className="text-slate-500" data-testid="uniform-discard">Vazgeç</Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {convOpen && (
+        <div className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm grid place-items-center p-4" data-testid="conversion-modal" onClick={() => setConvOpen(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md text-center relative" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setConvOpen(false)} data-testid="conversion-close" className="absolute top-3 right-3 text-slate-400 hover:text-slate-700"><X className="w-5 h-5" /></button>
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-fuchsia-500 to-purple-600 grid place-items-center mx-auto mb-3 shadow-lg shadow-fuchsia-500/30"><Sparkles className="w-7 h-7 text-white" /></div>
+            <h3 className="text-lg font-bold text-slate-900">Ücretsiz AI haklarınız doldu</h3>
+            <p className="text-sm text-slate-500 mt-2">AI giydirme sonuçlarını (öncesi/sonrası) beğendiniz mi? Bir paket alarak sınırsız çalışın; tasarım haklarınız hesabınıza tanımlansın.</p>
+            <div className="flex gap-2 mt-5">
+              <Button onClick={() => { window.location.href = "/studyo/paketler"; }} data-testid="conversion-go" className="flex-1 bg-fuchsia-600 hover:bg-fuchsia-700 gap-1.5"><Sparkles className="w-4 h-4" /> Paketleri Gör</Button>
+              <Button onClick={() => setConvOpen(false)} variant="outline" className="text-slate-500" data-testid="conversion-later">Sonra</Button>
             </div>
           </div>
         </div>

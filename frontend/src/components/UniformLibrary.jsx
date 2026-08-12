@@ -151,9 +151,16 @@ export const UniformLibrary = ({ onApplyUniform, applyingUniform }) => {
         </Button>
       </div>
 
-      {trialActive && (
+      {trialActive && aiTrial > 0 && (
         <div className="mx-4 mt-3 rounded-lg bg-fuchsia-50 border border-fuchsia-200 px-3 py-2 text-[11px] text-fuchsia-700 flex items-center gap-1.5" data-testid="ai-trial-banner">
           <Sparkles className="w-3.5 h-3.5" /> Deneme sürümü: erkek/kadın/askeri için <b>{aiTrial}</b> ücretsiz AI giydirme hakkınız kaldı. Deneyin, beğenin!
+        </div>
+      )}
+      {trialActive && aiTrial === 0 && (
+        <div className="mx-4 mt-3 rounded-lg bg-gradient-to-r from-fuchsia-600 to-purple-600 px-3 py-2.5 text-[11px] text-white flex items-center gap-2" data-testid="ai-trial-conversion">
+          <Sparkles className="w-4 h-4 shrink-0" />
+          <span className="flex-1">Ücretsiz AI haklarınız doldu. Beğendiyseniz paket alın!</span>
+          <button onClick={() => { window.location.href = "/studyo/paketler"; }} data-testid="trial-buy-btn" className="shrink-0 bg-white text-fuchsia-700 font-semibold rounded-full px-3 py-1 hover:bg-fuchsia-50">Paketler</button>
         </div>
       )}
 
