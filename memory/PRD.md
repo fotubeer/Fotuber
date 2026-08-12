@@ -599,3 +599,12 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - Test: iteration_46 backend %100 + frontend %100. Curl ile ayrıca doğrulandı: deneme bitince {false,false}, sadece vesikalik alınınca {vesikalik:true, gallery:false}.
 - **KALAN (AŞAMA 2 · kısım 2)**: Vesikalık ve Galeri için AYRI fiyat (şu an ikisi aynı tier fiyatını kullanıyor) + admin panelinde modül-bazlı fiyat alanları; paketler sayfası daha sade/modern redesign. Modül-bazlı kota (AI kredisi/depolama/etkinlik) netleştirme.
 
+
+
+## Session AK (Jun 2026) — Genel Fiyat Merkezi (admin-editable, curl doğrulandı)
+- **Yeni**: Üyelik (aylık/yıllık) ve Davetiye (premium tema + süre uzatma) fiyatları artık admin panelinden. `server.py`: `load_site_pricing(db)` (db.meta "site_pricing" → global MEMBER_MONTHLY/YEARLY, INVITE_PREMIUM/EXTEND, startup'ta yüklenir), `GET/PUT /api/admin/site-pricing`. Değişiklik anında yansır (globaller call-time okunur). Yıllık tasarruf % admin sayfasında gösterilir.
+- **Admin UI**: `/admin/genel-fiyatlar` (AdminSitePricing.jsx) + sidebar "Genel Fiyatlar".
+- **Böylece tüm site fiyatları admin-editable**: Stüdyo tier fiyat+kota (Stüdyo Fiyat & Kota), Anı Duvarı paketleri, Tasarım/Baskı paketleri (AI hakları + baskı kotası + hediye AI), Üyelik + Davetiye (Genel Fiyatlar).
+- Test: curl — GET/PUT çalışır, üyelik fiyatı canlı yansır (129/1290), premium güncellenir; varsayılana reset edildi.
+- **KALAN (AŞAMA 2 · kısım 2)**: Vesikalık ve Galeri için BİRBİRİNDEN FARKLI fiyat (şu an ikisi aynı tier fiyatını kullanıyor; tier fiyat+kotaları editable ama modül-bazlı ayrı fiyat için tier'dan bağımsız fiyat alanı gerekiyor) + paketler sayfası modern/sade redesign.
+

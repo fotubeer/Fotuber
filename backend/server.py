@@ -583,6 +583,10 @@ async def on_startup():
             {"$set": {"sections.photowall_tier": "gold"}})
     except Exception as _e:
         logging.warning(f"photowall config load failed: {_e}")
+    try:
+        await load_site_pricing(db)
+    except Exception as _e:
+        logging.warning(f"site pricing load failed: {_e}")
 
     # Start background cleanup task (deletes expired guest uploads once an hour)
     asyncio.create_task(_cleanup_expired_uploads())
@@ -5902,6 +5906,22 @@ INVITE_EVENT_TYPES = ["dugun", "nisan", "kina", "sunnet", "dogumgunu", "nikah", 
 INVITE_PREMIUM_PRICE = float(os.environ.get("INVITE_PREMIUM_PRICE", "250"))
 INVITE_PHOTOWALL_PRICE = float(os.environ.get("INVITE_PHOTOWALL_PRICE", "500"))
 INVITE_EXTEND_PRICE = float(os.environ.get("INVITE_EXTEND_PRICE", "99"))
+
+
+async def load_site_pricing(db_):
+    """Load admin-editable general prices (member membership + invitation premium
+    + invitation extend) from db.meta so ALL site pricing is configurable."""
+    global MEMBER_MONTHLY_PRICE, MEMBER_YEARLY_PRICE, INVITE_PREMIUM_PRICE, INVITE_EXTEND_PRICE
+    try:
+        doc = await db_.meta.find_one({"id": "site_pricing"}, {"_id": 0})
+    except Exception:
+        doc = None
+    if doc:
+        MEMBER_MONTHLY_PRICE = float(doc.get("member_monthly", MEMBER_MONTHLY_PRICE))
+        MEMBER_YEARLY_PRICE = float(doc.get("member_yearly", MEMBER_YEARLY_PRICE))
+        INVITE_PREMIUM_PRICE = float(doc.get("invite_premium", INVITE_PREMIUM_PRICE))
+        INVITE_EXTEND_PRICE = float(doc.get("invite_extend", INVITE_EXTEND_PRICE))
+
 INVITE_PHOTOWALL_MAX_GB = float(os.environ.get("INVITE_PHOTOWALL_MAX_GB", "75"))
 INVITE_PHOTOWALL_MAX_BYTES = int(INVITE_PHOTOWALL_MAX_GB * 1024 * 1024 * 1024)
 
@@ -6330,6 +6350,38 @@ async def invitation_table_qr_pdf(iid: str, user: dict = Depends(get_current_use
 @api_router.get("/admin/photowall-config")
 async def admin_photowall_config(admin: dict = Depends(require_admin)):
     return {"tiers": _photowall_tiers_public()}
+
+
+@api_router.get("/admin/site-pricing")
+async def admin_get_site_pricing(admin: dict = Depends(require_admin)):
+    return {"member_monthly": MEMBER_MONTHLY_PRICE, "member_yearly": MEMBER_YEARLY_PRICE,
+            "invite_premium": INVITE_PREMIUM_PRICE, "invite_extend": INVITE_EXTEND_PRICE,
+            "currency": "TRY"}
+
+
+class SitePricingIn(BaseModel):
+    member_monthly: Optional[float] = None
+    member_yearly: Optional[float] = None
+    invite_premium: Optional[float] = None
+    invite_extend: Optional[float] = None
+
+
+@api_router.put("/admin/site-pricing")
+async def admin_update_site_pricing(payload: SitePricingIn, admin: dict = Depends(require_admin)):
+    global MEMBER_MONTHLY_PRICE, MEMBER_YEARLY_PRICE, INVITE_PREMIUM_PRICE, INVITE_EXTEND_PRICE
+    if payload.member_monthly is not None:
+        MEMBER_MONTHLY_PRICE = max(0.0, float(payload.member_monthly))
+    if payload.member_yearly is not None:
+        MEMBER_YEARLY_PRICE = max(0.0, float(payload.member_yearly))
+    if payload.invite_premium is not None:
+        INVITE_PREMIUM_PRICE = max(0.0, float(payload.invite_premium))
+    if payload.invite_extend is not None:
+        INVITE_EXTEND_PRICE = max(0.0, float(payload.invite_extend))
+    await db.meta.update_one({"id": "site_pricing"}, {"$set": {
+        "member_monthly": MEMBER_MONTHLY_PRICE, "member_yearly": MEMBER_YEARLY_PRICE,
+        "invite_premium": INVITE_PREMIUM_PRICE, "invite_extend": INVITE_EXTEND_PRICE}}, upsert=True)
+    return {"ok": True, "member_monthly": MEMBER_MONTHLY_PRICE, "member_yearly": MEMBER_YEARLY_PRICE,
+            "invite_premium": INVITE_PREMIUM_PRICE, "invite_extend": INVITE_EXTEND_PRICE}
 
 
 class PhotowallTierIn(BaseModel):

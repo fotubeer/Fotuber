@@ -38,6 +38,7 @@ const items = [
   { to: "/admin/vesikalik", label: "Vesikalık Üretici", icon: Camera },
   { to: "/admin/tasarim-haklari", label: "Tasarım Hakkı Paketleri", icon: Wand2, ownerOnly: true },
   { to: "/admin/studyo-fiyatlar", label: "Stüdyo Fiyat & Kota", icon: SlidersHorizontal, ownerOnly: true },
+  { to: "/admin/genel-fiyatlar", label: "Genel Fiyatlar", icon: SlidersHorizontal, ownerOnly: true },
   { to: "/admin/ani-duvari", label: "Anı Duvarı Paketleri", icon: Images, ownerOnly: true },
   { to: "/admin/duyurular", label: "Duyuru & Telafi", icon: Megaphone, ownerOnly: true },
   { to: "/admin/gmail", label: "Gmail Kutusu", icon: Inbox, ownerOnly: true },

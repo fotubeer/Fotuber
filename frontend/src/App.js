@@ -72,6 +72,7 @@ import AdminDesignRights from "@/pages/admin/AdminDesignRights";
 import AdminNotifications from "@/pages/admin/AdminNotifications";
 import AdminStudioPlans from "@/pages/admin/AdminStudioPlans";
 import AdminMemoryWall from "@/pages/admin/AdminMemoryWall";
+import AdminSitePricing from "@/pages/admin/AdminSitePricing";
 import AdminAnnouncements from "@/pages/admin/AdminAnnouncements";
 import AdminInbox from "@/pages/admin/AdminInbox";
 
@@ -180,6 +181,7 @@ function App() {
               <Route path="/admin/tasarim-haklari" element={<AdminGuard><AdminDesignRights /></AdminGuard>} />
               <Route path="/admin/studyo-fiyatlar" element={<AdminGuard><AdminStudioPlans /></AdminGuard>} />
               <Route path="/admin/ani-duvari" element={<AdminGuard><AdminMemoryWall /></AdminGuard>} />
+              <Route path="/admin/genel-fiyatlar" element={<AdminGuard><AdminSitePricing /></AdminGuard>} />
               <Route path="/admin/duyurular" element={<AdminGuard><AdminAnnouncements /></AdminGuard>} />
               <Route path="/admin/gmail" element={<AdminGuard><AdminInbox /></AdminGuard>} />
               <Route path="/admin/bildirimler" element={<AdminGuard><AdminNotifications /></AdminGuard>} />
