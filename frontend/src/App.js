@@ -31,6 +31,7 @@ import StudioGallery from "@/pages/StudioGallery";
 import VenuePortal from "@/pages/VenuePortal";
 import VenueDashboard from "@/pages/VenueDashboard";
 import GallerySelect from "@/pages/GallerySelect";
+import StudioChatWidget from "@/components/StudioChatWidget";
 
 import Home from "@/pages/Home";
 import Services from "@/pages/Services";
@@ -188,6 +189,7 @@ function App() {
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
+            <StudioChatWidget />
             <Toaster position="top-right" richColors />
           </AuthProvider>
         </SettingsProvider>

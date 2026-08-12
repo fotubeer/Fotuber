@@ -21,6 +21,10 @@ NANO_BANANA_MODEL = os.environ.get("NANO_BANANA_MODEL", "gemini-3.1-flash-image-
 # Free design rights granted to every studio account (1 right = 3 AI alternatives).
 STUDIO_FREE_DESIGN_RIGHTS = int(os.environ.get("STUDIO_FREE_DESIGN_RIGHTS", "3"))
 _log = logging.getLogger("fotuber")
+from typing import Optional
+import base64 as _b64lib
+from starlette.responses import Response as StarletteResponse
+
 
 # ---------------------------------------------------------------------------
 # Trial / plan configuration (env-overridable)
@@ -953,25 +957,58 @@ def get_router(db, deps):
         if not _chat_enabled(acc):
             return {"enabled": False, "messages": [], "unread": 0}
         me = acc.get("_emp_id") or "owner"
-        msgs = await db.studio_chat_messages.find({"studio_id": acc["id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
+        msgs = await db.studio_chat_messages.find({"studio_id": acc["id"]}, {"_id": 0, "attach_b64": 0}).sort("created_at", -1).to_list(100)
         msgs = list(reversed(msgs))
+        for m in msgs:
+            if m.get("attach_kind"):
+                m["attach_url"] = f"/api/studio/chat/media/{m['id']}"
         unread = sum(1 for m in msgs if me not in (m.get("read_by") or []) and m.get("sender_id") != me)
         return {"enabled": True, "messages": msgs, "unread": unread, "me": me}
 
     class ChatIn(BaseModel):
-        text: str = Field(min_length=1, max_length=1000)
+        text: str = Field(default="", max_length=1000)
+        attach_b64: Optional[str] = None
+        attach_mime: Optional[str] = None
+        attach_name: Optional[str] = None
+        attach_kind: Optional[str] = None  # image | audio | file
 
     @router.post("/chat")
     async def post_chat(payload: ChatIn, acc: dict = Depends(get_current_studio)):
         if not _chat_enabled(acc):
             raise HTTPException(status_code=403, detail="Ekip sohbeti 3+ kullanıcılı paketlerde aktiftir.")
         me = acc.get("_emp_id") or "owner"
+        text = (payload.text or "").strip()
+        has_attach = bool(payload.attach_b64 and payload.attach_kind)
+        if not text and not has_attach:
+            raise HTTPException(status_code=400, detail="Mesaj boş olamaz")
         doc = {"id": new_id(), "studio_id": acc["id"], "sender_id": me,
                "sender_name": acc.get("_emp_name") or acc.get("firma_adi"),
-               "text": payload.text.strip(), "read_by": [me], "created_at": now_iso()}
+               "text": text, "read_by": [me], "created_at": now_iso()}
+        if has_attach:
+            raw = payload.attach_b64.split(",", 1)[-1]
+            try:
+                size = len(_b64lib.b64decode(raw))
+            except Exception:
+                raise HTTPException(status_code=400, detail="Geçersiz dosya")
+            if size > 8 * 1024 * 1024:
+                raise HTTPException(status_code=400, detail="Dosya en fazla 8 MB olabilir")
+            doc.update({"attach_b64": raw, "attach_mime": payload.attach_mime or "application/octet-stream",
+                        "attach_name": (payload.attach_name or "dosya")[:120], "attach_kind": payload.attach_kind})
         await db.studio_chat_messages.insert_one(doc)
         doc.pop("_id", None)
+        doc.pop("attach_b64", None)
+        if has_attach:
+            doc["attach_url"] = f"/api/studio/chat/media/{doc['id']}"
         return {"message": doc}
+
+    @router.get("/chat/media/{msg_id}")
+    async def get_chat_media(msg_id: str, acc: dict = Depends(get_current_studio)):
+        m = await db.studio_chat_messages.find_one({"id": msg_id, "studio_id": acc["id"]}, {"_id": 0})
+        if not m or not m.get("attach_b64"):
+            raise HTTPException(status_code=404, detail="Bulunamadı")
+        data = _b64lib.b64decode(m["attach_b64"])
+        return StarletteResponse(content=data, media_type=m.get("attach_mime", "application/octet-stream"),
+                                 headers={"Content-Disposition": f"inline; filename=\"{m.get('attach_name', 'dosya')}\""})
 
     @router.post("/chat/read")
     async def read_chat(acc: dict = Depends(get_current_studio)):

@@ -99,14 +99,22 @@ export default function StudioGallery() {
       style={{ background: "radial-gradient(900px 500px at 80% -10%, #17233d 0%, #070b14 60%, #05070d 100%)" }}>
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
         <div className="flex items-center gap-3 mb-6">
-          <button data-testid="sg-back" onClick={() => navigate("/studyo/panel")} className="p-2 rounded-lg bg-white/5 hover:bg-white/10"><ArrowLeft size={18} /></button>
-          <h1 className="text-2xl font-semibold">Etkinlik Galerisi</h1>
+          <button data-testid="sg-back" onClick={() => navigate("/studyo/panel")} className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"><ArrowLeft size={18} /></button>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 grid place-items-center shadow-lg shadow-amber-500/20">
+              <ImageIcon size={20} className="text-neutral-900" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold leading-tight">Etkinlik Galerisi</h1>
+              <p className="text-xs text-white/45">Fotoğraf yükleyin, müşteri seçim linki paylaşın, siparişleri yönetin.</p>
+            </div>
+          </div>
         </div>
 
-        <div className="flex gap-1 p-1 rounded-xl bg-white/5 w-fit mb-6">
+        <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.04] border border-white/10 w-full sm:w-fit mb-6 overflow-x-auto no-scrollbar">
           {[["events", "Etkinlikler", ImageIcon], ["packs", "Servis Paketleri", Package], ["orders", "Siparişler", ClipboardList], ["reminders", "Hatırlatmalar", BellRing], ["settings", "Ayarlar", SettingsIcon]].map(([k, label, Icon]) => (
             <button key={k} data-testid={`sg-tab-${k}`} onClick={() => switchTab(k)}
-              className={`px-4 h-9 rounded-lg text-sm font-medium flex items-center gap-1.5 relative ${tab === k ? "bg-white text-neutral-900" : "text-white/60 hover:text-white"}`}>
+              className={`px-4 h-9 rounded-xl text-sm font-medium flex items-center gap-1.5 relative whitespace-nowrap transition-colors ${tab === k ? "bg-white text-neutral-900 shadow-sm" : "text-white/55 hover:text-white hover:bg-white/5"}`}>
               <Icon size={15} /> {label}
               {k === "reminders" && reminders.length > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{reminders.length}</span>
@@ -164,9 +172,12 @@ function EventsList({ events, onOpen, onCopy, onCreated, onDeleted, onQuota }) {
   return (
     <div>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogTrigger asChild>
-          <Button data-testid="sg-new-event-btn" className="mb-4 gap-1.5 bg-amber-500 hover:bg-amber-600 text-neutral-900 font-semibold"><Plus size={16} /> Yeni Etkinlik</Button>
-        </DialogTrigger>
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-sm text-white/50">{events.length > 0 ? `${events.length} etkinlik` : ""}</div>
+          <DialogTrigger asChild>
+            <Button data-testid="sg-new-event-btn" className="gap-1.5 bg-amber-500 hover:bg-amber-600 text-neutral-900 font-semibold rounded-xl"><Plus size={16} /> Yeni Etkinlik</Button>
+          </DialogTrigger>
+        </div>
         <DialogContent className="text-neutral-900">
           <DialogHeader><DialogTitle>Yeni Etkinlik</DialogTitle>
             <DialogDescription>Katı albüm/kanvas/retouch limitleri belirleyin (0 = sınırsız).</DialogDescription>
@@ -190,29 +201,41 @@ function EventsList({ events, onOpen, onCopy, onCreated, onDeleted, onQuota }) {
         </DialogContent>
       </Dialog>
 
-      {events.length === 0 ? <p className="text-white/40">Henüz etkinlik yok.</p> : (
+      {events.length === 0 ? (
+        <div data-testid="sg-events-empty" className="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-12 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-white/5 grid place-items-center mx-auto mb-3"><ImageIcon size={26} className="text-white/40" /></div>
+          <div className="font-medium text-white/80">Henüz etkinlik yok</div>
+          <p className="text-sm text-white/40 mt-1 max-w-xs mx-auto">İlk etkinliğinizi oluşturun, fotoğraf yükleyin ve müşterinize seçim linki gönderin.</p>
+        </div>
+      ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {events.map((ev) => (
-            <div key={ev.id} data-testid={`sg-event-card-${ev.id}`} className="rounded-2xl border border-white/12 bg-white/5 p-4">
-              <div className="flex items-start justify-between">
-                <div className="font-semibold">{ev.name}</div>
-                {ev.submitted && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Seçim geldi</span>}
+            <div key={ev.id} data-testid={`sg-event-card-${ev.id}`} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 hover:border-white/20 hover:bg-white/[0.06] transition-colors">
+              <div className="flex items-start justify-between gap-2">
+                <div className="font-semibold leading-tight">{ev.name}</div>
+                {ev.submitted && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-medium">Seçim geldi</span>}
               </div>
-              <div className="text-xs text-white/50 mt-1">{ev.client_name || "-"} · {ev.photo_count} foto</div>
-              <div className="text-xs text-white/40 mt-0.5">Albüm limiti: {ev.album_limit || "∞"}</div>
-              <div className="mt-2 text-[11px] space-y-0.5">
-                <div className={ev.link_expired ? "text-red-300" : "text-white/50"}>
-                  Link: {ev.link_expired ? "süresi doldu" : fmtDate(ev.link_expires_at)}{ev.extra_link_used && " · ek link kullanıldı"}
-                </div>
-                <div className="text-white/40">Orijinal silinme: {fmtDate(ev.originals_delete_at)}{ev.originals_purged && " · silindi"}</div>
+              <div className="text-xs text-white/50 mt-1">{ev.client_name || "Müşteri belirtilmedi"}</div>
+
+              <div className="flex flex-wrap gap-1.5 mt-3">
+                <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg bg-white/5 text-white/70"><ImageIcon size={11} /> {ev.photo_count} foto</span>
+                <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg bg-white/5 text-white/70"><Package size={11} /> Albüm {ev.album_limit || "∞"}</span>
+                <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg ${ev.link_expired ? "bg-red-500/15 text-red-300" : "bg-white/5 text-white/70"}`}>
+                  <Clock size={11} /> {ev.link_expired ? "Link doldu" : fmtDate(ev.link_expires_at)}
+                </span>
               </div>
-              <div className="flex gap-2 mt-3 flex-wrap">
-                <Button data-testid={`sg-open-${ev.id}`} size="sm" onClick={() => onOpen(ev)} className="gap-1 bg-white/10 hover:bg-white/20 text-white"><Upload size={13} /> Yönet</Button>
-                <Button data-testid={`sg-copy-link-${ev.id}`} size="sm" variant="outline" onClick={() => onCopy(ev.share_token)} className="gap-1 bg-transparent border-white/15 text-white hover:bg-white/10"><Link2 size={13} /> Link</Button>
+
+              <div className="text-[11px] text-white/35 mt-2">
+                Orijinal silinme: {fmtDate(ev.originals_delete_at)}{ev.originals_purged && " · silindi"}{ev.extra_link_used && " · ek link kullanıldı"}
+              </div>
+
+              <div className="flex gap-2 mt-3 pt-3 border-t border-white/10 flex-wrap">
+                <Button data-testid={`sg-open-${ev.id}`} size="sm" onClick={() => onOpen(ev)} className="gap-1 bg-white/10 hover:bg-white/20 text-white rounded-lg"><Upload size={13} /> Yönet</Button>
+                <Button data-testid={`sg-copy-link-${ev.id}`} size="sm" variant="outline" onClick={() => onCopy(ev.share_token)} className="gap-1 bg-transparent border-white/15 text-white hover:bg-white/10 rounded-lg"><Link2 size={13} /> Link</Button>
                 {!ev.extra_link_used && !ev.originals_purged && (
-                  <Button data-testid={`sg-extend-${ev.id}`} size="sm" variant="outline" onClick={() => onExtend(ev)} className="gap-1 bg-transparent border-amber-400/30 text-amber-200 hover:bg-amber-500/10"><Link2 size={13} /> Ek Link</Button>
+                  <Button data-testid={`sg-extend-${ev.id}`} size="sm" variant="outline" onClick={() => onExtend(ev)} className="gap-1 bg-transparent border-amber-400/30 text-amber-200 hover:bg-amber-500/10 rounded-lg"><Link2 size={13} /> Ek Link</Button>
                 )}
-                <Button data-testid={`sg-del-event-${ev.id}`} size="sm" variant="ghost" onClick={() => del(ev)} className="ml-auto text-red-300 hover:text-red-200 hover:bg-red-500/10"><Trash2 size={14} /></Button>
+                <Button data-testid={`sg-del-event-${ev.id}`} size="sm" variant="ghost" onClick={() => del(ev)} className="ml-auto text-red-300 hover:text-red-200 hover:bg-red-500/10 rounded-lg"><Trash2 size={14} /></Button>
               </div>
             </div>
           ))}
@@ -343,7 +366,12 @@ function PacksTab({ packs, reload }) {
         <div className="flex-1 min-w-[140px]"><label className="text-xs text-white/50">Açıklama</label><Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="bg-white/5 border-white/15 text-white" /></div>
         <Button data-testid="sg-create-pack" onClick={create} className="gap-1 bg-amber-500 hover:bg-amber-600 text-neutral-900"><Plus size={15} /> Ekle</Button>
       </div>
-      {packs.length === 0 ? <p className="text-white/40">Henüz upsell paketi yok.</p> : (
+      {packs.length === 0 ? (
+        <div data-testid="sg-packs-empty" className="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-10 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-white/5 grid place-items-center mx-auto mb-2"><Package size={22} className="text-white/40" /></div>
+          <div className="text-sm text-white/50">Henüz upsell paketi yok. Yukarıdan ekleyin.</div>
+        </div>
+      ) : (
         <div className="space-y-2">
           {packs.map((p) => (
             <div key={p.id} data-testid={`sg-pack-${p.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3 flex items-center gap-3">
@@ -365,7 +393,13 @@ function OrdersTab({ orders, reload, employees, isOwner }) {
     const res = await studioApi.get(`/studio/gallery/orders/${o.id}/pdf`, { responseType: "blob" });
     const url = URL.createObjectURL(res.data); const a = document.createElement("a"); a.href = url; a.download = `siparis-${o.order_no}.pdf`; a.click(); URL.revokeObjectURL(url);
   };
-  return orders.length === 0 ? <p className="text-white/40">Henüz sipariş yok.</p> : (
+  return orders.length === 0 ? (
+    <div data-testid="sg-orders-empty" className="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-12 text-center">
+      <div className="w-14 h-14 rounded-2xl bg-white/5 grid place-items-center mx-auto mb-3"><ClipboardList size={26} className="text-white/40" /></div>
+      <div className="font-medium text-white/80">Henüz sipariş yok</div>
+      <p className="text-sm text-white/40 mt-1">Müşteriniz seçim yaptığında siparişler burada görünür.</p>
+    </div>
+  ) : (
     <div className="space-y-2">
       {orders.map((o) => (
         <div key={o.id} data-testid={`sg-order-${o.id}`} className="rounded-xl border border-white/12 bg-white/5 p-4 flex flex-wrap items-center gap-3">
