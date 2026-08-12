@@ -1,0 +1,20 @@
+{
+  "summary": "Frontend-only regression of NEW waveform features in StudioChatWidget on /studyo/panel (studio1@test.com / Test1234, token stored in localStorage['fotuber_studio_token']). Injected a fake AudioContext MediaStream via addInitScript so getUserMedia works headlessly and granted microphone permission. All 7 assertions passed: (1) During recording, chat-recording-bar renders both chat-rec-timer (increments 0:00 -> 0:01) and the live waveform canvas data-testid='chat-rec-waveform' (visible, bbox 213x28 on desktop). (2) After chat-rec-stop, chat-audio-preview shows the custom player data-testid='chat-audio-preview-player' with a play button (-play suffix) and 34 waveform bars — NO native <audio controls>. Message is NOT auto-sent. (3) Clicking chat-audio-preview-player-play toggles title 'Oynat' -> 'Duraklat' (audio playing). (4) chat-audio-send posts the audio; it appears in the message list rendered as div[data-testid^='chat-audio-bubble-'] containing a -play button and waveform bars; zero native <audio controls> anywhere in the message list. (5) Clicking the sent bubble's -play button toggles 'Oynat' -> 'Duraklat' -> 'Oynat'. (6) Regression: chat-rec-cancel while recording removes chat-recording-bar and does NOT create a preview (preview=0), returning to normal chat-input. Text send via chat-input + chat-send-btn works (unique message found in list). Owner pin: chat-pin-<id> creates chat-pinned-banner (banner=1); chat-unpin-btn removes it (banner=0). (7) Mobile 390x844: documentElement.scrollWidth stays at 390 for both recording-bar (356px wide, waveform canvas 187px) and preview (356px, player 252px); play buttons remain visible and tappable (mobile tap toggled title to 'Duraklat'); sent bubble bbox 258px wide fits inside viewport. No horizontal overflow anywhere. Live waveform canvas + custom AudioBubble player are implemented correctly (StudioChatWidget.jsx L20-76 seededBars/AudioBubble, L228-252 live waveform draw loop, L294 sent bubble render, L315 preview player render, L323 chat-rec-waveform canvas).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AudioBubble.onMeta Infinity-duration workaround (currentTime=1e101 then timeupdate reset) is a known MediaRecorder/webm hack; works but consider caching a precomputed duration from the recorder to avoid the initial seek jitter.",
+    "seededBars uses FNV+LCG on the message id/src as seed — deterministic per message; good for stable UI. No RNG in render.",
+    "Live waveform useEffect correctly cancels rAF on unmount/recording-change; analyser is created in startRec but I did not audit teardown of AudioContext on cancel (streamRef tracks are stopped but the AudioContext lingers — minor mem leak, not user-visible)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "studio1@test.com / Test1234 (studio gold, is_owner, chat enabled). Token via POST /api/studio/login stored in localStorage['fotuber_studio_token'].",
+  "seed_data_creation": "Two TEST_ voice messages + one 'TEST wave regression <ts>' text message posted to /api/studio/chat during this run. Also pinned then unpinned one audio message. No cleanup performed (matches prior iterations).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To reproduce headlessly: page.context.add_init_script patching navigator.mediaDevices.getUserMedia to return an AudioContext MediaStreamDestination stream + grant_permissions(['microphone']). Login via page.request.post (urllib gets 403 from CDN). IMPORTANT selector gotcha: div[data-testid^='chat-audio-bubble-'] matches BOTH the wrapper <div> AND the <button data-testid='...-play'> — filter by tag (use 'div[data-testid^=...]') to get just wrappers.",
+  "rca of the issue": "N/A — no bugs found. Feature verified end-to-end."
+}

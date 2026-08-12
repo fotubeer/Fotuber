@@ -642,3 +642,8 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - Backend `studio.py`: `POST /api/studio/chat/{msg_id}/pin {pinned}` (SADECE firma sahibi, _require_owner) → tek sabit mesaj (yeni sabitlerken diğerleri kaldırılır). `GET /chat` artık `is_owner` + `pinned` (mesaj objesi) döndürür; mesajlarda `pinned` alanı.
 - Frontend `StudioChatWidget.jsx`: üstte sabitlenen mesaj afişi (chat-pinned-banner) + sahibe kaldır butonu (chat-unpin-btn); her mesajda hover ile sahibe pin/unpin (chat-pin-{id}); sabit mesaj amber vurgulu + pin ikonu.
 - Test: curl doğrulandı — sahip pin/unpin çalışır (ok:true, GET pinned doğru), çalışan (aliusta) is_owner=false ve pin denemesi 403.
+
+## Session AN-4 (12 Haz 2026) — Sesli mesajlara dalga formu (waveform)
+- `StudioChatWidget.jsx`: (a) kayıt sırasında canlı animasyonlu waveform (canvas, chat-rec-waveform; AnalyserNode + rAF); (b) gönderilen ve önizlenen sesli mesajlar için özel WhatsApp tarzı çubuklu oynatıcı `AudioBubble` (play/pause, tıklanabilir ilerleme çubuğu, mesaj id'sine göre deterministik çubuk yükseklikleri seededBars, MediaRecorder Infinity süre workaround). Native <audio controls> kaldırıldı.
+- data-testid: chat-rec-waveform, chat-audio-preview-player(+-play), chat-audio-bubble-{id}(+-play).
+- Test: testing_agent iter_50 → frontend %100 pass (canlı waveform, önizleme oynatıcı, gönderilen bubble play/pause, regresyon: iptal/metin/pin, mobil 390 taşma yok). Ek kütüphane yok.

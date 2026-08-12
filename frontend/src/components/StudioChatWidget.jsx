@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useLocation } from "react-router-dom";
-import { MessageCircle, X, Minus, Send, Paperclip, Image as ImageIcon, Mic, Smile, FileText, Square, Trash2, Pin, PinOff } from "lucide-react";
+import { MessageCircle, X, Minus, Send, Paperclip, Image as ImageIcon, Mic, Smile, FileText, Square, Trash2, Pin, PinOff, Play, Pause } from "lucide-react";
 import { studioApi } from "@/lib/studioApi";
 
 const BE = process.env.REACT_APP_BACKEND_URL;
@@ -15,6 +15,65 @@ const pickAudioMime = () => {
   return cands.find((c) => MediaRecorder.isTypeSupported(c)) || "";
 };
 const mimeExt = (mime) => (mime.includes("mp4") || mime.includes("aac") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm");
+
+// Deterministic bar heights from a seed string (WhatsApp-style static waveform).
+const seededBars = (seed, n = 34) => {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  const out = [];
+  for (let i = 0; i < n; i++) { h = (Math.imul(h, 1103515245) + 12345) >>> 0; out.push(0.22 + (h % 1000) / 1000 * 0.78); }
+  return out;
+};
+
+// Compact chat audio player with a tappable waveform + progress fill. Works on all browsers/mobile.
+function AudioBubble({ src, seed, testid }) {
+  const audioRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [cur, setCur] = useState(0);
+  const [dur, setDur] = useState(0);
+  const bars = useMemo(() => seededBars(seed || src, 34), [seed, src]);
+  const pct = dur > 0 && isFinite(dur) ? cur / dur : 0;
+
+  const toggle = () => {
+    const a = audioRef.current; if (!a) return;
+    if (playing) a.pause(); else a.play().catch(() => {});
+  };
+  const onMeta = () => {
+    const a = audioRef.current; if (!a) return;
+    if (a.duration === Infinity || isNaN(a.duration)) {
+      // MediaRecorder webm süresi hatası için workaround.
+      a.currentTime = 1e101;
+      const fix = () => { a.removeEventListener("timeupdate", fix); a.currentTime = 0; setDur(a.duration || 0); };
+      a.addEventListener("timeupdate", fix);
+    } else setDur(a.duration);
+  };
+  const seek = (e) => {
+    const a = audioRef.current; if (!a || !dur || !isFinite(dur)) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    a.currentTime = Math.min(dur, Math.max(0, ((e.clientX - r.left) / r.width) * dur));
+  };
+
+  return (
+    <div data-testid={testid} className="flex items-center gap-2 w-full mb-1 min-w-[190px]">
+      <button data-testid={testid ? `${testid}-play` : undefined} onClick={toggle} title={playing ? "Duraklat" : "Oynat"}
+        className="w-8 h-8 shrink-0 grid place-items-center rounded-full bg-amber-500 hover:bg-amber-600 text-neutral-900">
+        {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+      </button>
+      <div onClick={seek} className="flex items-center gap-[2px] flex-1 h-8 cursor-pointer">
+        {bars.map((b, i) => (
+          <span key={i} className={`flex-1 rounded-full transition-colors ${i / bars.length <= pct ? "bg-amber-400" : "bg-white/25"}`}
+            style={{ height: `${Math.round(b * 100)}%` }} />
+        ))}
+      </div>
+      <span className="text-[10px] tabular-nums text-white/50 shrink-0 w-8 text-right">{fmtSecs(Math.round(playing || cur ? cur : dur))}</span>
+      <audio ref={audioRef} src={src} preload="metadata"
+        onLoadedMetadata={onMeta}
+        onTimeUpdate={(e) => setCur(e.currentTarget.currentTime)}
+        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setCur(0); }} className="hidden" />
+    </div>
+  );
+}
 
 export default function StudioChatWidget() {
   const loc = useLocation();
@@ -38,6 +97,8 @@ export default function StudioChatWidget() {
   const fileRef = useRef(null);
   const scrollRef = useRef(null);
   const bodyRef = useRef(null);
+  const analyserRef = useRef(null);
+  const liveCanvasRef = useRef(null);
 
   const poll = useCallback(async () => {
     if (!localStorage.getItem("fotuber_studio_token") && !localStorage.getItem("fotuber_token")) { setEnabled(false); return; }
@@ -106,6 +167,14 @@ export default function StudioChatWidget() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+      try {
+        _actx = _actx || new (window.AudioContext || window.webkitAudioContext)();
+        const source = _actx.createMediaStreamSource(stream);
+        const analyser = _actx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        analyserRef.current = analyser;
+      } catch { analyserRef.current = null; }
       const mime = pickAudioMime();
       const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
       const chunks = [];
@@ -155,6 +224,33 @@ export default function StudioChatWidget() {
 
   useEffect(() => () => { stopTimer(); streamRef.current?.getTracks().forEach((t) => t.stop()); }, []);
 
+  // Live recording waveform.
+  useEffect(() => {
+    if (!recording) return;
+    const canvas = liveCanvasRef.current;
+    const analyser = analyserRef.current;
+    if (!canvas || !analyser) return;
+    const cctx = canvas.getContext("2d");
+    const buf = new Uint8Array(analyser.frequencyBinCount);
+    let raf;
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      const w = canvas.width, h = canvas.height;
+      analyser.getByteFrequencyData(buf);
+      cctx.clearRect(0, 0, w, h);
+      const bars = 28, step = Math.floor(buf.length / bars);
+      const bw = w / bars;
+      cctx.fillStyle = "#fbbf24";
+      for (let i = 0; i < bars; i++) {
+        const v = buf[i * step] / 255;
+        const bh = Math.max(2, v * h);
+        cctx.fillRect(i * bw + bw * 0.2, (h - bh) / 2, bw * 0.6, bh);
+      }
+    };
+    draw();
+    return () => cancelAnimationFrame(raf);
+  }, [recording]);
+
   if (!onStudio || !enabled) return null;
 
   return (
@@ -195,7 +291,7 @@ export default function StudioChatWidget() {
                   {m.pinned && <Pin className="w-3 h-3 text-amber-400" />}
                 </div>
                 {m.attach_kind === "image" && <img src={`${BE}${m.attach_url}`} alt="" className="rounded-lg max-h-48 mb-1" />}
-                {m.attach_kind === "audio" && <audio controls src={`${BE}${m.attach_url}`} className="w-full h-8 mb-1" />}
+                {m.attach_kind === "audio" && <AudioBubble src={`${BE}${m.attach_url}`} seed={m.id} testid={`chat-audio-bubble-${m.id}`} />}
                 {m.attach_kind === "file" && <a href={`${BE}${m.attach_url}`} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs text-blue-300 underline mb-1"><FileText className="w-3.5 h-3.5" /> {m.attach_name}</a>}
                 {m.text && <div className="text-sm text-white/90 whitespace-pre-wrap break-words">{m.text}</div>}
                 {isOwner && (
@@ -216,17 +312,16 @@ export default function StudioChatWidget() {
           {preview ? (
             <div data-testid="chat-audio-preview" className="flex items-center gap-2 px-2 py-2 bg-neutral-800 border-t border-white/10">
               <button data-testid="chat-audio-discard" onClick={discardPreview} title="Sil" className="w-9 h-9 shrink-0 grid place-items-center rounded-full text-red-400 hover:bg-red-500/15"><Trash2 className="w-4 h-4" /></button>
-              <audio data-testid="chat-audio-preview-player" controls src={preview.url} className="flex-1 h-9 min-w-0" />
-              <span className="text-[11px] tabular-nums text-white/50 shrink-0">{fmtSecs(preview.secs)}</span>
+              <div className="flex-1 min-w-0"><AudioBubble src={preview.url} seed={`preview-${preview.secs}`} testid="chat-audio-preview-player" /></div>
               <button data-testid="chat-audio-send" onClick={sendPreview} title="Gönder" className="w-9 h-9 shrink-0 grid place-items-center rounded-full bg-amber-500 hover:bg-amber-600 text-neutral-900"><Send className="w-4 h-4" /></button>
             </div>
           ) : recording ? (
             <div data-testid="chat-recording-bar" className="flex items-center gap-2 px-3 py-2.5 bg-neutral-800 border-t border-white/10">
               <button data-testid="chat-rec-cancel" onClick={cancelRec} title="İptal" className="w-9 h-9 shrink-0 grid place-items-center rounded-full text-white/60 hover:text-red-400 hover:bg-white/5"><X className="w-4 h-4" /></button>
               <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shrink-0" />
-              <span data-testid="chat-rec-timer" className="text-sm tabular-nums text-white/80 font-medium">{fmtSecs(recSecs)}</span>
-              <span className="text-xs text-white/40 truncate">Kaydediliyor…</span>
-              <button data-testid="chat-rec-stop" onClick={stopRec} title="Durdur" className="ml-auto w-9 h-9 shrink-0 grid place-items-center rounded-full bg-amber-500 hover:bg-amber-600 text-neutral-900"><Square className="w-4 h-4" /></button>
+              <span data-testid="chat-rec-timer" className="text-sm tabular-nums text-white/80 font-medium shrink-0">{fmtSecs(recSecs)}</span>
+              <canvas data-testid="chat-rec-waveform" ref={liveCanvasRef} width={160} height={28} className="flex-1 min-w-0 h-7" />
+              <button data-testid="chat-rec-stop" onClick={stopRec} title="Durdur" className="w-9 h-9 shrink-0 grid place-items-center rounded-full bg-amber-500 hover:bg-amber-600 text-neutral-900"><Square className="w-4 h-4" /></button>
             </div>
           ) : (
             <div className="flex items-center gap-1 px-2 py-2 bg-neutral-800 border-t border-white/10">
