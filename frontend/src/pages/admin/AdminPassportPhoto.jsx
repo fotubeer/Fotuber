@@ -15,6 +15,7 @@ import { removeBackground, compositeOnColor } from "@/lib/bgRemove";
 import { QRCodeCanvas } from "qrcode.react";
 import RetouchBrush from "@/components/RetouchBrush";
 import UniformLibrary from "@/components/UniformLibrary";
+import VesikalikArchive from "@/components/VesikalikArchive";
 import PhotoStudio from "@/components/PhotoStudio";
 
 // IndexedDB helpers for last-10 archive
@@ -934,7 +935,11 @@ const AdminPassportPhoto = ({ injected } = {}) => {
                   </div>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-3 mt-6">
+              <div className="mt-4 grid grid-cols-2 gap-2" data-testid="crm-capture">
+                <Input value={qrForm.name} onChange={(e) => setQrForm({ ...qrForm, name: e.target.value })} placeholder="Müşteri adı (arşiv için, ops.)" className="h-9 text-sm" data-testid="crm-name" />
+                <Input value={qrForm.phone} onChange={(e) => setQrForm({ ...qrForm, phone: e.target.value })} placeholder="Telefon (arşiv için, ops.)" className="h-9 text-sm" data-testid="crm-phone" />
+              </div>
+              <div className="flex flex-wrap gap-3 mt-3">
                 <Button onClick={runAutoDetect} disabled={!image || detecting || bgProcessing} variant="outline" className="border-emerald-600 text-emerald-700 hover:bg-emerald-50" data-testid="auto-detect-btn">
                   {detecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ScanFace className="w-4 h-4 mr-2" />}
                   {detecting ? "Yüz taranıyor..." : "Otomatik Yüz Tespiti"}
@@ -1302,6 +1307,8 @@ const AdminPassportPhoto = ({ injected } = {}) => {
           </Card>
 
           <UniformLibrary />
+
+          <VesikalikArchive />
         </div>
       </div>
 

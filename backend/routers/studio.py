@@ -10,6 +10,7 @@ import secrets
 import base64
 import asyncio
 import logging
+import re as _re
 from datetime import datetime, timezone, timedelta
 
 import jwt
@@ -1112,6 +1113,54 @@ def get_router(db, deps):
         }
         await db.vesikalik_deliveries.insert_one(doc)
         return {"token": token, "path": f"/api/v/{token}", "expires_at": doc["expires_at"]}
+
+    # ---- Faz 4: Stüdyo CRM Arşivi (ad/telefon ile arama + yeniden baskı/QR) --
+    def _archive_out(d: dict) -> dict:
+        expired = (d.get("expires_at") or "") < now_iso()
+        return {
+            "id": d["id"], "client_name": d.get("client_name"), "phone": d.get("phone"),
+            "spec_label": d.get("spec_label"), "code": d.get("code"),
+            "created_at": d.get("created_at"), "expires_at": d.get("expires_at"),
+            "link_expired": expired, "downloads": d.get("downloads", 0),
+            "token": d.get("token"),
+            "thumb_url": f"/api/studio/vesikalik/archive/{d['id']}/file",
+        }
+
+    @router.get("/vesikalik/archive")
+    async def archive_list(q: str = "", acc: dict = Depends(get_current_studio)):
+        query = {"studio_id": acc["id"], "is_deleted": {"$ne": True}}
+        qs = (q or "").strip()
+        if qs:
+            rx = {"$regex": _re.escape(qs), "$options": "i"}
+            query["$or"] = [{"client_name": rx}, {"phone": rx}, {"code": rx}]
+        docs = await db.vesikalik_deliveries.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
+        return {"items": [_archive_out(d) for d in docs]}
+
+    @router.get("/vesikalik/archive/{did}/file")
+    async def archive_file(did: str, acc: dict = Depends(get_current_studio)):
+        d = await db.vesikalik_deliveries.find_one({"id": did, "studio_id": acc["id"], "is_deleted": {"$ne": True}}, {"_id": 0})
+        if not d:
+            raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
+        try:
+            data, ct = await asyncio.to_thread(get_object, d["storage_path"])
+        except Exception:
+            raise HTTPException(status_code=502, detail="Dosya alınamadı")
+        return StarletteResponse(content=data, media_type=d.get("content_type") or "image/png")
+
+    @router.post("/vesikalik/archive/{did}/relink")
+    async def archive_relink(did: str, acc: dict = Depends(get_current_studio)):
+        d = await db.vesikalik_deliveries.find_one({"id": did, "studio_id": acc["id"], "is_deleted": {"$ne": True}}, {"_id": 0})
+        if not d:
+            raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
+        new_token = secrets.token_urlsafe(9)
+        exp = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+        await db.vesikalik_deliveries.update_one({"id": did}, {"$set": {"token": new_token, "expires_at": exp}})
+        return {"token": new_token, "path": f"/api/v/{new_token}", "expires_at": exp}
+
+    @router.delete("/vesikalik/archive/{did}")
+    async def archive_delete(did: str, acc: dict = Depends(get_current_studio)):
+        await db.vesikalik_deliveries.update_one({"id": did, "studio_id": acc["id"]}, {"$set": {"is_deleted": True}})
+        return {"ok": True}
 
     # =========================================================================
     # Faz 5-A: Askeri Üniforma Kütüphanesi (PSD/PNG + isim; admin onaylı paylaşım)

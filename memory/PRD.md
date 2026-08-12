@@ -690,3 +690,9 @@ Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay
 - **`AdminPassportPhoto.jsx`**: "ICAO Kontrol" butonu (icao-check-btn) → runIcao → icao-panel: yeşil onay/amber uyarı rozetleri (icao-badge-ratio/eyes/tilt/center/bg/face) + özet (TAMAM / Dikkat gerekiyor). Hata mesajı netleştirildi.
 - **Test**: testing_agent iter_55 → wiring + graceful no-face + regresyon %100 (5/5). Rozet GÖRSEL doğrulaması sandbox'ta ENGELLENDİ: headless chromium'da WebGL yok + .wasm MIME hatası → TFJS backend başlatılamıyor. Mevcut "Otomatik Yüz Tespiti"/arka plan temizleme de aynı face-api'yi kullanıyor ve CANLIDA çalışıyor → ICAO da gerçek tarayıcıda çalışır. Kullanıcı canlıda doğrulamalı.
 - Kalan fazlar: Faz 4 (CRM arşiv), Faz 5-B (askeri kıyafet AI giydirme, Nano Banana).
+
+## Session AT (12 Haz 2026) — FAZ 4: Stüdyo CRM Arşivi (ad/telefon arama + yeniden baskı/QR)
+- **Backend** (`studio.py`, vesikalik_deliveries üzerine): GET `/api/studio/vesikalik/archive?q=` (ad/telefon/kod regex arama, stüdyo bazlı, 6 ay), GET `/archive/{id}/file` (stüdyo-auth saklı görsel), POST `/archive/{id}/relink` (yeni 24s token), DELETE `/archive/{id}` (soft). `import re as _re` eklendi.
+- **Frontend**: `AdminPassportPhoto` — QR akışına opsiyonel Müşteri adı+telefon (crm-name/crm-phone) → deliver ile kaydedilir. Yeni `components/VesikalikArchive.jsx` — debounce'lu arama, sonuç listesi (küçük resim cookie ile), yeniden baskı (saklı PNG indir), QR relink modalı, sil. Editör sağ sütununa UniformLibrary altına gömüldü.
+- **Test**: backend curl + testing_agent iter_56 → frontend %100 (11/11): capture+deliver, arşiv listesi+thumbnail, ad/telefon arama, relink QR, reprint indir, sil, regresyon temiz. Kayıtlar stüdyo bazlı (doğru izolasyon).
+- **Kalan**: Faz 5-B — Askeri kıyafet AI giydirme (Nano Banana, tasarım hakkından düşer).
