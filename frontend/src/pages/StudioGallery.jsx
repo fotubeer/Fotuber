@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Plus, Upload, Trash2, Copy, Image as ImageIcon, Package, ClipboardList,
   FileDown, Link2, Loader2, AlertTriangle, X, Settings as SettingsIcon,
-  BellRing, MessageCircle, MailCheck, Clock, ArrowUpCircle,
+  BellRing, MessageCircle, MailCheck, Clock, ArrowUpCircle, Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -175,12 +175,12 @@ function EventsList({ events, onOpen, onCopy, onCreated, onDeleted, onQuota }) {
   const [busy, setBusy] = useState(false);
 
   const onExtend = async (ev) => {
-    if (!window.confirm(`"${ev.name}" için tek seferlik ek müşteri linki gönderilsin mi?\n\nNot: Bu, orijinal dosya silinme tarihini uzatmaz.`)) return;
+    if (!window.confirm(`"${ev.name}" için müşteri linki yenilensin mi?\n\nNot: Bu, orijinal dosya silinme tarihini uzatmaz; link en fazla o tarihe kadar geçerli olur.`)) return;
     try {
       const { data } = await studioApi.post(`/studio/gallery/events/${ev.id}/extend-link`);
-      toast.success(data.note || "Ek link gönderildi");
+      toast.success(data.note || "Link yenilendi");
       onDeleted();
-    } catch (e) { toast.error(formatApiError(e, "Uzatılamadı")); }
+    } catch (e) { toast.error(formatApiError(e, "Yenilenemedi")); }
   };
 
   const create = async () => {
@@ -257,14 +257,14 @@ function EventsList({ events, onOpen, onCopy, onCreated, onDeleted, onQuota }) {
               </div>
 
               <div className="text-[11px] text-white/35 mt-2">
-                Orijinal silinme: {fmtDate(ev.originals_delete_at)}{ev.originals_purged && " · silindi"}{ev.extra_link_used && " · ek link kullanıldı"}
+                Orijinal silinme: {fmtDate(ev.originals_delete_at)}{ev.originals_purged && " · silindi"}{ev.extra_link_used && " · link yenilendi"}
               </div>
 
               <div className="flex gap-2 mt-3 pt-3 border-t border-white/10 flex-wrap">
                 <Button data-testid={`sg-open-${ev.id}`} size="sm" onClick={() => onOpen(ev)} className="gap-1 bg-white/10 hover:bg-white/20 text-white rounded-lg"><Upload size={13} /> Yönet</Button>
                 <Button data-testid={`sg-copy-link-${ev.id}`} size="sm" variant="outline" onClick={() => onCopy(ev.share_token)} className="gap-1 bg-transparent border-white/15 text-white hover:bg-white/10 rounded-lg"><Link2 size={13} /> Link</Button>
-                {!ev.extra_link_used && !ev.originals_purged && (
-                  <Button data-testid={`sg-extend-${ev.id}`} size="sm" variant="outline" onClick={() => onExtend(ev)} className="gap-1 bg-transparent border-amber-400/30 text-amber-200 hover:bg-amber-500/10 rounded-lg"><Link2 size={13} /> Ek Link</Button>
+                {!ev.originals_purged && (
+                  <Button data-testid={`sg-extend-${ev.id}`} size="sm" variant="outline" onClick={() => onExtend(ev)} className="gap-1 bg-transparent border-amber-400/30 text-amber-200 hover:bg-amber-500/10 rounded-lg"><Link2 size={13} /> Link Yenile</Button>
                 )}
                 <Button data-testid={`sg-del-event-${ev.id}`} size="sm" variant="ghost" onClick={() => del(ev)} className="ml-auto text-red-300 hover:text-red-200 hover:bg-red-500/10 rounded-lg"><Trash2 size={14} /></Button>
               </div>
@@ -330,23 +330,51 @@ function EventDetail({ eventId, onBack, onCopy, onQuota }) {
     await studioApi.delete(`/studio/gallery/photos/${pid}`); await load();
   };
 
+  const [zipping, setZipping] = useState(false);
+  const downloadZip = async () => {
+    setZipping(true);
+    try {
+      const res = await studioApi.get(`/studio/gallery/events/${eventId}/download`, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a"); a.href = url;
+      a.download = `${(data?.event?.name || "etkinlik")}-orijinaller.zip`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { toast.error(formatApiError(e, "İndirilemedi")); }
+    finally { setZipping(false); }
+  };
+
   if (!data) return <p className="text-white/50">Yükleniyor…</p>;
   const ev = data.event;
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
         <button data-testid="sg-detail-back" onClick={onBack} className="p-2 rounded-lg bg-white/5 hover:bg-white/10"><ArrowLeft size={16} /></button>
         <div>
           <div className="font-semibold">{ev.name}</div>
-          <div className="text-xs text-white/50">{ev.client_name || "-"} · {data.photos.length} foto · Albüm limiti {ev.album_limit || "∞"}</div>
+          <div className="text-xs text-white/50">{ev.client_name || "-"} · {data.photos.length} foto · Albüm limiti {ev.album_limit || "∞"}{ev.originals_purged ? " · orijinaller silindi" : ""}</div>
         </div>
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex gap-2 flex-wrap">
           <Button data-testid="sg-detail-copy" size="sm" variant="outline" onClick={() => onCopy(ev.share_token)} className="gap-1 bg-transparent border-white/15 text-white hover:bg-white/10"><Copy size={13} /> Müşteri Linki</Button>
-          <Button data-testid="sg-upload-btn" size="sm" onClick={() => fileRef.current?.click()} className="gap-1 bg-amber-500 hover:bg-amber-600 text-neutral-900 font-semibold"><Upload size={14} /> Foto Yükle</Button>
-          <input ref={fileRef} data-testid="sg-upload-input" type="file" accept="image/*,.cr2,.cr3,.nef,.arw,.dng,.raf,.orf,.rw2" multiple hidden onChange={onPick} />
+          {!ev.originals_purged && data.photos.length > 0 && (
+            <Button data-testid="sg-download-zip" size="sm" variant="outline" onClick={downloadZip} disabled={zipping} className="gap-1 bg-transparent border-emerald-400/30 text-emerald-200 hover:bg-emerald-500/10">
+              {zipping ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />} Orijinalleri İndir (ZIP)
+            </Button>
+          )}
+          {!ev.originals_purged && (
+            <>
+              <Button data-testid="sg-upload-btn" size="sm" onClick={() => fileRef.current?.click()} className="gap-1 bg-amber-500 hover:bg-amber-600 text-neutral-900 font-semibold"><Upload size={14} /> Foto Yükle</Button>
+              <input ref={fileRef} data-testid="sg-upload-input" type="file" accept="image/*,.cr2,.cr3,.nef,.arw,.dng,.raf,.orf,.rw2" multiple hidden onChange={onPick} />
+            </>
+          )}
         </div>
       </div>
+
+      {ev.originals_purged && (
+        <div className="mb-4 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+          Bu etkinliğin orijinal (yüksek çözünürlüklü) dosyaları silme süresi dolduğu için kaldırıldı. Önizlemeler ve fotoğraf kodları kayıt amacıyla saklanıyor.
+        </div>
+      )}
 
       {uploads.length > 0 && (
         <div className="space-y-2 mb-4">
@@ -371,6 +399,12 @@ function EventDetail({ eventId, onBack, onCopy, onQuota }) {
                 <div className="w-full h-full flex flex-col items-center justify-center text-[10px] text-amber-300 gap-1"><AlertTriangle size={18} /> RAW<span className="text-white/40 px-1 truncate w-full text-center">{p.filename}</span></div>
               ) : (
                 <img src={`${BE}${p.thumb || p.url}`} alt={p.filename} className="w-full h-full object-cover" />
+              )}
+              {p.filename && <span className="absolute bottom-0 inset-x-0 text-[9px] font-mono px-1 py-0.5 bg-black/60 text-amber-200 truncate">{p.filename}</span>}
+              {p.original_purged && <span className="absolute top-1 left-1 text-[9px] px-1 py-0.5 rounded bg-amber-500/80 text-neutral-900 font-semibold">Silindi</span>}
+              {!p.original_purged && p.url && !p.is_raw && (
+                <a data-testid={`sg-photo-orig-${p.id}`} href={`${BE}${p.url}`} target="_blank" rel="noreferrer" download title="Orijinali indir"
+                  className="absolute top-1 left-1 bg-black/60 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity text-white hover:bg-black/80"><Download size={11} /></a>
               )}
               <button data-testid={`sg-del-photo-${p.id}`} onClick={() => delPhoto(p.id)} className="absolute top-1 right-1 bg-black/60 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"><X size={12} /></button>
             </div>
@@ -443,10 +477,11 @@ function OrdersTab({ orders, reload, employees, isOwner }) {
     <div className="space-y-2">
       {orders.map((o) => (
         <div key={o.id} data-testid={`sg-order-${o.id}`} className="rounded-xl border border-white/12 bg-white/5 p-4 flex flex-wrap items-center gap-3">
-          <div>
+          <div className="min-w-0">
             <div className="font-semibold">{o.order_no} · {o.event_name}</div>
-            <div className="text-xs text-white/50">{o.client_name || "-"} · Albüm {o.album_count} · Kanvas {o.canvas_count} · Retouch {o.retouch_count}{o.upsell_total ? ` · Upsell ${o.upsell_total}₺` : ""}</div>
+            <div className="text-xs text-white/50">{o.client_name || "-"} · Albüm {o.album_count} · Kanvas {o.canvas_count} · Retouch {o.retouch_count}{o.upsell_total ? ` · Ek Hizmet ${o.upsell_total}₺` : ""}</div>
             {o.assigned_name && <div className="text-[11px] text-amber-200 mt-0.5">Sorumlu: {o.assigned_name}</div>}
+            <OrderCodes o={o} />
           </div>
           <div className="ml-auto flex items-center gap-2 flex-wrap">
             {isOwner && (
@@ -464,6 +499,31 @@ function OrdersTab({ orders, reload, employees, isOwner }) {
             </Select>
             <Button data-testid={`sg-order-pdf-${o.id}`} size="sm" variant="outline" onClick={() => pdf(o)} className="gap-1 bg-transparent border-white/15 text-white hover:bg-white/10"><FileDown size={13} /> PDF</Button>
           </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OrderCodes({ o }) {
+  const groups = [];
+  if (o.album_codes?.length) groups.push(["Albüm", o.album_codes]);
+  if (o.canvas_codes?.length) groups.push(["Kanvas", o.canvas_codes]);
+  if (o.retouch_codes?.length) groups.push(["Rötuş", o.retouch_codes]);
+  const packs = o.pack_details || [];
+  if (groups.length === 0 && packs.length === 0) return null;
+  return (
+    <div data-testid={`sg-order-codes-${o.id}`} className="mt-2 space-y-1">
+      {groups.map(([label, codes]) => (
+        <div key={label} className="text-[11px] text-white/55">
+          <span className="text-white/40">{label}:</span> <span className="font-mono text-amber-200/80">{codes.join(", ")}</span>
+        </div>
+      ))}
+      {packs.map((d) => (
+        <div key={d.id} className="text-[11px] text-white/55">
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 mr-1">{d.kind}</span>
+          <span className="text-white/70">{d.name}</span> · {d.qty} adet · {Number(d.total).toFixed(0)}₺
+          {d.codes?.length ? <span className="font-mono text-amber-200/80"> — {d.codes.join(", ")}</span> : null}
         </div>
       ))}
     </div>

@@ -8,6 +8,7 @@ via studio.build_get_current_studio. No existing routes are touched.
 import io
 import os
 import secrets
+import zipfile
 from datetime import datetime, timezone
 from urllib.parse import quote
 
@@ -65,11 +66,12 @@ class SelectionItem(BaseModel):
     album: bool = False
     canvas: bool = False
     retouch: bool = False
+    packs: list[str] = []          # bu fotoğrafa atanan özel hizmet paketi id'leri
 
 
 class SelectionIn(BaseModel):
     selections: list[SelectionItem] = []
-    upsells: list[str] = []
+    upsells: list[str] = []        # geriye dönük uyumluluk (foto'ya atanmamış genel paketler)
     note: str = ""
 
 
@@ -128,21 +130,23 @@ def get_router(db, deps):
         return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
 
     async def _purge_if_due(ev):
-        """Delete original hi-res photos after the package deletion window.
-        Order/selection metadata is preserved."""
+        """After the package deletion window, delete only the ORIGINAL hi-res files.
+        Thumbnails, filenames (selection codes) and all order/selection metadata are
+        preserved so the studio can still reference which photo was which."""
         if ev.get("originals_purged"):
             return ev
         if not _is_past(ev.get("originals_delete_at")):
             return ev
-        photos = await db.gallery_photos.find({"event_id": ev["id"]}, {"_id": 0, "path": 1, "thumb_path": 1}).to_list(5000)
+        photos = await db.gallery_photos.find({"event_id": ev["id"]}, {"_id": 0, "id": 1, "path": 1, "original_purged": 1}).to_list(5000)
         for p in photos:
-            for key in ("path", "thumb_path"):
-                if p.get(key):
-                    try:
-                        deps.get("delete_object", lambda *_: None)(p[key])
-                    except Exception:
-                        pass
-        await db.gallery_photos.delete_many({"event_id": ev["id"]})
+            if p.get("original_purged"):
+                continue
+            if p.get("path"):
+                try:
+                    deps.get("delete_object", lambda *_: None)(p["path"])
+                except Exception:
+                    pass
+            await db.gallery_photos.update_one({"id": p["id"]}, {"$set": {"original_purged": True}})
         await db.gallery_events.update_one({"id": ev["id"]}, {"$set": {"originals_purged": True, "status": "expired"}})
         ev["originals_purged"] = True
         ev["status"] = "expired"
@@ -181,12 +185,9 @@ def get_router(db, deps):
         ev = await db.gallery_events.find_one({"id": event_id, "studio_id": acc["id"]}, {"_id": 0})
         if not ev:
             raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
-        if ev.get("extra_link_used"):
-            raise HTTPException(status_code=400, detail="Ek link hakkı zaten kullanıldı (yalnızca bir kez).")
         if ev.get("originals_purged"):
-            raise HTTPException(status_code=400, detail="Orijinal dosyalar silindiği için link uzatılamaz.")
+            raise HTTPException(status_code=400, detail="Orijinal dosyalar silindiği için link yenilenemez.")
         link_days, _ = _gallery_durations(acc.get("plan"))
-        # Extend link only — does NOT change the originals deletion date.
         base = datetime.now(timezone.utc)
         try:
             cur = datetime.fromisoformat(ev["link_expires_at"])
@@ -195,9 +196,22 @@ def get_router(db, deps):
         except Exception:
             pass
         from datetime import timedelta
-        new_exp = (base + timedelta(days=link_days)).isoformat()
-        await db.gallery_events.update_one({"id": event_id}, {"$set": {"link_expires_at": new_exp, "extra_link_used": True}})
-        return {"ok": True, "link_expires_at": new_exp, "note": "Ek link gönderildi. Orijinal dosya silinme tarihi değişmedi."}
+        new_exp = base + timedelta(days=link_days)
+        # Client link can never outlive the originals-deletion date (studio window).
+        capped = False
+        try:
+            odel = datetime.fromisoformat(ev["originals_delete_at"])
+            if new_exp > odel:
+                new_exp = odel
+                capped = True
+        except Exception:
+            pass
+        new_exp_iso = new_exp.isoformat()
+        await db.gallery_events.update_one({"id": event_id}, {"$set": {"link_expires_at": new_exp_iso, "extra_link_used": True}})
+        note = "Müşteri linki yenilendi. Orijinal dosya silinme tarihi değişmedi."
+        if capped:
+            note = "Link, orijinal dosya silinme tarihine kadar uzatıldı (bu tarihi aşamaz)."
+        return {"ok": True, "link_expires_at": new_exp_iso, "note": note}
 
     @router.get("/studio/gallery/events")
     async def list_events(acc: dict = Depends(get_current_studio)):
@@ -213,9 +227,12 @@ def get_router(db, deps):
         ev = await db.gallery_events.find_one({"id": event_id, "studio_id": acc["id"]}, {"_id": 0})
         if not ev:
             raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+        ev = await _purge_if_due(ev)
         photos = await db.gallery_photos.find({"event_id": event_id}, {"_id": 0}).sort("created_at", 1).to_list(1000)
         for p in photos:
-            p["url"] = f"/api/gallery/photo/{p['id']}"
+            purged = p.get("original_purged", False)
+            p["original_purged"] = purged
+            p["url"] = None if purged else f"/api/gallery/photo/{p['id']}"
             p["thumb"] = f"/api/gallery/thumb/{p['id']}" if p.get("thumb_path") else None
         pc = len(photos)
         return {"event": _event_out(ev, {"photos": pc}), "photos": photos}
@@ -305,6 +322,41 @@ def get_router(db, deps):
         if r.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Fotoğraf bulunamadı")
         return {"ok": True}
+
+    @router.get("/studio/gallery/events/{event_id}/download")
+    async def download_originals(event_id: str, acc: dict = Depends(get_current_studio)):
+        """Studio-only ZIP of ORIGINAL hi-res files (no watermark). Filenames = selection codes."""
+        ev = await db.gallery_events.find_one({"id": event_id, "studio_id": acc["id"]}, {"_id": 0})
+        if not ev:
+            raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+        if ev.get("originals_purged"):
+            raise HTTPException(status_code=400, detail="Orijinal dosyalar silme süresi dolduğu için indirilemez.")
+        photos = await db.gallery_photos.find({"event_id": event_id}, {"_id": 0}).sort("created_at", 1).to_list(5000)
+        if not photos:
+            raise HTTPException(status_code=404, detail="Bu etkinlikte fotoğraf yok.")
+        buf = io.BytesIO()
+        used = set()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+            for p in photos:
+                if p.get("original_purged") or not p.get("path"):
+                    continue
+                try:
+                    data, _ct = get_object(p["path"])
+                except Exception:
+                    continue
+                name = p.get("filename") or f"{p['id']}.jpg"
+                # de-dupe filenames inside the zip
+                base_name, i = name, 1
+                while name in used:
+                    stem, dot, ext = base_name.rpartition(".")
+                    name = f"{stem}_{i}.{ext}" if dot else f"{base_name}_{i}"
+                    i += 1
+                used.add(name)
+                zf.writestr(name, data)
+        buf.seek(0)
+        safe = "".join(ch for ch in (ev.get("name") or "etkinlik") if ch.isalnum() or ch in "-_") or "etkinlik"
+        return StreamingResponse(buf, media_type="application/zip",
+                                 headers={"Content-Disposition": f'attachment; filename="{safe}-orijinaller.zip"'})
 
     # ==================== STUDIO: SERVICE PACKS (UPSELL) ====================
     @router.get("/studio/gallery/service-packs")
@@ -517,8 +569,10 @@ def get_router(db, deps):
             raise HTTPException(status_code=403, detail="Galeri süresi doldu. Fotoğrafçınızla iletişime geçin.")
         if ev.get("submitted"):
             raise HTTPException(status_code=400, detail="Seçim zaten gönderilmiş")
-        # Only count/apply selections for photos that actually belong to this event
-        valid_ids = set(await db.gallery_photos.distinct("id", {"event_id": ev["id"]}))
+        # Photo id -> filename (selection code) map for photos belonging to this event
+        photo_docs = await db.gallery_photos.find({"event_id": ev["id"]}, {"_id": 0, "id": 1, "filename": 1}).to_list(5000)
+        code_of = {p["id"]: (p.get("filename") or p["id"]) for p in photo_docs}
+        valid_ids = set(code_of.keys())
         sels = [s for s in payload.selections if s.photo_id in valid_ids]
         album_n = sum(1 for s in sels if s.album)
         canvas_n = sum(1 for s in sels if s.canvas)
@@ -531,24 +585,61 @@ def get_router(db, deps):
         if ev.get("retouch_limit", 0) and retouch_n > ev["retouch_limit"]:
             raise HTTPException(status_code=400, detail=f"Retouch limiti {ev['retouch_limit']}. {retouch_n} seçtiniz.")
 
+        # Persist per-photo album/canvas/retouch flags
         for s in sels:
             await db.gallery_photos.update_one(
                 {"id": s.photo_id, "event_id": ev["id"]},
                 {"$set": {"sel_album": s.album, "sel_canvas": s.canvas, "sel_retouch": s.retouch}})
 
-        packs = []
+        # Selection codes for the studio (filenames)
+        album_codes = [code_of[s.photo_id] for s in sels if s.album]
+        canvas_codes = [code_of[s.photo_id] for s in sels if s.canvas]
+        retouch_codes = [code_of[s.photo_id] for s in sels if s.retouch]
+
+        # Per-photo custom service pack assignments → {pack_id: [photo_ids]}
+        pack_map: dict = {}
+        for s in sels:
+            for pid in (s.packs or []):
+                pack_map.setdefault(pid, []).append(s.photo_id)
+        # Merge legacy global upsells (no photo assigned)
+        for pid in (payload.upsells or []):
+            pack_map.setdefault(pid, [])
+
+        pack_details = []
         upsell_total = 0.0
-        if payload.upsells:
-            docs = await db.gallery_service_packs.find({"id": {"$in": payload.upsells}}, {"_id": 0}).to_list(100)
-            for d in docs:
-                packs.append({"name": d["name"], "price": d["price"]})
-                upsell_total += float(d.get("price", 0))
+        if pack_map:
+            pdocs = await db.gallery_service_packs.find(
+                {"id": {"$in": list(pack_map.keys())}, "studio_id": ev["studio_id"]}, {"_id": 0}).to_list(200)
+            pdoc_by_id = {d["id"]: d for d in pdocs}
+            for pid, photo_ids in pack_map.items():
+                d = pdoc_by_id.get(pid)
+                if not d:
+                    continue
+                max_qty = int(d.get("max_qty") or 0)
+                qty = len(photo_ids)
+                if max_qty and qty > max_qty:
+                    raise HTTPException(status_code=400,
+                                        detail=f"{d['name']} için en fazla {max_qty} fotoğraf seçebilirsiniz ({qty} seçtiniz).")
+                unit = float(d.get("price", 0) or 0)
+                billed_qty = qty if qty > 0 else 1
+                line_total = unit * billed_qty
+                upsell_total += line_total
+                pack_details.append({
+                    "id": pid, "name": d.get("name", ""), "kind": d.get("kind") or "Diğer",
+                    "price": unit, "qty": qty, "total": line_total,
+                    "codes": [code_of[x] for x in photo_ids],
+                })
+
+        # Backward-compatible flat upsells list
+        packs = [{"name": p["name"], "price": p["price"]} for p in pack_details]
 
         order_no = "SIP-" + secrets.token_hex(3).upper()
         order = {
             "id": new_id(), "order_no": order_no, "event_id": ev["id"], "studio_id": ev["studio_id"],
             "event_name": ev["name"], "client_name": ev.get("client_name", ""),
             "album_count": album_n, "canvas_count": canvas_n, "retouch_count": retouch_n,
+            "album_codes": album_codes, "canvas_codes": canvas_codes, "retouch_codes": retouch_codes,
+            "pack_details": pack_details,
             "upsells": packs, "upsell_total": upsell_total, "note": payload.note,
             "status": "new", "created_at": now_iso(),
         }
@@ -577,14 +668,23 @@ def get_router(db, deps):
                 to = (studio or {}).get("notify_email") or (studio or {}).get("email")
                 if to and (studio or {}).get("notify_enabled", True):
                     firma = (studio or {}).get("firma_adi", "Stüdyo")
-                    up = "".join(f"<li>{u['name']} — {u['price']}₺</li>" for u in packs) or "<li>-</li>"
+                    def _codes(lst):
+                        return ", ".join(lst) if lst else "-"
+                    up = "".join(
+                        f"<li><b>{d['name']}</b> ({d['kind']}) — {d['qty']} adet · {d['total']:.0f}₺"
+                        f"<br/><span style='color:#666'>Kodlar: {_codes(d['codes'])}</span></li>"
+                        for d in pack_details) or "<li>-</li>"
                     subject = f"Yeni galeri seçimi: {ev['name']} ({order_no})"
                     html = (
                         f"<h2>Yeni müşteri seçimi geldi</h2>"
                         f"<p><b>{firma}</b> · Etkinlik: <b>{ev['name']}</b></p>"
                         f"<p>Müşteri: {ev.get('client_name','-')}<br/>Sipariş No: <b>{order_no}</b></p>"
-                        f"<ul><li>Albüm: {album_n}</li><li>Kanvas: {canvas_n}</li><li>Rötuş: {retouch_n}</li></ul>"
-                        f"<p>Ek Hizmetler:</p><ul>{up}</ul>"
+                        f"<ul>"
+                        f"<li>Albüm: {album_n} — <span style='color:#666'>{_codes(album_codes)}</span></li>"
+                        f"<li>Kanvas: {canvas_n} — <span style='color:#666'>{_codes(canvas_codes)}</span></li>"
+                        f"<li>Rötuş: {retouch_n} — <span style='color:#666'>{_codes(retouch_codes)}</span></li>"
+                        f"</ul>"
+                        f"<p>Ek Hizmetler (fotoğraf kodlarıyla):</p><ul>{up}</ul>"
                         f"<p>Not: {payload.note or '-'}</p>"
                         f"<p>Fotuber Stüdyo Paneli</p>"
                     )
@@ -648,15 +748,51 @@ def _build_order_pdf(order: dict, acc: dict) -> bytes:
     row("Musteri", order.get("client_name", "") or "-")
     row("Tarih", (order.get("created_at", "") or "")[:10])
     row("Durum", order.get("status", ""))
+
+    def codes_block(title, codes):
+        nonlocal y
+        if not codes:
+            return
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(70 * mm, y, f"{title} kodlari:")
+        y -= 5 * mm
+        c.setFont("Helvetica", 8)
+        line, chars = "", 0
+        for code in codes:
+            piece = (", " if line else "") + str(code)
+            if chars + len(piece) > 85:
+                c.drawString(72 * mm, y, line)
+                y -= 4.5 * mm
+                line, chars = str(code), len(str(code))
+            else:
+                line += piece
+                chars += len(piece)
+        if line:
+            c.drawString(72 * mm, y, line)
+            y -= 5 * mm
+
     y -= 4 * mm
     c.setFont("Helvetica-Bold", 12)
     c.drawString(25 * mm, y, "Secimler")
     y -= 9 * mm
     row("Album", order.get("album_count", 0))
+    codes_block("Album", order.get("album_codes"))
     row("Kanvas", order.get("canvas_count", 0))
+    codes_block("Kanvas", order.get("canvas_codes"))
     row("Retouch", order.get("retouch_count", 0))
+    codes_block("Retouch", order.get("retouch_codes"))
 
-    if order.get("upsells"):
+    pack_details = order.get("pack_details")
+    if pack_details:
+        y -= 4 * mm
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(25 * mm, y, "Ek Hizmetler")
+        y -= 9 * mm
+        for d in pack_details:
+            row(f"{d.get('name','')} ({d.get('kind','')})", f"{d.get('qty',0)} adet · {d.get('total',0):.0f} TL")
+            codes_block(d.get("name", ""), d.get("codes"))
+        row("Ek Hizmet Toplam", f"{order.get('upsell_total', 0):.0f} TL")
+    elif order.get("upsells"):
         y -= 4 * mm
         c.setFont("Helvetica-Bold", 12)
         c.drawString(25 * mm, y, "Ek Hizmetler")

@@ -1,8 +1,11 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
 import { toast } from "sonner";
-import { Check, Album, Frame, Sparkles, CheckCircle2, Camera, Clock, Download } from "lucide-react";
+import {
+  Check, Album, Frame, Sparkles, CheckCircle2, Camera, Clock, Download,
+  X, ChevronLeft, ChevronRight, Maximize2, Tag,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { API_BASE } from "@/lib/api";
@@ -13,11 +16,11 @@ export default function GallerySelect() {
   const { token } = useParams();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [sel, setSel] = useState({}); // photo_id -> {album,canvas,retouch}
-  const [upsells, setUpsells] = useState({});
+  const [sel, setSel] = useState({}); // photo_id -> {album,canvas,retouch, packs:{packId:true}}
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(null);
+  const [lightbox, setLightbox] = useState(-1); // index in data.photos
 
   useEffect(() => {
     axios.get(`${API_BASE}/gallery/public/${token}`)
@@ -32,6 +35,21 @@ export default function GallerySelect() {
     return { a, c, r };
   }, [sel]);
 
+  // Per-pack assigned photo counts
+  const packCounts = useMemo(() => {
+    const m = {};
+    Object.values(sel).forEach((s) => {
+      Object.keys(s.packs || {}).forEach((pid) => { if (s.packs[pid]) m[pid] = (m[pid] || 0) + 1; });
+    });
+    return m;
+  }, [sel]);
+
+  const packs = data && data.service_packs ? data.service_packs : [];
+  const assignedPacks = useMemo(() => packs
+    .filter((p) => (packCounts[p.id] || 0) > 0)
+    .map((p) => ({ ...p, qty: packCounts[p.id], total: (p.price || 0) * packCounts[p.id] })), [packs, packCounts]);
+  const upsellTotal = useMemo(() => assignedPacks.reduce((t, p) => t + p.total, 0), [assignedPacks]);
+
   const toggle = (pid, kind, limit, current) => {
     const cur = sel[pid] || {};
     const turningOn = !cur[kind];
@@ -39,15 +57,28 @@ export default function GallerySelect() {
     setSel((s) => ({ ...s, [pid]: { ...cur, [kind]: turningOn } }));
   };
 
+  const togglePack = (pid, pack) => {
+    const cur = sel[pid] || {};
+    const curPacks = cur.packs || {};
+    const turningOn = !curPacks[pack.id];
+    const already = packCounts[pack.id] || 0;
+    if (turningOn && pack.max_qty && already >= pack.max_qty) {
+      toast.error(`${pack.name} için en fazla ${pack.max_qty} fotoğraf seçebilirsiniz.`); return;
+    }
+    setSel((s) => ({ ...s, [pid]: { ...cur, packs: { ...curPacks, [pack.id]: turningOn } } }));
+  };
+
   const submit = async () => {
-    const selections = Object.entries(sel).filter(([, v]) => v.album || v.canvas || v.retouch)
-      .map(([photo_id, v]) => ({ photo_id, album: !!v.album, canvas: !!v.canvas, retouch: !!v.retouch }));
+    const selections = Object.entries(sel)
+      .map(([photo_id, v]) => ({
+        photo_id, album: !!v.album, canvas: !!v.canvas, retouch: !!v.retouch,
+        packs: Object.keys(v.packs || {}).filter((k) => v.packs[k]),
+      }))
+      .filter((v) => v.album || v.canvas || v.retouch || v.packs.length > 0);
     if (selections.length === 0) { toast.error("En az bir fotoğraf seçin"); return; }
     setSubmitting(true);
     try {
-      const r = await axios.post(`${API_BASE}/gallery/public/${token}/select`, {
-        selections, upsells: Object.keys(upsells).filter((k) => upsells[k]), note,
-      });
+      const r = await axios.post(`${API_BASE}/gallery/public/${token}/select`, { selections, upsells: [], note });
       setDone(r.data.order_no);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Gönderilemedi");
@@ -57,7 +88,6 @@ export default function GallerySelect() {
   if (loading) return <div className="min-h-screen grid place-items-center bg-neutral-950 text-white/60">Yükleniyor…</div>;
   if (data === false) return <div className="min-h-screen grid place-items-center bg-neutral-950 text-white/60">Galeri bulunamadı.</div>;
 
-  // Package-based link expiry / originals deletion
   if (data.link_expired || data.originals_purged) return (
     <div data-testid="gs-expired" className="min-h-screen grid place-items-center bg-neutral-950 text-white p-6 text-center">
       <div>
@@ -104,13 +134,13 @@ export default function GallerySelect() {
 
   const ev = data.event;
   return (
-    <div data-testid="gallery-select-page" className="min-h-screen bg-neutral-950 text-white pb-32">
+    <div data-testid="gallery-select-page" className="min-h-screen bg-neutral-950 text-white pb-36">
       <header className="sticky top-0 z-10 bg-neutral-950/90 backdrop-blur border-b border-white/10 px-4 py-3">
         <div className="max-w-5xl mx-auto flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-300 to-amber-600 grid place-items-center"><Camera size={18} className="text-neutral-900" /></div>
           <div>
             <div className="font-semibold leading-tight">{ev.name}</div>
-            <div className="text-xs text-white/50">{data.firma_adi} · Fotoğraflarınızı seçin</div>
+            <div className="text-xs text-white/50">{data.firma_adi} · Fotoğrafa dokunarak büyütün ve hizmet atayın</div>
           </div>
         </div>
       </header>
@@ -120,14 +150,17 @@ export default function GallerySelect() {
           <Chip label="Albüm" cur={counts.a} lim={ev.album_limit} icon={Album} />
           <Chip label="Kanvas" cur={counts.c} lim={ev.canvas_limit} icon={Frame} />
           <Chip label="Retouch" cur={counts.r} lim={ev.retouch_limit} icon={Sparkles} />
+          {packs.length > 0 && <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-white/50"><Tag size={12} className="text-amber-300" /> Fotoğrafı büyütüp ek hizmet atayın</span>}
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {data.photos.map((p) => {
+          {data.photos.map((p, idx) => {
             const s = sel[p.id] || {};
+            const assignedPackCount = Object.values(s.packs || {}).filter(Boolean).length;
             return (
               <div key={p.id} data-testid={`gs-photo-${p.id}`} className="rounded-xl overflow-hidden bg-white/5 border border-white/10">
-                <div className="aspect-square bg-black/40 relative">
+                <button type="button" onClick={() => setLightbox(idx)} data-testid={`gs-open-lightbox-${p.id}`}
+                  className="aspect-square bg-black/40 relative w-full block group">
                   {p.is_raw ? <div className="w-full h-full grid place-items-center text-xs text-white/40">{p.filename}</div>
                     : <img src={`${BE}${p.thumb || p.url}`} alt="" className="w-full h-full object-cover" />}
                   {data.watermark && !p.is_raw && (
@@ -137,13 +170,18 @@ export default function GallerySelect() {
                       </span>
                     </div>
                   )}
+                  <span className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                    <Maximize2 size={22} className="text-white drop-shadow" />
+                  </span>
+                  {p.filename && <span data-testid={`gs-code-${p.id}`} className="absolute bottom-1 left-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/60 text-amber-200 max-w-[90%] truncate">{p.filename}</span>}
+                  {assignedPackCount > 0 && <span className="absolute top-1 left-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500 text-neutral-900 font-bold">{assignedPackCount} hizmet</span>}
                   {data.allow_originals && !p.is_raw && (
-                    <a data-testid={`gs-download-${p.id}`} href={`${BE}${p.url}`} target="_blank" rel="noreferrer" download
+                    <a data-testid={`gs-download-${p.id}`} href={`${BE}${p.url}`} target="_blank" rel="noreferrer" download onClick={(e) => e.stopPropagation()}
                       className="absolute top-1 right-1 bg-black/60 rounded-full p-1.5 text-white hover:bg-black/80" title="Orijinali indir">
                       <Download size={13} />
                     </a>
                   )}
-                </div>
+                </button>
                 <div className="flex text-[11px]">
                   <Toggle testid={`gs-toggle-album-${p.id}`} on={s.album} label="Albüm" onClick={() => toggle(p.id, "album", ev.album_limit, counts.a)} />
                   <Toggle testid={`gs-toggle-canvas-${p.id}`} on={s.canvas} label="Kanvas" onClick={() => toggle(p.id, "canvas", ev.canvas_limit, counts.c)} />
@@ -154,16 +192,21 @@ export default function GallerySelect() {
           })}
         </div>
 
-        {data.service_packs.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wide mb-3">Ek Hizmetler</h2>
-            <div className="grid sm:grid-cols-2 gap-2">
-              {data.service_packs.map((p) => (
-                <label key={p.id} data-testid={`gs-pack-${p.id}`} className={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer ${upsells[p.id] ? "border-amber-400 bg-amber-500/10" : "border-white/12 bg-white/5"}`}>
-                  <input type="checkbox" checked={!!upsells[p.id]} onChange={(e) => setUpsells((u) => ({ ...u, [p.id]: e.target.checked }))} />
-                  <div><div className="font-medium text-sm">{p.name}</div><div className="text-xs text-white/50">{p.description}</div></div>
-                  <div className="ml-auto font-semibold text-amber-300">{p.price}₺</div>
-                </label>
+        {assignedPacks.length > 0 && (
+          <div data-testid="gs-assigned-summary" className="mt-8">
+            <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wide mb-3">Seçilen Ek Hizmetler</h2>
+            <div className="space-y-2">
+              {assignedPacks.map((p) => (
+                <div key={p.id} data-testid={`gs-assigned-${p.id}`} className="rounded-xl border border-amber-400/30 bg-amber-500/5 p-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300">{p.kind || "Diğer"}</span>
+                    <span className="font-medium text-sm">{p.name}</span>
+                    <span className="ml-auto font-semibold text-amber-300">{p.qty} × {p.price}₺ = {p.total}₺</span>
+                  </div>
+                  <div className="text-[11px] text-white/50 mt-1 font-mono">
+                    {data.photos.filter((ph) => (sel[ph.id]?.packs || {})[p.id]).map((ph) => ph.filename || ph.id).join(", ")}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
@@ -177,13 +220,124 @@ export default function GallerySelect() {
 
       <div className="fixed bottom-0 inset-x-0 bg-neutral-950/95 backdrop-blur border-t border-white/10 px-4 py-3">
         <div className="max-w-5xl mx-auto flex items-center gap-4">
-          <div className="text-xs text-white/60">Albüm {counts.a}{ev.album_limit ? `/${ev.album_limit}` : ""} · Kanvas {counts.c} · Rötuş {counts.r}</div>
+          <div className="text-xs text-white/60">
+            Albüm {counts.a}{ev.album_limit ? `/${ev.album_limit}` : ""} · Kanvas {counts.c} · Rötuş {counts.r}
+            {upsellTotal > 0 && <span className="ml-2 text-amber-300 font-semibold">· Ek Hizmet: {upsellTotal}₺</span>}
+          </div>
           <Button data-testid="gs-submit" onClick={submit} disabled={submitting} className="ml-auto gap-1.5 bg-gradient-to-r from-amber-400 to-amber-600 text-neutral-900 font-semibold hover:from-amber-300 hover:to-amber-500">
             {submitting ? "Gönderiliyor…" : <>Seçimi Gönder <Check size={16} /></>}
           </Button>
         </div>
       </div>
+
+      {lightbox >= 0 && (
+        <Lightbox
+          photos={data.photos} index={lightbox} setIndex={setLightbox}
+          onClose={() => setLightbox(-1)} data={data} sel={sel} ev={ev} counts={counts}
+          packs={packs} packCounts={packCounts} toggle={toggle} togglePack={togglePack}
+        />
+      )}
     </div>
+  );
+}
+
+function Lightbox({ photos, index, setIndex, onClose, data, sel, ev, counts, packs, packCounts, toggle, togglePack }) {
+  const touchX = useRef(null);
+  const p = photos[index];
+  const s = sel[p.id] || {};
+
+  const go = useCallback((dir) => {
+    setIndex((i) => {
+      const n = i + dir;
+      if (n < 0) return photos.length - 1;
+      if (n >= photos.length) return 0;
+      return n;
+    });
+  }, [photos.length, setIndex]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowLeft") go(-1);
+      else if (e.key === "ArrowRight") go(1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [go, onClose]);
+
+  const onTouchStart = (e) => { touchX.current = e.touches[0].clientX; };
+  const onTouchEnd = (e) => {
+    if (touchX.current == null) return;
+    const dx = e.changedTouches[0].clientX - touchX.current;
+    if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1);
+    touchX.current = null;
+  };
+
+  return (
+    <div data-testid="gs-lightbox" className="fixed inset-0 z-50 bg-black/95 flex flex-col" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      <div className="flex items-center gap-3 px-4 py-3 text-white">
+        <span className="text-sm text-white/60">{index + 1} / {photos.length}</span>
+        {p.filename && <span data-testid="gs-lightbox-code" className="font-mono text-sm px-2 py-0.5 rounded bg-white/10 text-amber-200">{p.filename}</span>}
+        <button data-testid="gs-lightbox-close" onClick={onClose} className="ml-auto p-2 rounded-full bg-white/10 hover:bg-white/20"><X size={20} /></button>
+      </div>
+
+      <div className="flex-1 relative flex items-center justify-center overflow-hidden px-2">
+        <button data-testid="gs-lightbox-prev" onClick={() => go(-1)} className="absolute left-2 z-10 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"><ChevronLeft size={26} /></button>
+        <div className="relative max-h-full max-w-full">
+          {p.is_raw
+            ? <div className="text-white/50 p-10">{p.filename} (RAW — önizlenemez)</div>
+            : <img src={`${BE}${p.url || p.thumb}`} alt="" className="max-h-[62vh] max-w-full object-contain select-none" draggable={false} />}
+          {data.watermark && !p.is_raw && (
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden">
+              <span className="text-white/20 text-2xl font-bold tracking-widest -rotate-45 whitespace-nowrap select-none">
+                {(data.firma_adi + " · ").repeat(3)}
+              </span>
+            </div>
+          )}
+        </div>
+        <button data-testid="gs-lightbox-next" onClick={() => go(1)} className="absolute right-2 z-10 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"><ChevronRight size={26} /></button>
+      </div>
+
+      <div className="bg-neutral-950/95 border-t border-white/10 px-4 py-3 space-y-3 max-h-[38vh] overflow-y-auto">
+        <div className="flex gap-2">
+          <LbToggle testid={`gs-lb-album-${p.id}`} on={s.album} label="Albüm" icon={Album} onClick={() => toggle(p.id, "album", ev.album_limit, counts.a)} />
+          <LbToggle testid={`gs-lb-canvas-${p.id}`} on={s.canvas} label="Kanvas" icon={Frame} onClick={() => toggle(p.id, "canvas", ev.canvas_limit, counts.c)} />
+          <LbToggle testid={`gs-lb-retouch-${p.id}`} on={s.retouch} label="Rötuş" icon={Sparkles} onClick={() => toggle(p.id, "retouch", ev.retouch_limit, counts.r)} />
+        </div>
+        {packs.length > 0 && (
+          <div>
+            <div className="text-[11px] text-white/40 uppercase tracking-wide mb-1.5">Ek Hizmet Ata</div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {packs.map((pk) => {
+                const on = !!(s.packs || {})[pk.id];
+                const used = packCounts[pk.id] || 0;
+                return (
+                  <button key={pk.id} data-testid={`gs-lb-pack-${pk.id}`} onClick={() => togglePack(p.id, pk)}
+                    className={`text-left rounded-xl border p-2.5 transition-colors ${on ? "border-amber-400 bg-amber-500/15" : "border-white/12 bg-white/5 hover:bg-white/10"}`}>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/60">{pk.kind || "Diğer"}</span>
+                      {on && <Check size={13} className="text-amber-300 ml-auto" />}
+                    </div>
+                    <div className="text-sm font-medium mt-1 text-white truncate">{pk.name}</div>
+                    <div className="text-xs text-amber-300 font-semibold">{pk.price > 0 ? `+${pk.price}₺` : "Ücretsiz"}
+                      {pk.max_qty ? <span className="text-white/40 font-normal"> · {used}/{pk.max_qty}</span> : null}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LbToggle({ testid, on, label, icon: Icon, onClick }) {
+  return (
+    <button data-testid={testid} onClick={onClick}
+      className={`flex-1 py-2.5 rounded-xl flex items-center justify-center gap-1.5 text-sm font-medium border transition-colors ${on ? "bg-amber-500 text-neutral-900 border-amber-500" : "text-white/70 border-white/12 bg-white/5 hover:bg-white/10"}`}>
+      <Icon size={15} /> {label} {on && <Check size={14} />}
+    </button>
   );
 }
 
