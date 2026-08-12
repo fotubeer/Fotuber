@@ -696,3 +696,10 @@ Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay
 - **Frontend**: `AdminPassportPhoto` — QR akışına opsiyonel Müşteri adı+telefon (crm-name/crm-phone) → deliver ile kaydedilir. Yeni `components/VesikalikArchive.jsx` — debounce'lu arama, sonuç listesi (küçük resim cookie ile), yeniden baskı (saklı PNG indir), QR relink modalı, sil. Editör sağ sütununa UniformLibrary altına gömüldü.
 - **Test**: backend curl + testing_agent iter_56 → frontend %100 (11/11): capture+deliver, arşiv listesi+thumbnail, ad/telefon arama, relink QR, reprint indir, sil, regresyon temiz. Kayıtlar stüdyo bazlı (doğru izolasyon).
 - **Kalan**: Faz 5-B — Askeri kıyafet AI giydirme (Nano Banana, tasarım hakkından düşer).
+
+## Session AU (12 Haz 2026) — FAZ 5-B: Askeri Kıyafet AI Giydirme (Nano Banana) + tasarım hakkı düşümü
+- **Backend** (`studio.py`): `POST /api/studio/uniforms/{uid}/apply {image_b64}` — kişi fotoğrafı + üniforma PNG (storage) 2 referans görsel olarak Nano Banana'ya (mevcut ai-edit deseni: LlmChat + ImageContent + send_message_multimodal_response). Tasarım hakkı atomik düşer, hata/boş sonuçta iade edilir. Prompt: yüz/kafa BİREBİR korunur, rütbe/apolet/işaret AYNEN korunur, ışık/renk eşitlenir, baş-omuz sade stüdyo çerçevesi, yazısız. Dönüş {image_b64 (data URL), rights_remaining}.
+- **Ön işleme/hizalama**: kaynak zaten arka planı temiz + çerçeveli tekli foto; kafa-omuz hizalama ve ışık eşitleme prompt ile yönlendiriliyor (best-effort, kalite kişi/pozisyona göre değişebilir — kullanıcı kabul etti).
+- **Frontend**: `UniformLibrary` onaylı kartlarda "AI Giydir" butonu (uniform-apply-{id}, spinner). `AdminPassportPhoto.applyUniform` tekli canvas PNG'yi gönderir, sonucu editöre yükler (contain crop), kalan hakkı toast'lar.
+- **Test**: backend gerçek Nano Banana çağrısı curl ile → HTTP 200, ~768KB birleşik görsel, design_rights düştü. Frontend derleme temiz, kanıtlı fetch deseni. AI görsel kalitesi kullanıcı tarafından canlıda değerlendirilecek.
+- **DURUM**: Faz 1-2-3-4 + 5-A + 5-B TAMAMLANDI. Askeri kimlik B2B modül seti bitti.

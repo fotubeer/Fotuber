@@ -1264,6 +1264,66 @@ def get_router(db, deps):
             _UNIFORM_UPLOADS.pop(payload.psd_upload_id, None)
         return {"ok": True, "uniform": _uniform_out(doc), "pending": not is_admin}
 
+    class UniformApplyIn(BaseModel):
+        image_b64: str
+
+    @router.post("/uniforms/{uid}/apply")
+    async def apply_uniform(uid: str, payload: UniformApplyIn, acc: dict = Depends(get_current_studio)):
+        if not EMERGENT_KEY:
+            raise HTTPException(status_code=500, detail="AI anahtarı yapılandırılmamış")
+        u = await db.military_uniforms.find_one({"id": uid, "is_deleted": {"$ne": True}}, {"_id": 0})
+        if not u or not u.get("png_path"):
+            raise HTTPException(status_code=404, detail="Üniforma bulunamadı")
+        if u.get("status") != "approved" and not _is_admin(acc) and u.get("uploaded_by") != acc["id"]:
+            raise HTTPException(status_code=403, detail="Bu üniforma henüz onaylanmadı")
+        raw = payload.image_b64 or ""
+        if "," in raw and raw.strip().startswith("data:"):
+            raw = raw.split(",", 1)[1]
+        try:
+            person = base64.b64decode(raw)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Fotoğraf çözümlenemedi")
+        # Tasarım hakkı düşümü (atomik) — başarısızlıkta iade edilir.
+        res = await db.studio_accounts.update_one(
+            {"id": acc["id"], "design_rights": {"$gte": 1}}, {"$inc": {"design_rights": -1}})
+        if res.modified_count == 0:
+            raise HTTPException(status_code=402, detail="Tasarım hakkınız bitti.")
+        try:
+            uni_bytes, _ct = await asyncio.to_thread(get_object, u["png_path"])
+            from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+            person_b64 = base64.b64encode(person).decode("utf-8")
+            uni_b64 = base64.b64encode(uni_bytes).decode("utf-8")
+            chat = LlmChat(
+                api_key=EMERGENT_KEY, session_id=f"studio-uniform-{secrets.token_hex(4)}",
+                system_message=(
+                    "Sen profesyonel bir stüdyo retoşçususun. Birinci görseldeki kişinin YÜZÜNÜ, "
+                    "kafa yapısını, cilt tonunu, saç ve yüz hatlarını HİÇ DEĞİŞTİRMEDEN, ikinci görseldeki "
+                    "askeri üniformayı giydirirsin."
+                ),
+            )
+            chat.with_model("gemini", NANO_BANANA_MODEL).with_params(modalities=["image", "text"])
+            instruction = (
+                "Birinci görsel: kişinin vesikalık fotoğrafı (yüz/kafa referansı). "
+                "İkinci görsel: giydirilecek askeri üniforma. "
+                "Kişinin kafasını ve yüzünü BİREBİR koruyarak bu üniformayı giydir. "
+                "Üniformadaki RÜTBE, apolet, işaret, düğme ve renkleri AYNEN koru; hiçbirini değiştirme. "
+                "Kafayı omuz/yaka hizasına doğru şekilde otur; boyun ve omuz geçişini doğal yap. "
+                "Kafa ile üniformanın IŞIK, renk sıcaklığı ve gölgelerini eşitle (yüzü değiştirmeden). "
+                "Düz, sade stüdyo arka planı; baş-omuz vesikalık çerçevesi. Görselde yazı/harf/rakam olmasın."
+            )
+            _text, images = await chat.send_message_multimodal_response(
+                UserMessage(text=instruction, file_contents=[ImageContent(person_b64), ImageContent(uni_b64)]))
+        except Exception as e:
+            await db.studio_accounts.update_one({"id": acc["id"]}, {"$inc": {"design_rights": 1}})
+            _log.error(f"uniform apply failed: {e}")
+            raise HTTPException(status_code=502, detail="AI giydirme başarısız, hakkınız iade edildi.")
+        if not images:
+            await db.studio_accounts.update_one({"id": acc["id"]}, {"$inc": {"design_rights": 1}})
+            raise HTTPException(status_code=502, detail="Sonuç üretilemedi, hakkınız iade edildi.")
+        fresh = await db.studio_accounts.find_one({"id": acc["id"]}, {"_id": 0, "design_rights": 1})
+        return {"image_b64": f"data:image/png;base64,{images[0]['data']}",
+                "rights_remaining": int((fresh or {}).get("design_rights", 0))}
+
     @router.get("/uniforms/{uid}/file/{kind}")
     async def uniform_file(uid: str, kind: str, acc: dict = Depends(get_current_studio)):
         u = await db.military_uniforms.find_one({"id": uid, "is_deleted": {"$ne": True}}, {"_id": 0})

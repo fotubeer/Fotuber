@@ -774,6 +774,36 @@ const AdminPassportPhoto = ({ injected } = {}) => {
     } finally { setIcaoRunning(false); }
   };
 
+  // ---- Faz 5-B: Askeri kıyafet AI giydirme (tasarım hakkından düşer) -------
+  const [applyingUniform, setApplyingUniform] = useState(null);
+  const applyUniform = async (uid) => {
+    if (!image || !singleCanvasRef.current) { toast.error("Önce fotoğraf yükleyin"); return; }
+    setApplyingUniform(uid);
+    try {
+      drawSingle();
+      const dataUrl = singleCanvasRef.current.toDataURL("image/png");
+      const st = localStorage.getItem("fotuber_studio_token");
+      const headers = { "Content-Type": "application/json" };
+      if (st) headers["Authorization"] = `Bearer ${st}`;
+      const resp = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/studio/uniforms/${uid}/apply`, {
+        method: "POST", credentials: "include", headers, body: JSON.stringify({ image_b64: dataUrl }),
+      });
+      if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || "Giydirme başarısız"); }
+      const data = await resp.json();
+      const raw = await loadImageFromSrc(data.image_b64);
+      setOriginalImage(raw);
+      setImage(raw);
+      const ar = spec ? spec.h / spec.w : raw.h / raw.w;
+      let cw = raw.w, ch = cw * ar;
+      if (ch > raw.h) { ch = raw.h; cw = ch / ar; }
+      setCrop({ cx: raw.w / 2, cy: raw.h / 2, w: cw });
+      setZoom(1); setRotate(0);
+      toast.success(`Üniforma uygulandı — kalan tasarım hakkı: ${data.rights_remaining}`);
+    } catch (e) {
+      toast.error(e.message || "AI giydirme başarısız");
+    } finally { setApplyingUniform(null); }
+  };
+
   const qrDeliver = async () => {
     if (!image || !singleCanvasRef.current) { toast.error("Önce fotoğraf yükleyin"); return; }
     setDelivering(true);
@@ -1306,7 +1336,7 @@ const AdminPassportPhoto = ({ injected } = {}) => {
             </CardContent>
           </Card>
 
-          <UniformLibrary />
+          <UniformLibrary onApplyUniform={applyUniform} applyingUniform={applyingUniform} />
 
           <VesikalikArchive />
         </div>

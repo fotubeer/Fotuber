@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Shirt, Upload, Check, X, Trash2, Pencil, Loader2, Clock, Download, ChevronDown, ChevronUp } from "lucide-react";
+import { Shirt, Upload, Check, X, Trash2, Pencil, Loader2, Clock, Download, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -50,7 +50,7 @@ async function uploadFileChunked(file, kind, onProgress) {
   return upload_id;
 }
 
-export const UniformLibrary = () => {
+export const UniformLibrary = ({ onApplyUniform, applyingUniform }) => {
   const [items, setItems] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [openForm, setOpenForm] = useState(false);
@@ -109,6 +109,12 @@ export const UniformLibrary = () => {
         <div className="text-xs font-medium text-slate-800 truncate" title={u.name}>{u.name}</div>
         <div className="text-[10px] text-slate-400 truncate">{u.uploader_name}</div>
         <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+          {u.status === "approved" && onApplyUniform && (
+            <button data-testid={`uniform-apply-${u.id}`} onClick={() => onApplyUniform(u.id)} disabled={applyingUniform === u.id}
+              className="text-[10px] inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-fuchsia-600 text-white hover:bg-fuchsia-700 disabled:opacity-60">
+              {applyingUniform === u.id ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Sparkles className="w-2.5 h-2.5" />} AI Giydir
+            </button>
+          )}
           {u.has_psd && (
             <a href={`${BE}${u.psd_url}`} data-testid={`uniform-psd-${u.id}`} className="text-[10px] inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 hover:bg-slate-200"><Download className="w-2.5 h-2.5" /> PSD</a>
           )}
