@@ -210,7 +210,8 @@ def _strip_studio(acc: dict) -> dict:
         "ftb_code": acc.get("ftb_code"),
         "role": "studio",
         "design_rights": acc.get("design_rights", 0),
-        "modules": acc.get("modules") or {"vesikalik": True, "gallery": True},
+        "modules": acc.get("modules") if isinstance(acc.get("modules"), dict) else {"vesikalik": True, "gallery": True},
+        "is_member_design": bool(acc.get("is_member_design")),
         "brand_name": acc.get("brand_name") or acc.get("firma_adi"),
         "brand_logo_asset_id": acc.get("brand_logo_asset_id"),
         "ai_credits": acc.get("ai_credits", 0),
@@ -261,6 +262,29 @@ async def ensure_admin_studio(db, sub: str, email: str) -> dict:
     return acc
 
 
+async def ensure_member_design_account(db, sub: str, email: str) -> dict:
+    """Get-or-create a DESIGN-ONLY account for a normal main-site MEMBER so they can
+    use the Davetiye Tasarım Stüdyosu paid features (AI, personalization, bulk) with
+    their normal membership + purchased design rights — NO studio subscription needed.
+    Has no vesikalık/gallery modules."""
+    aid = f"member-{sub}"
+    acc = await db.studio_accounts.find_one({"id": aid}, {"_id": 0})
+    if not acc:
+        free = int(os.environ.get("MEMBER_FREE_DESIGN_RIGHTS", "1"))
+        acc = {
+            "id": aid, "role": "studio", "is_member_design": True,
+            "email": email or "", "firma_adi": "Üye Tasarım", "brand_name": "Üye Tasarım",
+            "plan": None, "modules": {}, "design_rights": free, "ai_credits": 0,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.studio_accounts.update_one({"id": aid}, {"$setOnInsert": acc}, upsert=True)
+        acc = await db.studio_accounts.find_one({"id": aid}, {"_id": 0})
+    acc["_emp_id"] = None
+    acc["_emp_name"] = acc.get("firma_adi")
+    acc["_is_owner"] = True
+    return acc
+
+
 def build_get_current_studio(db, JWT_SECRET, JWT_ALGORITHM):
     """Module-level factory so other routers (e.g. gallery) can reuse studio auth."""
     async def get_current_studio(request: Request) -> dict:
@@ -283,6 +307,8 @@ def build_get_current_studio(db, JWT_SECRET, JWT_ALGORITHM):
             role = payload.get("role")
             if role in ("admin", "staff"):
                 return await ensure_admin_studio(db, payload.get("sub"), payload.get("email"))
+            if role == "member":
+                return await ensure_member_design_account(db, payload.get("sub"), payload.get("email"))
             if role != "studio":
                 raise HTTPException(status_code=401, detail="Geçersiz stüdyo oturumu")
             acc = await db.studio_accounts.find_one({"id": payload["sub"]}, {"_id": 0})
@@ -523,7 +549,7 @@ def get_router(db, deps):
             raise HTTPException(status_code=500, detail="AI anahtarı yapılandırılmamış")
         rights = int(acc.get("design_rights", 0) or 0)
         if rights < 1:
-            raise HTTPException(status_code=402, detail="Tasarım hakkınız bitti. Aşama 2'de PayTR ile yeni hak satın alabileceksiniz.")
+            raise HTTPException(status_code=402, detail="Tasarım hakkınız bitti. 'Hak Satın Al' ile yeni hak satın alabilirsiniz.")
         # Atomically consume 1 right (guard against races).
         res = await db.studio_accounts.update_one(
             {"id": acc["id"], "design_rights": {"$gte": 1}},
@@ -652,7 +678,54 @@ def get_router(db, deps):
         if order.get("status") == "paid":
             fresh = await db.studio_accounts.find_one({"id": acc["id"]}, {"_id": 0, "design_rights": 1})
             resp["design_rights"] = int((fresh or {}).get("design_rights", 0))
+            uid = None
+            if str(acc.get("id", "")).startswith(("member-", "admin-")):
+                uid = str(acc["id"]).split("-", 1)[1]
+            if uid:
+                u = await db.users.find_one({"id": uid}, {"_id": 0, "print_capacity": 1, "print_used": 1})
+                cap = int((u or {}).get("print_capacity", 0) or 0)
+                used = int((u or {}).get("print_used", 0) or 0)
+                resp["print_capacity"] = cap
+                resp["print_remaining"] = max(0, cap - used)
         return resp
+
+    # ---- Personalized bulk-print packages (prints quota + bonus AI) --------
+    @router.get("/design/bulk-print-packages")
+    async def list_bulk_print_packages(acc: dict = Depends(get_current_studio)):
+        pkgs = await db.bulk_print_packages.find({"active": True}, {"_id": 0}).sort("sort", 1).to_list(100)
+        uid = None
+        if str(acc.get("id", "")).startswith(("member-", "admin-")):
+            uid = str(acc["id"]).split("-", 1)[1]
+        cap = used = 0
+        if uid:
+            u = await db.users.find_one({"id": uid}, {"_id": 0, "print_capacity": 1, "print_used": 1})
+            cap = int((u or {}).get("print_capacity", 0) or 0)
+            used = int((u or {}).get("print_used", 0) or 0)
+        return {"packages": pkgs, "print_capacity": cap, "print_used": used,
+                "print_remaining": max(0, cap - used), "design_rights": int(acc.get("design_rights", 0) or 0)}
+
+    class BulkPrintBuyIn(BaseModel):
+        package_id: str
+        origin_url: str = ""
+
+    @router.post("/payments/bulk-print/create")
+    async def buy_bulk_print(payload: BulkPrintBuyIn, request: Request, acc: dict = Depends(get_current_studio)):
+        pkg = await db.bulk_print_packages.find_one({"id": payload.package_id, "active": True})
+        if not pkg:
+            raise HTTPException(status_code=400, detail="Geçersiz paket")
+        uid = None
+        if str(acc.get("id", "")).startswith(("member-", "admin-")):
+            uid = str(acc["id"]).split("-", 1)[1]
+        if not uid:
+            raise HTTPException(status_code=400, detail="Toplu baskı paketi yalnızca üyelik hesabıyla alınır")
+        title = f"Fotuber {int(pkg['prints'])} Isme Ozel Baski"
+        return await create_paytr_order(
+            title=title, price=float(pkg["price"]), origin_url=payload.origin_url,
+            request_base_url=request.base_url,
+            order_extra={"kind": "member_bulk_print", "user_id": uid, "studio_id": acc["id"],
+                         "prints": int(pkg["prints"]), "bonus_ai": int(pkg.get("bonus_ai") or 0),
+                         "package_id": pkg["id"]},
+        )
 
     # ---- Module sales (Vesikalık / Etkinlik) via PayTR + 2nd-module 20% off ----
     class ModuleBuyIn(BaseModel):

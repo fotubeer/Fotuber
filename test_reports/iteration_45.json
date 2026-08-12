@@ -1,0 +1,19 @@
+{
+  "summary": "Iter 45 verified new Design Studio paid-features batch (AI right packages + personalized bulk-print packages). BACKEND 9/9 pytest PASS in /app/backend/tests/test_iter45.py: (1) member expired@fotuber.com.tr GET /api/studio/me → account.id starts with 'member-', modules {} (no vesikalik/gallery), design_rights numeric; (2) admin GET /api/admin/bulk-print-packages returns 4 seed packages (prints/bonus_ai/price), POST/PUT/DELETE CRUD work; (3) member GET /api/studio/design/bulk-print-packages returns packages + print_capacity + print_remaining + design_rights; (4) member POST /api/studio/payments/bulk-print/create returns PayTR link + callback_id (real payment not triggered); (5) admin POST /api/design/print-consume {count:50} returns ok remaining≈10,000,000 (admin unlimited bypass); member with 0 capacity → 402 [CAPACITY]; (6) admin POST /api/design/bulk-print-pdf mode=single → 200 application/pdf %PDF magic, 2 pages; mode=zip → application/zip containing 2 PDF files; (7) GET /api/admin/design-rights-packages returns list. FRONTEND (Playwright, admin logged in via /api/auth/login cookie): /admin/tasarim-haklari shows both 'AI Tasarım Hakkı Paketleri' + 'İsme Özel Toplu Baskı Paketleri' sections; bpp-add visible; 4 bpp-save-* rows with Baskı/Hediye AI/Fiyat inputs; clicking a bpp-save-* triggers 'Kaydedildi' toast. /tasarim-studyosu: ds-bulk-btn opens 'İsme Özel Toplu Baskı' dialog with bulk-size selector (bulk-size-13x18 & bulk-size-custom present in dropdown), bulk-output-single/bulk-output-zip toggle, bulk-names textarea, bulk-generate-btn; after adding {isim} via ds-add-personalize and filling 2 names then clicking generate, no error toast surfaced (admin unlimited). Anonymous /tasarim-studyosu: ds-ai-btn opens dialog with ai-login-note visible; login CTA button navigates to /giris (main site login, not Stüdyo Paneli).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_iter45.py", "/app/test_reports/pytest/iter45.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "DesignStudio.jsx is already very large (>1200 lines) with wizard/canvas/AI/bulk logic mixed; consider splitting bulk-print dialog into its own component for maintainability.",
+    "/api/studio/payments/bulk-print/create returns nested {data:{link}} PayTR shape; the AI paid-flow uses similar shape — FE must handle both consistently. Consider a helper util to unwrap PayTR responses.",
+    "print-consume relies on user.role check ('admin','staff') for unlimited bypass while bulk-print-pdf endpoint does NOT enforce capacity (any authenticated user can render). This is fine per spec but worth noting — server should still not be used as a free rendering service without capacity checks at some layer if abuse is a concern."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter45.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (/api/auth/login), expired@fotuber.com.tr / Test1234 (/api/member/login)",
+  "seed_data_creation": "Created + deleted 1 test bulk-print package (TEST_pkg_iter45) via admin CRUD. No lingering data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run backend tests: `cd /app && python -m pytest backend/tests/test_iter45.py -v -o addopts=`. pytest.ini injects xdist -n which needs override. Bulk-print testids: ds-bulk-btn, bulk-size, bulk-size-13x18/10x21/15x15/a5/a6/15x22/12x17/custom, bulk-output-single/zip, bulk-names, bulk-generate-btn, ds-add-personalize. Admin panel testids: bpp-add, bpp-row-{id}, bpp-save-{id}, bpp-del-{id}. Anonymous AI login note: ai-login-note (contains CTA to /giris)."
+}

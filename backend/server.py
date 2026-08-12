@@ -697,6 +697,19 @@ async def on_startup():
                 "active": True, "sort": i, "created_at": now_iso(),
             })
 
+    # Seed personalized bulk-print packages (prints quota + bonus AI credits)
+    if await db.bulk_print_packages.count_documents({}) == 0:
+        for i, p in enumerate([
+            {"name": "200 İsme Özel Baskı", "prints": 200, "bonus_ai": 5, "price": 899.0},
+            {"name": "500 İsme Özel Baskı", "prints": 500, "bonus_ai": 5, "price": 1699.0},
+            {"name": "1000 İsme Özel Baskı", "prints": 1000, "bonus_ai": 10, "price": 2999.0},
+            {"name": "1500 İsme Özel Baskı", "prints": 1500, "bonus_ai": 15, "price": 3999.0},
+        ]):
+            await db.bulk_print_packages.insert_one({
+                "id": new_id(), "name": p["name"], "prints": p["prints"], "bonus_ai": p["bonus_ai"],
+                "price": p["price"], "active": True, "sort": i, "created_at": now_iso(),
+            })
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
@@ -2708,7 +2721,7 @@ class StudioModulesIn(BaseModel):
 
 @api_router.get("/admin/studio-accounts")
 async def admin_list_studio_accounts(admin: dict = Depends(require_admin)):
-    docs = await db.studio_accounts.find({}, {"_id": 0, "id": 1, "email": 1, "firma_adi": 1, "ftb_code": 1, "plan": 1, "modules": 1, "ai_credits": 1}).sort("created_at", -1).to_list(500)
+    docs = await db.studio_accounts.find({"is_member_design": {"$ne": True}, "is_admin_super": {"$ne": True}}, {"_id": 0, "id": 1, "email": 1, "firma_adi": 1, "ftb_code": 1, "plan": 1, "modules": 1, "ai_credits": 1}).sort("created_at", -1).to_list(500)
     for d in docs:
         d["modules"] = d.get("modules") or {"vesikalik": True, "gallery": True}
     return {"accounts": docs}
@@ -2943,7 +2956,7 @@ async def admin_announcement_email(aid: str, admin: dict = Depends(require_admin
         raise HTTPException(status_code=404, detail="Duyuru bulunamadı")
     if not email_service.email_configured():
         raise HTTPException(status_code=400, detail="Gmail SMTP yapılandırılmamış")
-    accts = await db.studio_accounts.find({"email": {"$nin": [None, ""]}}, {"_id": 0}).to_list(2000)
+    accts = await db.studio_accounts.find({"email": {"$nin": [None, ""]}, "is_member_design": {"$ne": True}, "is_admin_super": {"$ne": True}}, {"_id": 0}).to_list(2000)
     sent = 0
     for acc in accts:
         msg = _personalize_announcement(a["message"], acc)
@@ -4964,6 +4977,24 @@ def _paytr_callback_hash(callback_id: str, merchant_oid: str, pay_status: str, t
 
 async def _grant_paid_order(order: dict):
     """Apply the entitlement (membership days or AI credits) for a paid order."""
+    # Design Studio: personalized bulk-print package (prints quota + bonus AI)
+    if order.get("kind") == "member_bulk_print":
+        uid = order.get("user_id")
+        prints = int(order.get("prints") or 0)
+        bonus = int(order.get("bonus_ai") or 0)
+        sid = order.get("studio_id")
+        if uid and prints > 0:
+            await db.users.update_one({"id": uid}, {"$inc": {"print_capacity": prints}})
+        if sid and bonus > 0:
+            await db.studio_accounts.update_one({"id": sid}, {"$inc": {"design_rights": bonus}})
+        await db.studio_design_purchases.insert_one({
+            "studio_id": sid, "user_id": uid, "kind": "bulk_print",
+            "prints": prints, "bonus_ai": bonus, "price": order.get("price"), "currency": "TRY",
+            "callback_id": order.get("callback_id"),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        return
+
     # Studio Suite: design rights top-up (owner is a studio_accounts doc, not db.users)
     if order.get("kind") == "studio_design_rights":
         sid = order.get("studio_id")
@@ -5203,6 +5234,45 @@ async def admin_update_design_rights_package(pid: str, payload: DesignRightsPack
 @api_router.delete("/admin/design-rights-packages/{pid}")
 async def admin_delete_design_rights_package(pid: str, admin: dict = Depends(require_admin)):
     r = await db.design_rights_packages.delete_one({"id": pid})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Paket bulunamadı")
+    return {"ok": True}
+
+
+class BulkPrintPackageIn(BaseModel):
+    name: str
+    prints: int = Field(gt=0)      # kaç adet isme özel baskı kotası
+    bonus_ai: int = Field(ge=0, default=0)  # hediye AI tasarım kredisi
+    price: float = Field(ge=0)
+    active: bool = True
+    sort: int = 0
+
+
+@api_router.get("/admin/bulk-print-packages")
+async def admin_list_bulk_print_packages(admin: dict = Depends(require_admin)):
+    return await db.bulk_print_packages.find({}, {"_id": 0}).sort("sort", 1).to_list(100)
+
+
+@api_router.post("/admin/bulk-print-packages")
+async def admin_create_bulk_print_package(payload: BulkPrintPackageIn, admin: dict = Depends(require_admin)):
+    doc = payload.model_dump()
+    doc.update({"id": new_id(), "created_at": now_iso()})
+    await db.bulk_print_packages.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.put("/admin/bulk-print-packages/{pid}")
+async def admin_update_bulk_print_package(pid: str, payload: BulkPrintPackageIn, admin: dict = Depends(require_admin)):
+    r = await db.bulk_print_packages.update_one({"id": pid}, {"$set": payload.model_dump()})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Paket bulunamadı")
+    return await db.bulk_print_packages.find_one({"id": pid}, {"_id": 0})
+
+
+@api_router.delete("/admin/bulk-print-packages/{pid}")
+async def admin_delete_bulk_print_package(pid: str, admin: dict = Depends(require_admin)):
+    r = await db.bulk_print_packages.delete_one({"id": pid})
     if r.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Paket bulunamadı")
     return {"ok": True}

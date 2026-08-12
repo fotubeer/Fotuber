@@ -8,7 +8,7 @@ handles PNG asset uploads to the shared object storage.
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Depends, Request, UploadFile, File
 from pydantic import BaseModel, Field
-from starlette.responses import Response as StarletteResponse
+from starlette.responses import Response as StarletteResponse, StreamingResponse
 
 # ---------------------------------------------------------------------------
 # Font catalogue — Google Fonts with Turkish (latin-ext) glyph support.
@@ -274,6 +274,8 @@ def get_router(db, deps):
     # ---- Personalized print capacity (bulk named invitations) ---------------
     @router.get("/print-capacity")
     async def get_print_capacity(user: dict = Depends(get_current_user)):
+        if user.get("role") in ("admin", "staff"):
+            return {"capacity": 10_000_000, "used": 0, "remaining": 10_000_000, "packages": [], "addons": [], "unlimited": True}
         u = await db.users.find_one({"id": user["id"]}, {"_id": 0, "print_capacity": 1, "print_used": 1})
         cap = int((u or {}).get("print_capacity", 0) or 0)
         used = int((u or {}).get("print_used", 0) or 0)
@@ -285,6 +287,8 @@ def get_router(db, deps):
         count = int(payload.get("count", 0) or 0)
         if count <= 0:
             raise HTTPException(status_code=400, detail="Geçersiz adet")
+        if user.get("role") in ("admin", "staff"):
+            return {"ok": True, "used": 0, "remaining": 10_000_000, "capacity": 10_000_000}
         u = await db.users.find_one({"id": user["id"]}, {"_id": 0, "print_capacity": 1, "print_used": 1})
         cap = int((u or {}).get("print_capacity", 0) or 0)
         used = int((u or {}).get("print_used", 0) or 0)
@@ -294,6 +298,83 @@ def get_router(db, deps):
                                 detail=f"[CAPACITY] Kişiselleştirilmiş baskı kapasiteniz yetersiz. Kalan: {remaining}, istenen: {count}. Ek kapasite satın alın.")
         await db.users.update_one({"id": user["id"]}, {"$set": {"print_used": used + count}})
         return {"ok": True, "used": used + count, "remaining": remaining - count, "capacity": cap}
+
+    # ---- Print-ready (matbaa) PDF for personalized bulk invitations ---------
+    @router.post("/bulk-print-pdf")
+    async def bulk_print_pdf(payload: dict, user: dict = Depends(get_current_user)):
+        """Compose print-ready output from pre-rendered per-guest images.
+        Each image already fills (trim + 2*bleed) at 300 DPI. We place it to fill
+        the page and add corner crop marks at the trim boundary so the print house
+        can cut cleanly with no white edges or shifting.
+        payload: { images:[b64...], width_mm, height_mm, bleed_mm=3, mode:"single"|"zip", title }"""
+        import io as _io, base64 as _b64, zipfile as _zip
+        from reportlab.pdfgen import canvas as _pdfcanvas
+        from reportlab.lib.units import mm as _MM
+        from reportlab.lib.utils import ImageReader
+
+        images = payload.get("images") or []
+        if not images:
+            raise HTTPException(status_code=400, detail="Görsel yok")
+        if len(images) > 1500:
+            raise HTTPException(status_code=400, detail="En fazla 1500 davetiye")
+        wmm = float(payload.get("width_mm") or 130)
+        hmm = float(payload.get("height_mm") or 180)
+        bleed = float(payload.get("bleed_mm") or 3)
+        mode = payload.get("mode") if payload.get("mode") in ("single", "zip") else "single"
+        page_w = (wmm + 2 * bleed) * _MM
+        page_h = (hmm + 2 * bleed) * _MM
+        b = bleed * _MM
+        ml = 4 * _MM  # crop mark length
+
+        def _decode(b64s):
+            if "," in b64s:
+                b64s = b64s.split(",", 1)[1]
+            return _b64.b64decode(b64s)
+
+        def _draw_page(c, img_bytes):
+            c.setPageSize((page_w, page_h))
+            try:
+                c.drawImage(ImageReader(_io.BytesIO(img_bytes)), 0, 0, width=page_w, height=page_h)
+            except Exception:
+                pass
+            c.setLineWidth(0.5)
+            c.setStrokeColorRGB(0, 0, 0)
+            corners = [(b, b), (page_w - b, b), (b, page_h - b), (page_w - b, page_h - b)]
+            for (x, y) in corners:
+                sx = -1 if x < page_w / 2 else 1
+                sy = -1 if y < page_h / 2 else 1
+                c.line(x, y, x + sx * ml, y)   # horizontal tick outward
+                c.line(x, y, x, y + sy * ml)   # vertical tick outward
+            c.showPage()
+
+        if mode == "single":
+            buf = _io.BytesIO()
+            c = _pdfcanvas.Canvas(buf, pagesize=(page_w, page_h))
+            for im in images:
+                try:
+                    _draw_page(c, _decode(im))
+                except Exception:
+                    continue
+            c.save()
+            buf.seek(0)
+            return StreamingResponse(buf, media_type="application/pdf",
+                                     headers={"Content-Disposition": "attachment; filename=matbaa-toplu.pdf"})
+        # zip: one PDF per guest
+        zbuf = _io.BytesIO()
+        with _zip.ZipFile(zbuf, "w", _zip.ZIP_DEFLATED) as zf:
+            for i, im in enumerate(images):
+                try:
+                    pbuf = _io.BytesIO()
+                    c = _pdfcanvas.Canvas(pbuf, pagesize=(page_w, page_h))
+                    _draw_page(c, _decode(im))
+                    c.save()
+                    zf.writestr(f"{str(i + 1).zfill(3)}-davetiye.pdf", pbuf.getvalue())
+                except Exception:
+                    continue
+        zbuf.seek(0)
+        return StreamingResponse(zbuf, media_type="application/zip",
+                                 headers={"Content-Disposition": "attachment; filename=matbaa-toplu-pdf.zip"})
+
 
 
     # ---- Favorite templates (per user) --------------------------------------

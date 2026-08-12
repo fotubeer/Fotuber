@@ -26,6 +26,19 @@ import { printImageSheet } from "@/lib/printImage";
 const DEFAULT_W = 1080;
 const DEFAULT_H = 1350;
 
+// Matbaa baskı ölçüleri (mm) — açıklamalı, kullanıcı boyutu anlasın diye.
+const PRINT_SIZES = [
+  { key: "13x18", w: 130, h: 180, label: "13 × 18 cm", desc: "En garanti, klasik boyut; her zarfa ve ortama uyar." },
+  { key: "10x21", w: 100, h: 210, label: "10 × 21 cm (DL / Diplomat)", desc: "Modern, zarif, ince; minimalist tasarımlar için ideal." },
+  { key: "15x15", w: 150, h: 150, label: "15 × 15 cm (Kare)", desc: "Şık, dikkat çekici; lüks/konsept düğünler için." },
+  { key: "148x210", w: 148, h: 210, label: "A5 · 14.8 × 21 cm", desc: "A4'ün yarısı; harita/uzun metin/program için geniş." },
+  { key: "105x148", w: 105, h: 148, label: "A6 · 10.5 × 14.8 cm", desc: "Küçük, ekonomik; sade nikah/söz davetiyeleri." },
+  { key: "15x22", w: 150, h: 220, label: "15 × 22 cm", desc: "Geleneksel dikey dikdörtgen alternatifi." },
+  { key: "12x17", w: 120, h: 170, label: "12 × 17 cm", desc: "Geleneksel matbaa kesimi alternatifi." },
+  { key: "custom", w: 0, h: 0, label: "Özel (mm gir)", desc: "Kendi ölçünüzü mm cinsinden girin." },
+];
+const BLEED_MM = 3;
+
 // Categorized symbol/emoji library for the design canvas.
 const SYMBOL_LIBRARY = [
   { cat: "Kalpler", items: ["❤", "♥", "💕", "💖", "💗", "💘", "💝", "♡", "❥", "💞", "💓", "💟", "❣", "🫶", "💐"] },
@@ -139,8 +152,18 @@ export default function DesignStudio() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(0);
   const [printCap, setPrintCap] = useState(null);
+  const [printSize, setPrintSize] = useState("13x18");
+  const [customW, setCustomW] = useState("");
+  const [customH, setCustomH] = useState("");
+  const [bulkOutput, setBulkOutput] = useState("single"); // single | zip
+  const [bulkPkgs, setBulkPkgs] = useState(null);
+  const [bulkPkgBusy, setBulkPkgBusy] = useState(null);
   const loadPrintCap = async () => {
     try { setPrintCap((await api.get("/design/print-capacity")).data); } catch { setPrintCap(null); }
+    try {
+      const { data } = await studioApi.get("/studio/design/bulk-print-packages");
+      setBulkPkgs(data.packages || []);
+    } catch { setBulkPkgs([]); }
   };
   const [aiFavs, setAiFavs] = useState([]);
 
@@ -527,7 +550,7 @@ export default function DesignStudio() {
       toast.success("3 alternatif üretildi · 1 tasarım hakkı kullanıldı");
     } catch (err) {
       const st = err?.response?.status;
-      if (st === 401) { toast.error("AI için Stüdyo Paneli hesabınızla giriş yapın"); setAiRights(null); }
+      if (st === 401) { toast.error("AI için üyelik girişi yapın"); setAiRights(null); }
       else if (st === 402) toast.error(formatApiError(err, "Tasarım hakkınız bitti"));
       else toast.error(formatApiError(err, "AI üretimi başarısız"));
     } finally {
@@ -652,6 +675,57 @@ export default function DesignStudio() {
     setBulkNames((prev) => (prev ? prev + "\n" : "") + text);
   };
 
+  const _imgFromDataUrl = (url) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+
+  // Render current canvas (with the applied name) to a print-ready page image:
+  // page = trim + 2*bleed at 300 DPI, design "cover"-fit so it bleeds off every
+  // edge → no white borders / shifting when the print house cuts at the trim.
+  const _renderPageImage = async (wmm, hmm, bleed) => {
+    const fc = fcRef.current;
+    const scale = fc.__displayScale || 1;
+    const src = fc.toDataURL({ format: "png", multiplier: 1 / scale });
+    const img = await _imgFromDataUrl(src);
+    const pxW = Math.round((wmm + 2 * bleed) / 25.4 * 300);
+    const pxH = Math.round((hmm + 2 * bleed) / 25.4 * 300);
+    const cv = document.createElement("canvas");
+    cv.width = pxW; cv.height = pxH;
+    const ctx = cv.getContext("2d");
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, pxW, pxH);
+    const s = Math.max(pxW / img.width, pxH / img.height);
+    const dw = img.width * s, dh = img.height * s;
+    ctx.drawImage(img, (pxW - dw) / 2, (pxH - dh) / 2, dw, dh);
+    return cv.toDataURL("image/jpeg", 0.92).split(",")[1];
+  };
+
+  const pollBulkPayment = (cid) => {
+    const started = Date.now();
+    const timer = setInterval(async () => {
+      if (Date.now() - started > 5 * 60 * 1000) { clearInterval(timer); return; }
+      try {
+        const { data } = await studioApi.get(`/studio/payments/status/${cid}`);
+        if (data.status === "paid") {
+          clearInterval(timer);
+          setBulkPkgBusy(null);
+          setPrintCap((p) => ({ ...(p || {}), capacity: data.print_capacity, remaining: data.print_remaining }));
+          setAiRights(data.design_rights);
+          toast.success("Ödeme alındı! Baskı kapasiteniz ve AI krediniz yüklendi.");
+        }
+      } catch {}
+    }, 3000);
+  };
+  const buyBulkPkg = async (pkg) => {
+    setBulkPkgBusy(pkg.id);
+    try {
+      const { data } = await studioApi.post("/studio/payments/bulk-print/create", { package_id: pkg.id, origin_url: window.location.origin });
+      window.open(data.link, "_blank");
+      toast.info("Ödeme sayfası açıldı. Ödeme sonrası kapasite otomatik yüklenir.");
+      pollBulkPayment(data.callback_id);
+    } catch (err) {
+      toast.error(formatApiError(err, "Ödeme başlatılamadı"));
+      setBulkPkgBusy(null);
+    }
+  };
+
   const doBulkGenerate = async () => {
     const fc = fcRef.current; if (!fc) return;
     const names = parseBulkNames(bulkNames);
@@ -659,6 +733,12 @@ export default function DesignStudio() {
     if (!fc.getObjects().some((o) => o.personalize)) {
       toast.error("Önce tuvale {isim} kişiselleştirme alanı ekleyin");
       return;
+    }
+    const size = PRINT_SIZES.find((s) => s.key === printSize) || PRINT_SIZES[0];
+    let wmm = size.w, hmm = size.h;
+    if (printSize === "custom") {
+      wmm = parseFloat(customW) || 0; hmm = parseFloat(customH) || 0;
+      if (wmm < 40 || hmm < 40 || wmm > 500 || hmm > 500) { toast.error("Geçerli ölçü girin (40–500 mm)"); return; }
     }
     // Enforce purchased personalized-print capacity
     try {
@@ -677,23 +757,25 @@ export default function DesignStudio() {
     setBulkBusy(true); setBulkProgress(0);
     const savedName = sampleName;
     try {
-      const zip = new JSZip();
-      const scale = fc.__displayScale || 1;
+      const images = [];
       for (let i = 0; i < names.length; i++) {
         applyNameToCanvas(names[i]);
         await new Promise((r) => setTimeout(r, 30));
-        const dataUrl = fc.toDataURL({ format: "png", multiplier: 1 / scale });
-        const b64 = dataUrl.split(",")[1];
-        const safe = names[i].replace(/[^\p{L}\p{N}\-_ ]/gu, "").slice(0, 40) || `davetli-${i + 1}`;
-        zip.file(`${String(i + 1).padStart(3, "0")}-${safe}.png`, b64, { base64: true });
-        setBulkProgress(Math.round(((i + 1) / names.length) * 100));
+        images.push(await _renderPageImage(wmm, hmm, BLEED_MM));
+        setBulkProgress(Math.round(((i + 1) / names.length) * 90));
       }
-      const blob = await zip.generateAsync({ type: "blob" });
+      setBulkProgress(95);
+      const { data: blob } = await api.post("/design/bulk-print-pdf",
+        { images, width_mm: wmm, height_mm: hmm, bleed_mm: BLEED_MM, mode: bulkOutput, title },
+        { responseType: "blob" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = `${title || "davetiye"}-toplu.zip`; a.click();
+      a.href = url;
+      a.download = bulkOutput === "single" ? `${title || "davetiye"}-matbaa.pdf` : `${title || "davetiye"}-matbaa-pdf.zip`;
+      a.click();
       URL.revokeObjectURL(url);
-      toast.success(`${names.length} kişiselleştirilmiş davetiye ZIP olarak indirildi`);
+      setBulkProgress(100);
+      toast.success(`${names.length} matbaaya hazır davetiye (${size.key === "custom" ? `${wmm}×${hmm}mm` : size.label}, ${BLEED_MM}mm bleed) indirildi`);
       setBulkOpen(false);
     } catch (err) {
       toast.error("Toplu üretim başarısız");
@@ -840,10 +922,10 @@ export default function DesignStudio() {
 
           {aiRights === null ? (
             <div data-testid="ai-login-note" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              AI tasarım üretimi için <b>Stüdyo Paneli</b> hesabınızla giriş yapmalısınız.
-              <div className="mt-3">
-                <Button size="sm" onClick={() => window.open("/studyo", "_blank")} className="bg-amber-500 hover:bg-amber-600 text-white">
-                  Stüdyo Paneli'ne Giriş Yap
+              AI tasarım ve isme özel özellikler ücretlidir. Kullanmak için <b>üyelik girişi</b> yapın; ardından tasarım hakkı satın alabilirsiniz.
+              <div className="mt-3 flex gap-2">
+                <Button size="sm" onClick={() => navigate("/giris")} className="bg-amber-500 hover:bg-amber-600 text-white">
+                  Üye Girişi / Kayıt Ol
                 </Button>
               </div>
             </div>
@@ -921,7 +1003,7 @@ export default function DesignStudio() {
                 {aiBusy ? <><Loader2 size={18} className="animate-spin" /> Üretiliyor… (~20 sn)</> : <><Sparkles size={18} /> 3 Alternatif Üret (1 hak)</>}
               </Button>
               {aiRights === 0 && (
-                <p className="text-xs text-red-500 text-center">Tasarım hakkınız bitti. Aşama 2'de PayTR ile yeni hak alabileceksiniz.</p>
+                <p className="text-xs text-red-500 text-center">Tasarım hakkınız bitti. Yukarıdaki "Hak Satın Al" ile yeni hak alabilirsiniz.</p>
               )}
 
               {aiImages.length === 0 && aiFavs.length > 0 && (
@@ -1035,21 +1117,76 @@ export default function DesignStudio() {
       <Dialog open={bulkOpen} onOpenChange={(o) => { setBulkOpen(o); if (o) loadPrintCap(); }}>
         <DialogContent data-testid="bulk-dialog" className="max-w-lg text-neutral-900">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Users size={18} className="text-amber-500" /> Toplu Kişiselleştirme</DialogTitle>
-            <DialogDescription>Her isim için ayrı, isme özel davetiye üretilir ve ZIP olarak indirilir. Tuvalde {"{isim}"} alanı olmalı.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2"><Users size={18} className="text-amber-500" /> İsme Özel Toplu Baskı</DialogTitle>
+            <DialogDescription>Her isim için ayrı, matbaaya hazır davetiye üretilir (300 DPI, {BLEED_MM}mm bleed + kesim işaretleri). Tuvalde {"{isim}"} alanı olmalı.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[70vh] overflow-y-auto">
             {printCap && (
               <div data-testid="bulk-capacity" className={`rounded-lg border p-2.5 text-sm flex items-center justify-between ${printCap.remaining > 0 ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
-                <span>Kişiye özel baskı kapasitesi</span>
+                <span>İsme özel baskı kapasitesi</span>
                 <span className="font-semibold">{printCap.remaining} / {printCap.capacity} kaldı</span>
               </div>
             )}
-            {printCap && printCap.capacity === 0 && (
-              <div className="text-xs text-amber-700">Kapasiteniz 0. Yönetici size kapasite tanımlamalı ya da kapasite paketi (200–1500) satın alınmalı.</div>
+            {/* Capacity 0 → buy a bulk-print package (prints + bonus AI) */}
+            {printCap && printCap.remaining === 0 && (
+              <div data-testid="bulk-buy" className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-2">
+                <p className="text-xs font-semibold text-amber-800">Toplu Baskı Paketi Satın Al (baskı kotası + hediye AI kredisi)</p>
+                {bulkPkgs === null && <p className="text-xs text-neutral-500">Paketler yükleniyor…</p>}
+                {(bulkPkgs || []).map((p) => (
+                  <div key={p.id} data-testid={`bulk-pkg-${p.id}`} className="flex items-center justify-between rounded-lg bg-white border border-amber-200 px-3 py-2">
+                    <div>
+                      <div className="text-sm font-semibold text-neutral-800">{p.name}</div>
+                      <div className="text-[11px] text-neutral-500">{p.prints} baskı{p.bonus_ai ? ` · +${p.bonus_ai} AI kredisi` : ""}</div>
+                    </div>
+                    <Button size="sm" disabled={bulkPkgBusy === p.id} onClick={() => buyBulkPkg(p)} data-testid={`bulk-pkg-buy-${p.id}`}
+                      className="gap-1 bg-amber-500 hover:bg-amber-600 text-white">
+                      {bulkPkgBusy === p.id ? <Loader2 size={14} className="animate-spin" /> : <ShoppingCart size={14} />} {p.price}₺
+                    </Button>
+                  </div>
+                ))}
+                {(bulkPkgs || []).length === 0 && bulkPkgs !== null && <p className="text-xs text-neutral-500">Aktif paket yok. Yönetici tanımlamalı.</p>}
+              </div>
             )}
+
+            {/* Print size */}
+            <div>
+              <p className="text-[11px] text-neutral-500 mb-1">Baskı Ölçüsü</p>
+              <Select value={printSize} onValueChange={setPrintSize}>
+                <SelectTrigger data-testid="bulk-size" className="text-neutral-900"><SelectValue /></SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {PRINT_SIZES.map((s) => (
+                    <SelectItem key={s.key} value={s.key} data-testid={`bulk-size-${s.key}`}>{s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-neutral-500 mt-1">{(PRINT_SIZES.find((s) => s.key === printSize) || {}).desc}</p>
+              {printSize === "custom" && (
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <Input data-testid="bulk-custom-w" type="number" value={customW} onChange={(e) => setCustomW(e.target.value)} placeholder="Genişlik (mm)" className="text-neutral-900" />
+                  <Input data-testid="bulk-custom-h" type="number" value={customH} onChange={(e) => setCustomH(e.target.value)} placeholder="Yükseklik (mm)" className="text-neutral-900" />
+                </div>
+              )}
+            </div>
+
+            {/* Output format */}
+            <div>
+              <p className="text-[11px] text-neutral-500 mb-1">Çıktı biçimi (matbaanın tercihine göre)</p>
+              <div className="grid grid-cols-2 gap-2" data-testid="bulk-output">
+                {[
+                  { k: "single", t: "Tek Birleşik PDF", d: "Her davetli 1 sayfa" },
+                  { k: "zip", t: "Ayrı PDF (ZIP)", d: "Her davetli ayrı dosya" },
+                ].map((m) => (
+                  <button key={m.k} type="button" data-testid={`bulk-output-${m.k}`} onClick={() => setBulkOutput(m.k)}
+                    className={`text-left rounded-xl border p-2.5 transition-all ${bulkOutput === m.k ? "border-amber-500 ring-2 ring-amber-200 bg-amber-50" : "border-neutral-200 hover:border-neutral-300"}`}>
+                    <div className="text-sm font-semibold text-neutral-800 flex items-center gap-1">{m.t}{bulkOutput === m.k && <Check size={13} className="text-amber-600" />}</div>
+                    <div className="text-[10px] text-neutral-500">{m.d}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <Textarea data-testid="bulk-names" value={bulkNames} onChange={(e) => setBulkNames(e.target.value)}
-              placeholder={"Her satıra bir isim:\nAyşe Yılmaz\nMehmet Demir\nZeynep Kaya"} rows={6} className="text-neutral-900" />
+              placeholder={"Her satıra bir isim:\nAyşe Yılmaz\nMehmet Demir\nZeynep Kaya"} rows={5} className="text-neutral-900" />
             <div className="flex items-center justify-between">
               <label className="text-xs text-neutral-600 flex items-center gap-2 cursor-pointer">
                 <input data-testid="bulk-csv" type="file" accept=".csv,.txt" onChange={onBulkCsv} className="text-xs" />
@@ -1063,7 +1200,7 @@ export default function DesignStudio() {
             )}
             <Button data-testid="bulk-generate-btn" disabled={bulkBusy} onClick={doBulkGenerate}
               className="w-full gap-2 bg-gradient-to-r from-amber-400 to-amber-600 text-neutral-900 font-semibold hover:from-amber-300 hover:to-amber-500">
-              {bulkBusy ? <><Loader2 size={18} className="animate-spin" /> Üretiliyor… %{bulkProgress}</> : <><Download size={18} /> Üret ve ZIP İndir</>}
+              {bulkBusy ? <><Loader2 size={18} className="animate-spin" /> Üretiliyor… %{bulkProgress}</> : <><Download size={18} /> Matbaaya Hazır Üret ve İndir</>}
             </Button>
           </div>
         </DialogContent>

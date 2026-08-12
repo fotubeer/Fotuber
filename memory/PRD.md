@@ -576,3 +576,15 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - Fiyatlar **aylık + yıllık** ve modül bazında (Vesikalık / Galeri) **admin panelinden ayrı ayrı** ayarlanabilir. Yıllık fiyatta, aylığa kıyasla **% kaç tasarruf** edildiği belirgin gösterilecek.
 - Daha sade / modern / işlevsel arayüz.
 
+
+
+## Session AI (Jun 2026) — AŞAMA 1.5: Tasarım Stüdyosu ücretli özellikleri NORMAL üyelik + satın alma (verified iteration_45, %100)
+- **Stüdyo üyeliği kaldırıldı**: AI + isme özel/toplu artık normal üyelikle çalışır. `get_current_studio` role=="member" → `ensure_member_design_account` (id `member-{uid}`, modules boş {}, design_rights, is_member_design). `_strip_studio` boş modülü artık koruyor (isinstance dict). Üye stüdyo modüllerine (vesikalik/gallery) erişemez.
+- **İki ayrı ürün** (admin `/admin/tasarim-haklari`): (1) AI Tasarım Hakkı paketleri (mevcut, design_rights_packages). (2) **İsme Özel Toplu Baskı paketleri** (yeni `bulk_print_packages`: prints + bonus_ai + price). Admin CRUD: `/api/admin/bulk-print-packages`. Seed: 200/500/1000/1500 baskı + 5-15 hediye AI. AdminDesignRights.jsx iki bölümlü.
+- **Üye satın alma**: `GET /api/studio/design/bulk-print-packages`, `POST /api/studio/payments/bulk-print/create` (PayTR, order_extra kind=`member_bulk_print`, user_id + studio_id). Webhook `_grant_paid_order`: user.print_capacity += prints, member studio design_rights += bonus_ai. AI paketleri zaten member-{uid} design_rights'a yükleniyor (studio_design_rights).
+- **Matbaaya hazır PDF** (`POST /api/design/bulk-print-pdf`, design_studio.py): frontend her davetliyi seçilen ölçüde (trim+2×3mm bleed) 300 DPI cover-render eder, backend reportlab ile her sayfa görseli tam sayfaya basar + 4 köşe kesim işareti çizer. Çıktı: `mode=single` tek çok-sayfalı PDF veya `mode=zip` her davetli ayrı PDF (ZIP). Ölçüler: 13x18, 10x21 DL, 15x15, A5, A6, 15x22, 12x17, Özel(mm) — açıklamalı. Kenarda beyaz/kayma olmaması için cover-fit + bleed.
+- **Admin sınırsız**: `/design/print-consume` ve `/print-capacity` admin/staff için bypass (sınırsız). AI login notu artık `/giris` (normal üyelik) yönlendirir.
+- Test: iteration_45 backend %100 (bulk-print-pdf single+zip, admin CRUD, member listing/buy PayTR link, member design account, admin bypass) + frontend %100. Sıfır issue.
+
+## AŞAMA 2 (SIRADAKİ / P0) — Vesikalık & Etkinlik Galerisi panel ayrımı (detay Session AH sonunda)
+
