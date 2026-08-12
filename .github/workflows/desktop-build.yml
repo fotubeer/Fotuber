@@ -6,7 +6,6 @@ name: Desktop Build (Windows & macOS)
 
 on:
   push:
-    branches: [main, master]
     paths:
       - "desktop/**"
       - ".github/workflows/desktop-build.yml"
