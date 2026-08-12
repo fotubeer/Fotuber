@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import DesktopDownloadButtons from "@/components/DesktopDownloadButtons";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -118,6 +119,8 @@ export default function StudioPortal() {
         <p className="mt-5 text-center text-xs text-white/40">
           <Link to="/" className="hover:text-white/70">← Fotuber ana sayfa</Link>
         </p>
+
+        <DesktopDownloadButtons className="mt-5" compact />
       </motion.div>
     </div>
   );
