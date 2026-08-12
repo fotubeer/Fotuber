@@ -8,6 +8,7 @@ import {
   UserSquare, Save, Download, LayoutTemplate, Trash2, Copy, ArrowUp, ArrowDown,
   Bold, Italic, AlignLeft, AlignCenter, AlignRight, ArrowLeft, ZoomIn,
   Sparkles, Loader2, Wand2, Users, ShoppingCart, RefreshCw, Star, Printer, Smile, Check,
+  Undo2, Redo2, Triangle, Heart,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,12 +28,14 @@ const DEFAULT_H = 1350;
 
 // Categorized symbol/emoji library for the design canvas.
 const SYMBOL_LIBRARY = [
-  { cat: "Kalpler", items: ["❤", "♥", "💕", "💖", "💗", "💘", "💝", "♡", "❥", "💞"] },
-  { cat: "Çiçek & Yaprak", items: ["🌸", "🌷", "🌹", "🌺", "🌼", "💐", "🍃", "🌿", "❀", "✿"] },
-  { cat: "Düğün & Yüzük", items: ["💍", "👰", "🤵", "💒", "🕊", "🥂", "🍾", "🎊", "🎉", "🔔"] },
-  { cat: "Yıldız & Işıltı", items: ["★", "☆", "✦", "✧", "✨", "⭐", "🌟", "❋", "❃", "✩"] },
-  { cat: "Geometrik & Çerçeve", items: ["◆", "◇", "❖", "▲", "△", "●", "○", "⬥", "⟡", "⌘"] },
-  { cat: "Kına & Geleneksel", items: ["🌙", "☾", "☽", "۞", "❁", "☙", "❦", "⚜", "✤", "҂"] },
+  { cat: "Kalpler", items: ["❤", "♥", "💕", "💖", "💗", "💘", "💝", "♡", "❥", "💞", "💓", "💟", "❣", "🫶", "💐"] },
+  { cat: "Çiçek & Yaprak", items: ["🌸", "🌷", "🌹", "🌺", "🌼", "💐", "🍃", "🌿", "❀", "✿", "🌻", "🏵", "☘", "🍀", "🌾"] },
+  { cat: "Düğün & Yüzük", items: ["💍", "👰", "🤵", "💒", "🕊", "🥂", "🍾", "🎊", "🎉", "🔔", "💌", "👑", "🎀", "🪄", "🗝"] },
+  { cat: "Yıldız & Işıltı", items: ["★", "☆", "✦", "✧", "✨", "⭐", "🌟", "❋", "❃", "✩", "✫", "✬", "✭", "❇", "⁂"] },
+  { cat: "Geometrik & Çerçeve", items: ["◆", "◇", "❖", "▲", "△", "●", "○", "⬥", "⟡", "⌘", "■", "□", "▰", "▱", "⬦", "⬨", "◈", "⧫"] },
+  { cat: "Kına & Geleneksel", items: ["🌙", "☾", "☽", "۞", "❁", "☙", "❦", "⚜", "✤", "҂", "☪", "۩", "࿐", "❂", "⁕"] },
+  { cat: "Doğum Günü & Kutlama", items: ["🎂", "🎈", "🎁", "🎉", "🎊", "🧁", "🍰", "🎆", "🎇", "🪅", "🎠", "🎪", "🥳", "🍭", "🎵"] },
+  { cat: "Ok & Ayraç", items: ["➳", "➵", "❯", "❮", "»", "«", "➺", "➻", "⤜", "⤛", "─", "━", "┈", "⸻", "❧"] },
 ];
 
 // input[type=color] needs a 7-char hex; normalize fabric fills (#111, rgb(...)).
@@ -50,6 +53,50 @@ export default function DesignStudio() {
   const canvasElRef = useRef(null);
   const wrapRef = useRef(null);
   const fcRef = useRef(null); // fabric canvas
+  const histRef = useRef([]);
+  const histIdxRef = useRef(-1);
+  const restoringRef = useRef(false);
+  const histTimerRef = useRef(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  const snapshot = () => {
+    const fc = fcRef.current;
+    if (!fc || restoringRef.current) return;
+    if (histTimerRef.current) clearTimeout(histTimerRef.current);
+    histTimerRef.current = setTimeout(() => {
+      try {
+        const json = JSON.stringify(fc.toJSON());
+        const h = histRef.current.slice(0, histIdxRef.current + 1);
+        if (h[h.length - 1] === json) return;
+        h.push(json);
+        while (h.length > 40) h.shift();
+        histRef.current = h;
+        histIdxRef.current = h.length - 1;
+        setCanUndo(histIdxRef.current > 0);
+        setCanRedo(false);
+      } catch { /* ignore */ }
+    }, 250);
+  };
+  const restoreHist = async (idx) => {
+    const fc = fcRef.current;
+    const json = histRef.current[idx];
+    if (!fc || json == null) return;
+    restoringRef.current = true;
+    try {
+      await fc.loadFromJSON(JSON.parse(json));
+      fc.requestRenderAll();
+    } finally {
+      restoringRef.current = false;
+      histIdxRef.current = idx;
+      setCanUndo(idx > 0);
+      setCanRedo(idx < histRef.current.length - 1);
+      setSel(null);
+    }
+  };
+  const undo = () => { if (histIdxRef.current > 0) restoreHist(histIdxRef.current - 1); };
+  const redo = () => { if (histIdxRef.current < histRef.current.length - 1) restoreHist(histIdxRef.current + 1); };
+
   const designRef = useRef({ w: DEFAULT_W, h: DEFAULT_H });
   const fileInputRef = useRef(null);
 
@@ -73,6 +120,10 @@ export default function DesignStudio() {
   // AI design (Tasarım Hakkı → Nano Banana)
   const [aiOpen, setAiOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
+  const [aiMode, setAiMode] = useState("ready"); // "template" (arka plan) | "ready" (hazır davetiye)
+  const [aiCouple, setAiCouple] = useState("");
+  const [aiDate, setAiDate] = useState("");
+  const [aiVenue, setAiVenue] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiImages, setAiImages] = useState([]);
   const [aiRights, setAiRights] = useState(undefined); // undefined=checking, null=not logged in, number=rights
@@ -171,7 +222,21 @@ export default function DesignStudio() {
     fc.on("selection:updated", readSel);
     fc.on("selection:cleared", () => setSel(null));
     ["object:modified", "object:added", "object:removed", "text:changed"].forEach((ev) =>
-      fc.on(ev, () => { dirtyRef.current = true; }));
+      fc.on(ev, () => { dirtyRef.current = true; snapshot(); }));
+
+    // Keyboard shortcuts: undo/redo/delete
+    const onKey = (e) => {
+      const tag = (e.target?.tagName || "").toLowerCase();
+      const editing = tag === "input" || tag === "textarea" || fc.getActiveObject()?.isEditing;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault(); if (e.shiftKey) redo(); else undo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault(); redo();
+      } else if ((e.key === "Delete" || e.key === "Backspace") && !editing) {
+        const o = fc.getActiveObject(); if (o) { e.preventDefault(); fc.remove(o); fc.discardActiveObject(); fc.requestRenderAll(); setSel(null); }
+      }
+    };
+    window.addEventListener("keydown", onKey);
 
     let cancelled = false;
     Promise.all([
@@ -195,6 +260,7 @@ export default function DesignStudio() {
     return () => {
       cancelled = true;
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKey);
       fc.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -219,11 +285,30 @@ export default function DesignStudio() {
   const addShape = (kind) => {
     const fc = fcRef.current;
     let obj;
-    if (kind === "rect") obj = new fabric.Rect({ left: centerLeft(), top: centerTop(), width: 300, height: 200, fill: "#e8c27a" });
-    else if (kind === "circle") obj = new fabric.Circle({ left: centerLeft(), top: centerTop(), radius: 130, fill: "#8a4b52" });
-    else obj = new fabric.Line([0, 0, 360, 0], { left: centerLeft(), top: centerTop() + 80, stroke: "#111", strokeWidth: 6 });
+    const L = centerLeft(), T = centerTop();
+    if (kind === "rect") obj = new fabric.Rect({ left: L, top: T, width: 300, height: 200, fill: "#e8c27a", rx: 0, ry: 0 });
+    else if (kind === "roundrect") obj = new fabric.Rect({ left: L, top: T, width: 320, height: 200, fill: "#e8c27a", rx: 40, ry: 40 });
+    else if (kind === "circle") obj = new fabric.Circle({ left: L, top: T, radius: 130, fill: "#8a4b52" });
+    else if (kind === "triangle") obj = new fabric.Triangle({ left: L, top: T, width: 260, height: 230, fill: "#8a4b52" });
+    else if (kind === "star") {
+      const pts = []; const spikes = 5, outer = 150, inner = 62;
+      for (let i = 0; i < spikes * 2; i++) {
+        const r = i % 2 === 0 ? outer : inner; const a = (Math.PI / spikes) * i - Math.PI / 2;
+        pts.push({ x: outer + r * Math.cos(a), y: outer + r * Math.sin(a) });
+      }
+      obj = new fabric.Polygon(pts, { left: L, top: T, fill: "#e8c27a" });
+    } else if (kind === "heart") {
+      obj = new fabric.Path("M 272 128 C 272 76 232 40 184 40 C 152 40 128 56 116 80 C 104 56 80 40 48 40 C 0 40 -40 76 -40 128 C -40 200 40 260 116 312 C 192 260 272 200 272 128 z",
+        { left: L, top: T, fill: "#c0392b", scaleX: 0.7, scaleY: 0.7 });
+    } else if (kind === "diamond") {
+      obj = new fabric.Polygon([{ x: 130, y: 0 }, { x: 260, y: 150 }, { x: 130, y: 300 }, { x: 0, y: 150 }],
+        { left: L, top: T, fill: "#8a4b52" });
+    } else obj = new fabric.Line([0, 0, 360, 0], { left: L, top: T + 80, stroke: "#111", strokeWidth: 6 });
     fc.add(obj); fc.setActiveObject(obj); fc.requestRenderAll(); readSel();
   };
+
+  // ---- AI ready-invitation text overlay --------------------------------
+
 
   const addSymbol = (ch) => {
     const fc = fcRef.current; if (!fc) return;
@@ -460,9 +545,29 @@ export default function DesignStudio() {
       img.set({ originX: "center", originY: "center", left: w / 2, top: h / 2, scaleX: scale, scaleY: scale });
       fc.add(img);
       fc.sendObjectToBack(img);
+      // "Hazır Davetiye" modu: arka planın üstüne çift ismi + tarih + mekân yerleştir
+      if (aiMode === "ready") {
+        const { w, h } = designRef.current;
+        const couple = (aiCouple || "İsim & İsim").trim();
+        const mkText = (txt, top, opts) => {
+          const tb = new fabric.Textbox(txt, {
+            left: w / 2, top, width: w * 0.82, textAlign: "center",
+            originX: "center", originY: "center", fill: "#ffffff",
+            shadow: new fabric.Shadow({ color: "rgba(0,0,0,0.45)", blur: 12, offsetX: 0, offsetY: 2 }),
+            ...opts,
+          });
+          loadGoogleFont(tb.fontFamily).then(() => fc.requestRenderAll());
+          fc.add(tb);
+        };
+        mkText(couple, h * 0.42, { fontSize: 118, fontFamily: "Great Vibes" });
+        if ((aiDate || "").trim()) mkText(aiDate.trim(), h * 0.60, { fontSize: 46, fontFamily: "Playfair Display" });
+        if ((aiVenue || "").trim()) mkText(aiVenue.trim(), h * 0.67, { fontSize: 34, fontFamily: "Montserrat" });
+        toast.success("Hazır davetiye oluşturuldu · metinleri düzenleyebilirsiniz");
+      } else {
+        toast.success("Arka plan tuvale eklendi. Üstüne metin/{isim} ekleyebilirsiniz.");
+      }
       fc.requestRenderAll();
       setAiOpen(false);
-      toast.success("Arka plan tuvale eklendi. Üstüne metin/{isim} ekleyebilirsiniz.");
     } catch {
       toast.error("Görsel eklenemedi");
     }
@@ -678,10 +783,20 @@ export default function DesignStudio() {
 
       {/* Add toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 bg-white border-b border-neutral-200 overflow-x-auto shrink-0">
+        <button data-testid="ds-undo" onClick={undo} disabled={!canUndo} title="Geri Al (Ctrl+Z)"
+          className="shrink-0 grid place-items-center w-10 h-12 rounded-lg text-neutral-700 hover:bg-neutral-100 disabled:opacity-30"><Undo2 size={18} /></button>
+        <button data-testid="ds-redo" onClick={redo} disabled={!canRedo} title="İleri Al (Ctrl+Y)"
+          className="shrink-0 grid place-items-center w-10 h-12 rounded-lg text-neutral-700 hover:bg-neutral-100 disabled:opacity-30"><Redo2 size={18} /></button>
+        <div className="w-px h-8 bg-neutral-200 shrink-0" />
         <Tool testid="ds-add-text" icon={Type} label="Metin" onClick={() => addText(false)} />
         <Tool testid="ds-add-heading" icon={Heading} label="Başlık" onClick={() => addText(true)} />
         <Tool testid="ds-add-rect" icon={Square} label="Kutu" onClick={() => addShape("rect")} />
+        <Tool testid="ds-add-roundrect" icon={Square} label="Yumuşak" onClick={() => addShape("roundrect")} />
         <Tool testid="ds-add-circle" icon={CircleIcon} label="Daire" onClick={() => addShape("circle")} />
+        <Tool testid="ds-add-triangle" icon={Triangle} label="Üçgen" onClick={() => addShape("triangle")} />
+        <Tool testid="ds-add-star" icon={Star} label="Yıldız" onClick={() => addShape("star")} />
+        <Tool testid="ds-add-heart" icon={Heart} label="Kalp" onClick={() => addShape("heart")} />
+        <Tool testid="ds-add-diamond" icon={CircleIcon} label="Elmas" onClick={() => addShape("diamond")} />
         <Tool testid="ds-add-line" icon={Minus} label="Çizgi" onClick={() => addShape("line")} />
         <Tool testid="ds-add-symbol" icon={Smile} label="Sembol" onClick={() => setSymbolPickerOpen(true)} accent />
         <Tool testid="ds-add-image" icon={ImageIcon} label="Görsel" onClick={() => fileInputRef.current?.click()} />
@@ -752,6 +867,32 @@ export default function DesignStudio() {
                 rows={3}
                 className="text-neutral-900"
               />
+              {/* Çıktı türü: Sadece Şablon (arka plan) veya Hazır Davetiye */}
+              <div>
+                <p className="text-[11px] text-neutral-500 mb-1.5">Çıktı türü</p>
+                <div className="grid grid-cols-2 gap-2" data-testid="ai-mode">
+                  {[
+                    { k: "template", t: "Sadece Şablon", d: "AI arka plan üretir" },
+                    { k: "ready", t: "Hazır Davetiye", d: "İsim + tarih + mekân eklenir" },
+                  ].map((m) => (
+                    <button key={m.k} type="button" data-testid={`ai-mode-${m.k}`}
+                      onClick={() => setAiMode(m.k)}
+                      className={`text-left rounded-xl border p-2.5 transition-all ${aiMode === m.k ? "border-amber-500 ring-2 ring-amber-200 bg-amber-50" : "border-neutral-200 hover:border-neutral-300"}`}>
+                      <div className="text-sm font-semibold text-neutral-800 flex items-center gap-1">{m.t}{aiMode === m.k && <Check size={13} className="text-amber-600" />}</div>
+                      <div className="text-[10px] text-neutral-500">{m.d}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {aiMode === "ready" && (
+                <div className="grid grid-cols-1 gap-2" data-testid="ai-ready-fields">
+                  <Input data-testid="ai-couple" value={aiCouple} onChange={(e) => setAiCouple(e.target.value)} placeholder="Çift ismi (örn. Elif & Mert)" className="text-neutral-900" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input data-testid="ai-date" value={aiDate} onChange={(e) => setAiDate(e.target.value)} placeholder="Tarih (örn. 12 Eylül 2026)" className="text-neutral-900" />
+                    <Input data-testid="ai-venue" value={aiVenue} onChange={(e) => setAiVenue(e.target.value)} placeholder="Mekân (örn. Grand Salon)" className="text-neutral-900" />
+                  </div>
+                </div>
+              )}
               {aiPresets.length > 0 && (
                 <div data-testid="ai-presets" className="space-y-1.5">
                   <p className="text-[11px] text-neutral-500">Hazır temalar — tek tıkla üret (1 hak):</p>

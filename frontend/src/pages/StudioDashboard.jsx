@@ -138,8 +138,6 @@ export default function StudioDashboard() {
             <ModuleCard testid="studio-module-gallery" icon={Images} title="Etkinlik Galerisi"
               desc="Müşteri foto seçimi, albüm, retouch ve sipariş takibi." to="/studyo/galeri" cta="Aç" />
           )}
-          <ModuleCard testid="studio-module-design" icon={Palette} title="Davetiye Tasarım Stüdyosu"
-            desc="Canva benzeri sürükle-bırak editör, 50+ font, kişiselleştirme." to="/tasarim-studyosu" cta="Tasarla" accent />
           <ModuleCard testid="studio-module-team" icon={Users} title="Ekip & Sohbet"
             desc={acc.current_user?.is_owner ? "Çalışan ekle/yönet, kullanıcı limiti ve ekip sohbeti." : "Ekip sohbeti ve firma çalışanları."}
             to="/studyo/ekip" cta="Aç" badge={chatUnread} />

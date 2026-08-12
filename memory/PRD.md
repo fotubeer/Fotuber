@@ -557,3 +557,22 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - **Doğrulama (curl)**: /api/member/me admin → active/unlimited/plan=admin; /api/studio/login admin → "Fotuber Yönetim" gold+active; /api/venue/login admin → "Fotuber Yönetim". Artık admin/personel hiçbir panelde üyelik/ödeme görmez.
 - **NOT**: Canlıya yansıması için kullanıcının yeniden Deploy/Re-publish yapması gerekir. Tarayıcıda eski `studio_token` cookie'si varsa panele yeniden giriş yapılmalı (yeni token admin-super'a döner).
 
+
+
+## Session AH (Jun 2026) — AŞAMA 1: Davetiye Tasarım Stüdyosu taşındı + zenginleştirildi
+- **Taşıma**: Üst menüde "Baskı Davetiye" kaldırıldı, yerine **"Davetiye Tasarım Stüdyosu"** (`/tasarim-studyosu`) eklendi (PublicLayout navItems). Stüdyo panelinden (StudioDashboard) "Davetiye Tasarım Stüdyosu" modül kartı kaldırıldı. `/baskiya-hazir-davetiye` route erişilebilir kalır ama menüde yok.
+- **Editör yeni özellikler** (DesignStudio.jsx): 
+  - **Geri Al / İleri Al (undo/redo)**: canvas JSON geçmiş yığını (max 40), toolbar butonları (`ds-undo`/`ds-redo`) + klavye Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y. Delete/Backspace ile seçili öğe silme.
+  - **Daha fazla şekil**: Yumuşak köşeli kutu, Üçgen, Yıldız (polygon), Kalp (path), Elmas (polygon) — `ds-add-roundrect/triangle/star/heart/diamond`.
+  - **Daha fazla sembol**: SYMBOL_LIBRARY 6→8 kategori, her kategori genişletildi (Doğum Günü & Kutlama, Ok & Ayraç eklendi).
+  - Katman sırası (Öne/Arka), Kopyala, Sil zaten mevcuttu (seçim panelinde).
+  - **AI "Hazır Davetiye" modu**: AI diyaloğunda çıktı türü seçici — "Sadece Şablon" (arka plan) veya "Hazır Davetiye". Hazır modda AI arka planı üretir + üstüne **çift ismi (Great Vibes) + tarih + mekân** textbox'ları otomatik yerleştirir (düzenlenebilir). Alanlar: `ai-mode-template/ready`, `ai-couple/date/venue`.
+- **Ücretlendirme**: AI Tasarla + {isim}/Toplu Üret (isme özel) zaten stüdyo girişi + `design_rights` (tasarım hakkı) gerektiriyor = ücretli. Kayıt-dışı kullanıcı AI diyaloğunda "Stüdyo Paneli'ne giriş yap" uyarısı görür.
+- **Test**: Toolbar + yeni şekiller + undo/redo screenshot ile doğrulandı. AI hazır-davetiye kodu client-side, stüdyo-gated.
+
+## AŞAMA 2 (SIRADAKİ / P0) — Vesikalık & Etkinlik(Galeri) panel ayrımı
+- Giriş yine Stüdyo Paneli üzerinden. Kullanıcı Vesikalık ve Etkinlik Galerisi'ni **ayrı ayrı** satın alır; panelde yalnızca satın aldığı modül görünür.
+- **3 günlük deneme** ikisini de açar; deneme bitince kullanıcı hangisini/ikisini alacağını seçer; ikisini aldıysa ikisi görünür.
+- Fiyatlar **aylık + yıllık** ve modül bazında (Vesikalık / Galeri) **admin panelinden ayrı ayrı** ayarlanabilir. Yıllık fiyatta, aylığa kıyasla **% kaç tasarruf** edildiği belirgin gösterilecek.
+- Daha sade / modern / işlevsel arayüz.
+
