@@ -20,6 +20,12 @@
   "build": {
     "appId": "tr.com.fotuber.studio",
     "productName": "Fotuber Stüdyo",
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://example.com/fotuber-updates/"
+      }
+    ],
     "files": [
       "main.js",
       "preload.js",
