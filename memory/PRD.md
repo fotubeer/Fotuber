@@ -637,3 +637,8 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 - `StudioChatWidget.jsx`: mic akışı yeniden yazıldı. Kayıt sırasında canlı süre sayacı (chat-rec-timer, mm:ss, 5dk güvenlik limiti), kayıt çubuğu (chat-recording-bar) durdur (chat-rec-stop) + iptal (chat-rec-cancel). Durdurunca otomatik göndermez → ön dinleme çubuğu (chat-audio-preview): audio player + gönder (chat-audio-send) + sil (chat-audio-discard). İptal = önizleme oluşmadan normale döner (canceledRef guard, onstop erken return).
 - Mobil/iOS Safari uyumu: `pickAudioMime()` MediaRecorder.isTypeSupported ile en uygun formatı seçer (webm/opus → mp4/aac → ogg), `mimeExt()` uzantı; min-w-0 + shrink-0 ile mobilde taşma yok (390px doğrulandı).
 - Test: testing_agent iter_48 (cancel bug bulundu) → düzeltildi → iter_49 frontend %100 pass (sayaç, iptal, durdur→önizleme, gönder, sil, metin gönderme, mobil taşma yok).
+
+## Session AN-3 (12 Haz 2026) — Ekip sohbetinde mesaj sabitleme (pin)
+- Backend `studio.py`: `POST /api/studio/chat/{msg_id}/pin {pinned}` (SADECE firma sahibi, _require_owner) → tek sabit mesaj (yeni sabitlerken diğerleri kaldırılır). `GET /chat` artık `is_owner` + `pinned` (mesaj objesi) döndürür; mesajlarda `pinned` alanı.
+- Frontend `StudioChatWidget.jsx`: üstte sabitlenen mesaj afişi (chat-pinned-banner) + sahibe kaldır butonu (chat-unpin-btn); her mesajda hover ile sahibe pin/unpin (chat-pin-{id}); sabit mesaj amber vurgulu + pin ikonu.
+- Test: curl doğrulandı — sahip pin/unpin çalışır (ok:true, GET pinned doğru), çalışan (aliusta) is_owner=false ve pin denemesi 403.

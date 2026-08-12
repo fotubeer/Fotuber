@@ -963,7 +963,9 @@ def get_router(db, deps):
             if m.get("attach_kind"):
                 m["attach_url"] = f"/api/studio/chat/media/{m['id']}"
         unread = sum(1 for m in msgs if me not in (m.get("read_by") or []) and m.get("sender_id") != me)
-        return {"enabled": True, "messages": msgs, "unread": unread, "me": me}
+        pinned = next((m for m in msgs if m.get("pinned")), None)
+        return {"enabled": True, "messages": msgs, "unread": unread, "me": me,
+                "is_owner": acc.get("_is_owner", True), "pinned": pinned}
 
     class ChatIn(BaseModel):
         text: str = Field(default="", max_length=1000)
@@ -1018,6 +1020,25 @@ def get_router(db, deps):
         await db.studio_chat_messages.update_many(
             {"studio_id": acc["id"], "read_by": {"$ne": me}}, {"$addToSet": {"read_by": me}})
         return {"ok": True}
+
+    class PinIn(BaseModel):
+        pinned: bool = True
+
+    @router.post("/chat/{msg_id}/pin")
+    async def pin_chat(msg_id: str, payload: PinIn, acc: dict = Depends(get_current_studio)):
+        if not _chat_enabled(acc):
+            raise HTTPException(status_code=403, detail="Ekip sohbeti bu pakette aktif değil.")
+        _require_owner(acc)
+        m = await db.studio_chat_messages.find_one({"id": msg_id, "studio_id": acc["id"]}, {"_id": 0})
+        if not m:
+            raise HTTPException(status_code=404, detail="Mesaj bulunamadı")
+        # Tek sabit mesaj: yeni sabitlerken diğerlerini kaldır.
+        await db.studio_chat_messages.update_many(
+            {"studio_id": acc["id"], "pinned": True}, {"$set": {"pinned": False}})
+        if payload.pinned:
+            await db.studio_chat_messages.update_one(
+                {"id": msg_id, "studio_id": acc["id"]}, {"$set": {"pinned": True}})
+        return {"ok": True, "pinned": payload.pinned}
 
     @router.get("/design/ai-favorites")
     async def list_ai_favorites(acc: dict = Depends(get_current_studio)):
