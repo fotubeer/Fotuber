@@ -79,7 +79,8 @@ export default function StudioPackages() {
                           ? <>{p.discount > 0 && <div className="text-[11px] text-white/40 line-through">{p.base_price}₺</div>}
                               <div className="font-semibold text-amber-300">{p.price}₺<span className="text-[10px] text-white/40">/ay</span></div></>
                           : <>{p.discount > 0 && <div className="text-[11px] text-white/40 line-through">{p.base_yearly}₺</div>}
-                              <div className="font-semibold text-amber-300">{p.price_yearly}₺<span className="text-[10px] text-white/40">/yıl</span></div></>}
+                              <div className="font-semibold text-amber-300">{p.price_yearly}₺<span className="text-[10px] text-white/40">/yıl</span></div>
+                              {p.savings_pct > 0 && <div data-testid={`pkg-savings-${mkey}-${p.plan}`} className="inline-block mt-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5">%{p.savings_pct} tasarruf</div>}</>}
                       </div>
                       <Button data-testid={`pkg-buy-${mkey}-${p.plan}`} size="sm" onClick={() => buy(mkey, p.plan)} disabled={busy === `${mkey}-${p.plan}`}
                         className="gap-1 bg-amber-500 hover:bg-amber-600 text-neutral-900 font-semibold">

@@ -588,3 +588,14 @@ Repo re-cloned from github.com/fotubeer/Fotuber into /app; backend env set (JWT_
 
 ## AŞAMA 2 (SIRADAKİ / P0) — Vesikalık & Etkinlik Galerisi panel ayrımı (detay Session AH sonunda)
 
+
+
+## Session AJ (Jun 2026) — AŞAMA 2 (kısım 1): Per-modül yetkilendirme + yıllık tasarruf (verified iteration_46, %100)
+- **Per-modül erişim** (`studio.py _module_entitlement` + `get_current_studio` enjeksiyonu): 3 günlük deneme HER İKİ modülü açar; deneme bitince yalnızca `module_until[m] > now` olan modül açık kalır; ikisi de alınırsa ikisi açık. Eski `paid_until` + `modules` bayraklı hesaplar korunur (grandfather). `acc.modules` her istekte entitlement ile üzerine yazılır → tüm modül-gate'li uçlar + StudioDashboard otomatik uyar. `_strip_studio` `entitlement` alanı döner.
+- **Satın alma webhook** (`server.py` studio_module): `module_until[mod]` dönemine göre (30/365 gün) max(now, mevcut) üzerinden uzatılır; plan + paid_until de güncellenir.
+- **Yıllık tasarruf %**: `/studio/modules/pricing` her satırda `savings_pct` (aylık×12 vs yıllık). StudioPackages yıllık satırlarında `pkg-savings-*` yeşil "%X tasarruf" rozeti.
+- **StudioDashboard**: `studio-trial-banner` (3 günlük deneme, iki modül açık, gün sayısı + satın al CTA); modül kartları entitlement'a göre gate.
+- admin-super (tam) ve üye design-only hesapları etkilenmedi (erken return).
+- Test: iteration_46 backend %100 + frontend %100. Curl ile ayrıca doğrulandı: deneme bitince {false,false}, sadece vesikalik alınınca {vesikalik:true, gallery:false}.
+- **KALAN (AŞAMA 2 · kısım 2)**: Vesikalık ve Galeri için AYRI fiyat (şu an ikisi aynı tier fiyatını kullanıyor) + admin panelinde modül-bazlı fiyat alanları; paketler sayfası daha sade/modern redesign. Modül-bazlı kota (AI kredisi/depolama/etkinlik) netleştirme.
+

@@ -78,6 +78,15 @@ export default function StudioDashboard() {
           </Button>
         </div>
 
+        {/* Trial entitlement banner: 3-day trial opens BOTH modules */}
+        {acc.entitlement?.trial_active && (
+          <div data-testid="studio-trial-banner" className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 flex flex-wrap items-center gap-3">
+            <span className="text-amber-200 text-sm font-semibold">🎁 3 Günlük Deneme Aktif</span>
+            <span className="text-amber-100/80 text-xs">Hem <b>Vesikalık</b> hem <b>Etkinlik Galerisi</b> açık. {m.days_left} gün kaldı. Deneme sonrası yalnızca satın aldığınız modül görünür.</span>
+            <Link to="/studyo/paketler" className="ml-auto text-xs font-semibold rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-900 px-4 py-1.5">Modül Satın Al</Link>
+          </div>
+        )}
+
         {/* Hero cards: FTB + trial */}
         <div className="grid sm:grid-cols-3 gap-4 mt-6">
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}

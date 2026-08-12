@@ -5015,12 +5015,20 @@ async def _grant_paid_order(order: dict):
         mod = order.get("module")
         plan = order.get("plan")
         if sid and mod in ("vesikalik", "gallery"):
-            acc = await db.studio_accounts.find_one({"id": sid}, {"_id": 0, "modules": 1})
+            acc = await db.studio_accounts.find_one({"id": sid}, {"_id": 0, "modules": 1, "module_until": 1})
             mods = (acc or {}).get("modules") or {"vesikalik": False, "gallery": False}
             mods[mod] = True
             paid_days = 365 if order.get("period") == "yearly" else 30
-            paid_until = (datetime.now(timezone.utc) + timedelta(days=paid_days)).isoformat()
-            await db.studio_accounts.update_one({"id": sid}, {"$set": {"modules": mods, "plan": plan, "paid_until": paid_until}})
+            now_dt = datetime.now(timezone.utc)
+            mu = (acc or {}).get("module_until") or {}
+            try:
+                cur = datetime.fromisoformat(mu.get(mod)) if mu.get(mod) else None
+            except Exception:
+                cur = None
+            base_dt = cur if (cur and cur > now_dt) else now_dt
+            mu[mod] = (base_dt + timedelta(days=paid_days)).isoformat()
+            paid_until = (now_dt + timedelta(days=paid_days)).isoformat()
+            await db.studio_accounts.update_one({"id": sid}, {"$set": {"modules": mods, "plan": plan, "paid_until": paid_until, "module_until": mu}})
             await db.studio_module_purchases.insert_one({
                 "studio_id": sid, "module": mod, "plan": plan, "price": order.get("price"),
                 "discount": order.get("discount", 0), "period": order.get("period", "monthly"), "currency": "TRY",

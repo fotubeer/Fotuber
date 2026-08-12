@@ -158,6 +158,35 @@ def _parse(v):
         return None
 
 
+def _module_entitlement(acc: dict) -> dict:
+    """Per-module access: the 3-day trial opens BOTH modules; after trial only
+    modules with an unexpired purchase (module_until) stay open. Legacy paid
+    accounts (paid_until + modules flag, no module_until) keep their access."""
+    now = datetime.now(timezone.utc)
+    trial_end = _parse(acc.get("trial_end"))
+    trial_active = bool(trial_end and trial_end > now)
+    paid_until = _parse(acc.get("paid_until"))
+    legacy_active = bool(paid_until and paid_until > now)
+    legacy_mods = acc.get("modules") if isinstance(acc.get("modules"), dict) else {}
+    mu = acc.get("module_until") or {}
+
+    def _ent(m):
+        u = _parse(mu.get(m))
+        if u and u > now:
+            return True
+        if trial_active:
+            return True
+        if legacy_active and not mu and bool(legacy_mods.get(m)):
+            return True  # grandfather old single-paid_until accounts
+        return False
+
+    return {
+        "vesikalik": _ent("vesikalik"), "gallery": _ent("gallery"),
+        "vesikalik_until": mu.get("vesikalik"), "gallery_until": mu.get("gallery"),
+        "trial_active": trial_active, "trial_end": acc.get("trial_end"),
+    }
+
+
 def _studio_state(acc: dict) -> dict:
     """Compute live trial/subscription state + effective limits."""
     now = datetime.now(timezone.utc)
@@ -211,6 +240,7 @@ def _strip_studio(acc: dict) -> dict:
         "role": "studio",
         "design_rights": acc.get("design_rights", 0),
         "modules": acc.get("modules") if isinstance(acc.get("modules"), dict) else {"vesikalik": True, "gallery": True},
+        "entitlement": acc.get("_entitlement"),
         "is_member_design": bool(acc.get("is_member_design")),
         "brand_name": acc.get("brand_name") or acc.get("firma_adi"),
         "brand_logo_asset_id": acc.get("brand_logo_asset_id"),
@@ -327,6 +357,11 @@ def build_get_current_studio(db, JWT_SECRET, JWT_ALGORITHM):
                 acc["_emp_id"] = None
                 acc["_emp_name"] = acc.get("firma_adi")
                 acc["_is_owner"] = True
+            # Per-module access: overwrite modules with live entitlement so every
+            # module-gated endpoint + the dashboard respects trial/purchase expiry.
+            ent = _module_entitlement(acc)
+            acc["_entitlement"] = ent
+            acc["modules"] = {"vesikalik": ent["vesikalik"], "gallery": ent["gallery"]}
             return acc
         except jwt.ExpiredSignatureError:
             raise HTTPException(status_code=401, detail="Oturum süresi doldu")
@@ -758,9 +793,12 @@ def get_router(db, deps):
                     continue
                 info = _module_price(m, p["id"], mods)
                 info_y = _module_price(m, p["id"], mods, "yearly")
+                monthly_x12 = float(info["base"]) * 12
+                savings_pct = int(round((monthly_x12 - float(info_y["base"])) / monthly_x12 * 100)) if monthly_x12 > 0 else 0
                 out.append({"module": m, "plan": p["id"], "plan_name": p["name"],
                             "base_price": info["base"], "price": info["price"], "discount": info["discount"],
-                            "price_yearly": info_y["price"], "base_yearly": info_y["base"]})
+                            "price_yearly": info_y["price"], "base_yearly": info_y["base"],
+                            "savings_pct": max(0, savings_pct)})
         return {"pricing": out, "modules": mods,
                 "note": f"İkinci modülde otomatik %{_second_module_discount()} indirim uygulanır."}
 
