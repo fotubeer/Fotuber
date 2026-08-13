@@ -239,8 +239,10 @@ def get_router(db, deps):
         used = await db.venue_invite_codes.count_documents({"venue_id": acc["id"], "status": "used"})
         free_used = await db.venue_invite_codes.count_documents({"venue_id": acc["id"], "status": "used", "code_type": "free"})
         disc_used = await db.venue_invite_codes.count_documents({"venue_id": acc["id"], "status": "used", "code_type": "discount"})
+        unseen_orders = await db.invitation_venue_orders.count_documents({"venue_id": acc["id"], "seen_by_venue": False})
         return {"total": total, "used": used, "active": total - used,
-                "free_used": free_used, "discount_used": disc_used}
+                "free_used": free_used, "discount_used": disc_used,
+                "unseen_orders": unseen_orders}
 
     # ---- Detailed usage report (which couple used which code, when) ----------
     @router.get("/report")
@@ -690,11 +692,86 @@ def get_router(db, deps):
         valid = await db.venue_services.find({"venue_id": venue["id"], "active": True}, {"_id": 0, "id": 1}).to_list(500)
         valid_ids = {v["id"] for v in valid}
         chosen = [i for i in (payload.service_ids or []) if i in valid_ids]
+        upd = {"invitation_id": iid, "venue_id": venue["id"], "service_ids": chosen, "updated_at": now_iso()}
+        # Yeni sipariş bildirimi: hizmet seçildiyse salon adminine "görülmedi" olarak işaretle.
+        if chosen:
+            upd["seen_by_venue"] = False
+            upd["ordered_at"] = now_iso()
         await db.invitation_venue_orders.update_one(
-            {"invitation_id": iid},
-            {"$set": {"invitation_id": iid, "venue_id": venue["id"], "service_ids": chosen, "updated_at": now_iso()}},
-            upsert=True)
+            {"invitation_id": iid}, {"$set": upd}, upsert=True)
         return {"ok": True, "selected": chosen}
+
+    # ========================================================================
+    # Yeni Sipariş bildirimleri — çift ek hizmet seçince salon adminine düşer.
+    # ========================================================================
+    @router.get("/orders")
+    async def list_orders(acc: dict = Depends(get_current_venue)):
+        rows = await db.invitation_venue_orders.find(
+            {"venue_id": acc["id"], "service_ids": {"$ne": []}}, {"_id": 0}
+        ).sort("ordered_at", -1).to_list(500)
+        out = []
+        for o in rows:
+            iid = o.get("invitation_id")
+            inv = await db.invitations.find_one(
+                {"id": iid}, {"_id": 0, "person1": 1, "person2": 1, "event_date": 1, "event_type": 1, "slug": 1})
+            names = ""
+            if inv:
+                names = f"{inv.get('person1','')} & {inv.get('person2','')}".strip(" &")
+            svcs = await db.venue_services.find({"id": {"$in": o.get("service_ids", [])}}, {"_id": 0}).to_list(200)
+            out.append({
+                "invitation_id": iid,
+                "couple_name": names or "Çift",
+                "event_date": (inv or {}).get("event_date", ""),
+                "event_type": (inv or {}).get("event_type", ""),
+                "slug": (inv or {}).get("slug", ""),
+                "services": [_svc_out(s) for s in svcs],
+                "total": sum(s.get("price", 0) for s in svcs),
+                "seen": o.get("seen_by_venue", True),
+                "ordered_at": o.get("ordered_at") or o.get("updated_at"),
+            })
+        return {"orders": out, "unseen": sum(1 for o in out if not o["seen"])}
+
+    @router.post("/orders/{iid}/seen")
+    async def mark_order_seen(iid: str, acc: dict = Depends(get_current_venue)):
+        await db.invitation_venue_orders.update_one(
+            {"invitation_id": iid, "venue_id": acc["id"]}, {"$set": {"seen_by_venue": True}})
+        return {"ok": True}
+
+    @router.post("/orders/seen-all")
+    async def mark_orders_seen_all(acc: dict = Depends(get_current_venue)):
+        await db.invitation_venue_orders.update_many(
+            {"venue_id": acc["id"], "seen_by_venue": False}, {"$set": {"seen_by_venue": True}})
+        return {"ok": True}
+
+    # ========================================================================
+    # Akış Programı (Run of Show) yeniden kullanılabilir şablonları.
+    # ========================================================================
+    class TimelineTemplateIn(BaseModel):
+        name: str = Field(min_length=1, max_length=120)
+        timeline: list = []
+
+    def _tpl_out(t: dict) -> dict:
+        return {"id": t["id"], "name": t.get("name"), "timeline": t.get("timeline", []),
+                "created_at": t.get("created_at")}
+
+    @router.get("/timeline-templates")
+    async def list_timeline_templates(acc: dict = Depends(get_current_venue)):
+        rows = await db.venue_timeline_templates.find({"venue_id": acc["id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+        return {"templates": [_tpl_out(t) for t in rows]}
+
+    @router.post("/timeline-templates")
+    async def create_timeline_template(payload: TimelineTemplateIn, acc: dict = Depends(get_current_venue)):
+        if not payload.timeline:
+            raise HTTPException(status_code=400, detail="Kaydedilecek akış öğesi yok")
+        doc = {"id": new_id(), "venue_id": acc["id"], "name": payload.name.strip(),
+               "timeline": payload.timeline, "created_at": now_iso()}
+        await db.venue_timeline_templates.insert_one(doc)
+        return {"template": _tpl_out(doc)}
+
+    @router.delete("/timeline-templates/{tid}")
+    async def delete_timeline_template(tid: str, acc: dict = Depends(get_current_venue)):
+        await db.venue_timeline_templates.delete_one({"id": tid, "venue_id": acc["id"]})
+        return {"ok": True}
 
     # ========================================================================
     # Venue team CHAT — staff (kiosk) ↔ venue manager. Manager can PIN messages.

@@ -33,6 +33,8 @@ import VenueDashboard from "@/pages/VenueDashboard";
 import FloorPlanBuilder from "@/pages/FloorPlanBuilder";
 import StaffKiosk from "@/pages/StaffKiosk";
 import GallerySelect from "@/pages/GallerySelect";
+import PhotoboothKiosk from "@/pages/PhotoboothKiosk";
+import PhotoboothMemory from "@/pages/PhotoboothMemory";
 import StudioChatWidget from "@/components/StudioChatWidget";
 
 import Home from "@/pages/Home";
@@ -81,6 +83,7 @@ import AdminMemoryWall from "@/pages/admin/AdminMemoryWall";
 import AdminSitePricing from "@/pages/admin/AdminSitePricing";
 import AdminAnnouncements from "@/pages/admin/AdminAnnouncements";
 import AdminInbox from "@/pages/admin/AdminInbox";
+import AdminPhotobooth from "@/pages/admin/AdminPhotobooth";
 
 import DiscountCode from "@/pages/DiscountCode";
 import FotuberMedya from "@/pages/FotuberMedya";
@@ -147,6 +150,8 @@ function App() {
               <Route path="/salon/panel" element={<VenueDashboard />} />
               <Route path="/salon/kroki/:id" element={<FloorPlanBuilder />} />
               <Route path="/salon/kiosk" element={<StaffKiosk />} />
+              <Route path="/anilarim/:token" element={<PhotoboothMemory />} />
+              <Route path="/photobooth-kiosk" element={<ProtectedRoute requireRole="admin"><PhotoboothKiosk /></ProtectedRoute>} />
 
               <Route
                 path="/randevularim"
@@ -196,6 +201,7 @@ function App() {
               <Route path="/admin/bildirimler" element={<AdminGuard><AdminNotifications /></AdminGuard>} />
               <Route path="/admin/reklamlar" element={<AdminGuard><AdminAdBanners /></AdminGuard>} />
               <Route path="/admin/masaustu" element={<AdminGuard><AdminDesktopApp /></AdminGuard>} />
+              <Route path="/admin/photobooth" element={<AdminGuard><AdminPhotobooth /></AdminGuard>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

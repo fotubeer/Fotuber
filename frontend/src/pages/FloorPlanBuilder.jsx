@@ -54,6 +54,7 @@ export default function FloorPlanBuilder() {
   const [guestOpen, setGuestOpen] = useState(false);
   const [timeline, setTimeline] = useState([]);
   const [tlOpen, setTlOpen] = useState(false);
+  const [tlTemplates, setTlTemplates] = useState([]);
   const [couples, setCouples] = useState([]);
   const [coupleId, setCoupleId] = useState("");
   const [guests, setGuests] = useState([]);
@@ -66,6 +67,7 @@ export default function FloorPlanBuilder() {
       if (data.plan.invitation_id) setCoupleId(data.plan.invitation_id);
     }).catch(() => { toast.error("Kroki yüklenemedi"); navigate("/salon/panel"); });
     venueApi.get("/venue/couples").then(({ data }) => setCouples(data.couples || [])).catch(() => {});
+    venueApi.get("/venue/timeline-templates").then(({ data }) => setTlTemplates(data.templates || [])).catch(() => {});
   }, [id, navigate]);
 
   useEffect(() => {
@@ -123,6 +125,29 @@ export default function FloorPlanBuilder() {
     const items = p.items.map((it) => ({ id: uid(), note: "", ...it }));
     setTimeline((t) => [...t, ...items].sort((a, b) => (a.time || "").localeCompare(b.time || "")));
     setTlOpen(true);
+  };
+  const loadTemplates = () => venueApi.get("/venue/timeline-templates").then(({ data }) => setTlTemplates(data.templates || [])).catch(() => {});
+  const saveTemplate = async () => {
+    if (!timeline.length) { toast.error("Önce akış öğesi ekleyin"); return; }
+    const name = window.prompt("Şablon adı (örn. Klasik Düğün Akışı):", plan?.name ? `${plan.name} Akışı` : "");
+    if (!name || !name.trim()) return;
+    try {
+      const clean = timeline.map(({ id: _i, ...rest }) => rest); // id'siz sakla; uygulanınca yeni id verilir
+      await venueApi.post("/venue/timeline-templates", { name: name.trim(), timeline: clean });
+      toast.success("Akış şablonu kaydedildi");
+      loadTemplates();
+    } catch (e) { toast.error("Kaydedilemedi"); }
+  };
+  const applyTemplate = (tpl) => {
+    const items = (tpl.timeline || []).map((it) => ({ id: uid(), note: "", ...it }));
+    setTimeline((t) => [...t, ...items].sort((a, b) => (a.time || "").localeCompare(b.time || "")));
+    setTlOpen(true);
+    toast.success(`"${tpl.name}" akışa eklendi`);
+  };
+  const deleteTemplate = async (tid) => {
+    if (!window.confirm("Şablon silinsin mi?")) return;
+    try { await venueApi.delete(`/venue/timeline-templates/${tid}`); loadTemplates(); }
+    catch { toast.error("Silinemedi"); }
   };
 
   if (!plan) return <div className="min-h-screen grid place-items-center bg-slate-950 text-white">Yükleniyor…</div>;
@@ -251,6 +276,30 @@ export default function FloorPlanBuilder() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Kaydedilmiş kendi şablonlarım */}
+            <div className="mb-3" data-testid="tl-my-templates">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="text-[10px] uppercase tracking-wider text-white/40">Kayıtlı Akış Şablonlarım</div>
+                <button onClick={saveTemplate} data-testid="tl-save-template"
+                  className="text-[11px] px-2 py-0.5 rounded-md border border-emerald-400/40 text-emerald-200 hover:bg-emerald-500/15 flex items-center gap-1">
+                  <Save size={12} /> Şablon Olarak Kaydet
+                </button>
+              </div>
+              {tlTemplates.length === 0 ? (
+                <p className="text-[10px] text-white/35">Henüz şablon yok. Akışını düzenleyip "Şablon Olarak Kaydet" ile sakla, sonra tek tıkla uygula.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {tlTemplates.map((tpl) => (
+                    <span key={tpl.id} data-testid={`tl-template-${tpl.id}`}
+                      className="text-[11px] pl-2.5 pr-1 py-1 rounded-full border border-sky-400/40 text-sky-200 flex items-center gap-1 hover:bg-sky-500/15">
+                      <button onClick={() => applyTemplate(tpl)} className="max-w-[120px] truncate" title={tpl.name}>{tpl.name}</button>
+                      <button onClick={() => deleteTemplate(tpl.id)} className="text-red-300 hover:text-red-400 px-1" data-testid={`tl-template-del-${tpl.id}`}><X size={11} /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               {timeline.map((it) => (

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   LogOut, Plus, Copy, Trash2, Ticket, CheckCircle2, Clock, MessageCircle, Gift, Percent, Landmark,
   FileDown, Send, Users, ListChecks, Megaphone, ArrowLeft, QrCode, Printer, MapPin, KeyRound, UserPlus, MessageSquare,
+  ShoppingBag, Calendar,
 } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
@@ -72,6 +73,16 @@ export default function VenueDashboard() {
     navigate("/salon");
   };
 
+  const markOrdersSeen = async () => {
+    try { await venueApi.post("/venue/orders/seen-all"); } catch { /* ignore */ }
+    load();
+  };
+
+  useEffect(() => {
+    const t = setInterval(() => { load(); }, 30000);
+    return () => clearInterval(t);
+  }, [load]);
+
   const generate = async () => {
     setBusy(true);
     try {
@@ -135,15 +146,20 @@ export default function VenueDashboard() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 p-1 rounded-xl bg-white/5 w-fit mb-6">
-          {[["codes", "Kodlar", Ticket], ["report", "Kullanım Raporu", ListChecks], ["personel", "Personel", Users], ["kroki", "Salon Krokileri", MapPin], ["hizmet", "Ek Hizmetler", Gift], ["sohbet", "Ekip Sohbeti", MessageSquare], ["campaign", "Toplu Kampanya", Megaphone], ["poster", "QR Afiş", QrCode]].map(([k, label, Icon]) => (
+        <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-white/5 w-fit mb-6">
+          {[["codes", "Kodlar", Ticket], ["siparis", "Siparişler", ShoppingBag], ["report", "Kullanım Raporu", ListChecks], ["personel", "Personel", Users], ["kroki", "Salon Krokileri", MapPin], ["hizmet", "Ek Hizmetler", Gift], ["sohbet", "Ekip Sohbeti", MessageSquare], ["campaign", "Toplu Kampanya", Megaphone], ["poster", "QR Afiş", QrCode]].map(([k, label, Icon]) => (
             <button key={k} data-testid={`venue-tab-${k}`}
-              onClick={() => { setTab(k); if (k === "report") loadReport(); }}
-              className={`px-4 h-9 rounded-lg text-sm font-medium flex items-center gap-1.5 ${tab === k ? "bg-white text-neutral-900" : "text-white/60 hover:text-white"}`}>
+              onClick={() => { setTab(k); if (k === "report") loadReport(); if (k === "siparis") markOrdersSeen(); }}
+              className={`relative px-4 h-9 rounded-lg text-sm font-medium flex items-center gap-1.5 ${tab === k ? "bg-white text-neutral-900" : "text-white/60 hover:text-white"}`}>
               <Icon size={15} /> {label}
+              {k === "siparis" && (stats?.unseen_orders ?? 0) > 0 && (
+                <span data-testid="venue-orders-badge" className="ml-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">{stats.unseen_orders}</span>
+              )}
             </button>
           ))}
         </div>
+
+        {tab === "siparis" && <OrdersView reloadStats={load} />}
 
         {tab === "report" && <ReportView report={report} reload={loadReport} salon={acc?.salon_adi} />}
         {tab === "campaign" && <CampaignView salon={acc?.salon_adi} onDone={load} />}
@@ -608,7 +624,59 @@ function FloorPlansView({ navigate }) {
   );
 }
 
-// ── Ek Hizmet (Upsell) yönetimi ─────────────────────────────────────────────
+// ── Siparişler (çiftlerin seçtiği ek hizmetler) ─────────────────────────────
+function OrdersView({ reloadStats }) {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { const { data } = await venueApi.get("/venue/orders"); setOrders(data.orders || []); }
+    catch { /* ignore */ } finally { setLoading(false); }
+  }, []);
+  useEffect(() => {
+    load();
+    // Sekme açılınca görülmemişleri "görüldü" yap (badge sıfırlanır).
+    const t = setTimeout(() => { reloadStats && reloadStats(); }, 800);
+    return () => clearTimeout(t);
+  }, [load, reloadStats]);
+
+  return (
+    <div className="space-y-4" data-testid="venue-siparis-view">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2"><ShoppingBag size={17} className="text-amber-300" /><h3 className="font-semibold">Ek Hizmet Siparişleri</h3></div>
+        <Button size="sm" variant="outline" onClick={load} className="bg-transparent border-white/15 text-white hover:bg-white/10">Yenile</Button>
+      </div>
+      {loading ? (
+        <div className="rounded-2xl border border-white/12 bg-white/5 p-8 text-center text-white/40">Yükleniyor…</div>
+      ) : orders.length === 0 ? (
+        <div className="rounded-2xl border border-white/12 bg-white/5 p-8 text-center text-white/40">Henüz sipariş yok. Çiftler davetiye panelinden ek hizmet seçtiğinde burada görünür.</div>
+      ) : (
+        <div className="space-y-3">
+          {orders.map((o) => (
+            <div key={o.invitation_id} data-testid={`venue-order-${o.invitation_id}`}
+              className={`rounded-2xl border p-4 ${o.seen ? "border-white/10 bg-white/[0.03]" : "border-rose-400/40 bg-rose-500/[0.07]"}`}>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                {!o.seen && <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-rose-500 text-white">Yeni Sipariş</span>}
+                <div className="font-semibold">{o.couple_name}</div>
+                {o.event_date && <span className="text-xs text-white/50 flex items-center gap-1"><Calendar size={12} /> {fmtDate(o.event_date)}</span>}
+                <div className="ml-auto text-amber-300 font-bold">{(o.total || 0).toLocaleString("tr-TR")} ₺</div>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {o.services.map((s) => (
+                  <span key={s.id} className="text-xs px-2.5 py-1 rounded-full bg-white/10 border border-white/10">
+                    {s.name} · {(s.price || 0).toLocaleString("tr-TR")} ₺
+                  </span>
+                ))}
+              </div>
+              <div className="text-[11px] text-white/40 mt-2">Sipariş: {fmtDateTime(o.ordered_at)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ServicesView() {
   const [rows, setRows] = useState([]);
   const [form, setForm] = useState({ name: "", description: "", price: "", image_url: "" });

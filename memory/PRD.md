@@ -840,3 +840,21 @@ Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay
 ## Session BC — Akışa Hazır Şablonlar (frontend)
 - FloorPlanBuilder "Akış Programı" panelinde 4 hazır run-of-show şablonu (Düğün/Nişan/Kına/Sünnet) tek tıkla eklenir (tl-preset-*): saat + olay + uyarılacak roller dolu gelir, mevcut timeline'a eklenip saate göre sıralanır. Kaydet ile saklanır (mevcut doğrulanmış PUT akışı). Backend değişikliği yok.
 
+
+
+## Session BD (Jun 2026) — Salon Sipariş Bildirimi + Akış Şablonu Kaydetme + Photobooth Kiosk TASLAK (self-tested)
+### 1) Salon: "Yeni Sipariş" bildirimi (venue.py + VenueDashboard.jsx)
+- Çift, davetiye panelinden ek hizmet seçince `public_select_services` artık `seen_by_venue:false` + `ordered_at` işaretler (chosen boş değilse).
+- Yeni uçlar: `GET /venue/orders` (çift adı + hizmetler + toplam + seen), `POST /venue/orders/{iid}/seen`, `POST /venue/orders/seen-all`. `/venue/stats` artık `unseen_orders` döner.
+- Frontend: VenueDashboard'a "Siparişler" sekmesi (venue-tab-siparis) + kırmızı rozet (venue-orders-badge, unseen_orders>0). Sekme açılınca seen-all + stats reload; 30sn'de bir stats poll. OrdersView kartları "Yeni Sipariş" rozetiyle. Curl ile stats/orders/seen doğrulandı.
+### 2) Salon: Akış Programını Şablon Olarak Kaydet (venue.py + FloorPlanBuilder.jsx)
+- Koleksiyon `venue_timeline_templates`. Uçlar: `GET/POST/DELETE /venue/timeline-templates`. Curl: create+list+delete OK.
+- FloorPlanBuilder timeline panelinde "Şablon Olarak Kaydet" (tl-save-template, prompt ile isim) + "Kayıtlı Akış Şablonlarım" chip listesi (tl-template-<id>, tek tıkla timeline'a ekler + saate göre sıralar; tl-template-del-<id> siler).
+### 3) Photobooth & Kiosk Yazılımı — TASLAK (routers/photobooth.py + 3 sayfa)
+- **Kapsam (kullanıcı onayı)**: İskelet + temel çalışan akış (geri sayım→çekim→filtre→çerçeve→paket→QR). RBAC yalnızca Admin (require_admin). AI/PayTR/donanım YOK, ödeme adımı ATLANDI.
+- **Backend** (`routers/photobooth.py`, server.py'ye include edildi): Koleksiyonlar photobooth_settings/devices/templates/packages/transactions. `_seed_defaults` ile 6 çerçeve + 3 paket otomatik oluşur. Uçlar: `GET /photobooth/config` (aktif çerçeve/paket + marka; exit_pin sızmaz), `POST /photobooth/verify-exit-pin`, `POST /photobooth/capture` (multipart görsel→object storage→qr_token+transaction), `GET /photobooth/photo/{token}` (PUBLIC, QR erişimi), admin CRUD: settings/devices/templates/packages + `GET /admin/transactions` (ciro). Ücretsiz paket yok (price>0 zorunlu). Curl ile capture→photo(200)→transaction(revenue) uçtan uca doğrulandı.
+- **Frontend**:
+  - `pages/PhotoboothKiosk.jsx` (`/photobooth-kiosk`, ProtectedRoute admin): tam ekran kilitli kiosk (`fixed inset-0 z-[9999] overflow-hidden`, right-click kapalı, requestFullscreen). Akış: idle(BAŞLA)→countdown(3-2-1, kamera getUserMedia, 4 kare, ayna düzeltme + flash)→filtre(5 canvas filtresi, "AI Filtre" taslağı)→çerçeve→paket→processing(canvas kompozisyon: strip4/grid4/polaroid/postcard/single + marka footer)→done(sonuç görseli + QR + Yazdır[taslak toast] + Yeni Çekim). Gizli admin çıkış (pb-exit-btn sol üst) → PIN modalı → verify-exit-pin → /admin/photobooth. Ekran görüntüsüyle idle + PIN çıkış doğrulandı.
+  - `pages/PhotoboothMemory.jsx` (`/anilarim/:token`, PUBLIC): QR ile açılan sayfa, foto önizleme + indir.
+  - `pages/admin/AdminPhotobooth.jsx` (`/admin/photobooth`, ownerOnly, sidebar "Photobooth Kiosk (Taslak)"): özet (çekim/ciro/aktif çerçeve), marka+PIN+geri sayım+özellik toggle'ları (video/AI/anı duvarı — taslak), çerçeve kataloğu CRUD, paket CRUD, "Kiosk'u Aç". Ekran görüntüsüyle doğrulandı.
+- **Sonraki fazlar (Photobooth)**: PayTR fiziksel POS tetikleme, AI arka plan silme (yeşil-perdesiz), video/GIF + overlay, Anı Duvarı canlı yükleme, yazıcı entegrasyonu, 30+ çerçeve varyasyonu, belirli Stüdyo kullanıcılarına RBAC açılımı, cihaz (device) bağlama.
