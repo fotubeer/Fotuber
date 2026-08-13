@@ -512,30 +512,39 @@ def get_router(db, deps):
                 raise _quota_error(f"Etkinlik yükleme limitine ulaştınız ({limits.get('storage_gb')} GB). Daha fazlası için paketinizi yükseltin.")
         upload_id = new_id()
         ext = (filename.rsplit(".", 1)[-1] if "." in filename else "").lower()
-        _UPLOADS[upload_id] = {
-            "event_id": event_id, "studio_id": acc["id"], "filename": filename,
-            "ext": ext, "size": size, "total": total_chunks, "chunks": {},
-        }
+        # Oturumu MongoDB'de sakla — çoklu worker/pod arası tutarlılık (in-memory bug fix).
+        await db.gallery_uploads.insert_one({
+            "upload_id": upload_id, "event_id": event_id, "studio_id": acc["id"],
+            "filename": filename, "ext": ext, "size": size, "total": total_chunks,
+            "created_at": now_iso(),
+        })
         return {"upload_id": upload_id, "is_raw": ext in RAW_EXTS,
                 "warning": "RAW dosyalar büyüktür ve tarayıcıda önizlenemez." if ext in RAW_EXTS else None}
 
     @router.post("/studio/gallery/upload-chunk/{upload_id}")
     async def upload_chunk(upload_id: str, index: int = Form(...), chunk: UploadFile = File(...),
                            acc: dict = Depends(get_current_studio)):
-        u = _UPLOADS.get(upload_id)
-        if not u or u["studio_id"] != acc["id"]:
+        u = await db.gallery_uploads.find_one({"upload_id": upload_id, "studio_id": acc["id"]})
+        if not u:
             raise HTTPException(status_code=404, detail="Yükleme oturumu bulunamadı")
-        u["chunks"][index] = await chunk.read()
-        return {"received": index, "count": len(u["chunks"]), "total": u["total"]}
+        data = await chunk.read()
+        await db.gallery_upload_chunks.update_one(
+            {"upload_id": upload_id, "index": index},
+            {"$set": {"upload_id": upload_id, "index": index, "data": data}},
+            upsert=True,
+        )
+        received = await db.gallery_upload_chunks.count_documents({"upload_id": upload_id})
+        return {"received": index, "count": received, "total": u["total"]}
 
     @router.post("/studio/gallery/upload-complete/{upload_id}")
     async def upload_complete(upload_id: str, acc: dict = Depends(get_current_studio)):
-        u = _UPLOADS.get(upload_id)
-        if not u or u["studio_id"] != acc["id"]:
+        u = await db.gallery_uploads.find_one({"upload_id": upload_id, "studio_id": acc["id"]})
+        if not u:
             raise HTTPException(status_code=404, detail="Yükleme oturumu bulunamadı")
-        if len(u["chunks"]) != u["total"]:
+        chunks = await db.gallery_upload_chunks.find({"upload_id": upload_id}).sort("index", 1).to_list(100000)
+        if len(chunks) != u["total"]:
             raise HTTPException(status_code=400, detail="Eksik parça var, yükleme tamamlanamadı")
-        data = b"".join(u["chunks"][i] for i in sorted(u["chunks"].keys()))
+        data = b"".join(bytes(c["data"]) for c in chunks)
         ext = u["ext"] or "bin"
         is_raw = ext in RAW_EXTS
         photo_id = new_id()
@@ -556,7 +565,8 @@ def get_router(db, deps):
             "created_at": now_iso(),
         }
         await db.gallery_photos.insert_one(doc)
-        del _UPLOADS[upload_id]
+        await db.gallery_upload_chunks.delete_many({"upload_id": upload_id})
+        await db.gallery_uploads.delete_one({"upload_id": upload_id})
         return {"id": photo_id, "is_raw": is_raw, "filename": u["filename"],
                 "url": f"/api/gallery/photo/{photo_id}",
                 "thumb": f"/api/gallery/thumb/{photo_id}" if thumb_path else None}
