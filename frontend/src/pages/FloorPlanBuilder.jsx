@@ -9,6 +9,40 @@ import { SYMBOL_GROUPS, SYMBOL_MAP, isTable } from "@/lib/venueSymbols";
 const uid = () => Math.random().toString(36).slice(2, 9);
 const TL_ROLES = [["fotografci", "Fotoğrafçı"], ["garson_sefi", "Garson Şefi"], ["muzisyen", "Müzisyen"], ["salon_gorevlisi", "Salon Görevlisi"], ["salon_muduru", "Müdür"], ["sanatci", "Sanatçı"], ["kameraman", "Kameraman"]];
 
+// Hazır akış (run-of-show) şablonları — tek tıkla timeline'a eklenir.
+const TL_PRESETS = {
+  dugun: { label: "💍 Düğün", items: [
+    { time: "19:00", title: "Davetli Girişi & Kokteyl", roles: ["garson_sefi", "salon_gorevlisi"] },
+    { time: "19:45", title: "Gelin & Damat Girişi / İlk Dans", roles: ["fotografci", "muzisyen", "kameraman"] },
+    { time: "20:15", title: "Nikah Töreni", roles: ["fotografci", "kameraman", "salon_muduru"] },
+    { time: "21:00", title: "Yemek Servisi", roles: ["garson_sefi"] },
+    { time: "21:45", title: "Pasta & Takı Töreni", roles: ["fotografci", "kameraman", "garson_sefi"] },
+    { time: "22:30", title: "Halay & Eğlence", roles: ["muzisyen", "sanatci"] },
+    { time: "23:30", title: "Kapanış & Uğurlama", roles: ["salon_gorevlisi"] },
+  ] },
+  nisan: { label: "🥂 Nişan", items: [
+    { time: "18:30", title: "Davetli Girişi", roles: ["salon_gorevlisi"] },
+    { time: "19:00", title: "Çiftin Girişi", roles: ["fotografci", "muzisyen"] },
+    { time: "19:30", title: "Yüzük Takma Töreni", roles: ["fotografci", "kameraman"] },
+    { time: "20:00", title: "İkram & Pasta", roles: ["garson_sefi"] },
+    { time: "20:45", title: "Müzik & Sohbet", roles: ["muzisyen"] },
+  ] },
+  kina: { label: "🔴 Kına", items: [
+    { time: "20:00", title: "Karşılama", roles: ["salon_gorevlisi"] },
+    { time: "20:30", title: "Gelin Alayı & Giriş", roles: ["fotografci", "muzisyen", "kameraman"] },
+    { time: "21:00", title: "Kına Yakma Töreni", roles: ["fotografci", "kameraman", "sanatci"] },
+    { time: "21:45", title: "Oyunlar & Eğlence", roles: ["muzisyen", "sanatci"] },
+    { time: "22:30", title: "İkram", roles: ["garson_sefi"] },
+  ] },
+  sunnet: { label: "🎈 Sünnet", items: [
+    { time: "13:00", title: "Misafir Girişi", roles: ["salon_gorevlisi"] },
+    { time: "13:30", title: "Çocuğun Girişi (Prens Konsepti)", roles: ["fotografci", "kameraman"] },
+    { time: "14:00", title: "Animasyon & Gösteri", roles: ["sanatci", "muzisyen"] },
+    { time: "14:45", title: "Pasta & İkram", roles: ["garson_sefi", "fotografci"] },
+    { time: "15:30", title: "Kapanış", roles: ["salon_gorevlisi"] },
+  ] },
+};
+
 export default function FloorPlanBuilder() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -84,6 +118,12 @@ export default function FloorPlanBuilder() {
   const patchTl = (tid, patch) => setTimeline((t) => t.map((it) => (it.id === tid ? { ...it, ...patch } : it)));
   const delTl = (tid) => setTimeline((t) => t.filter((it) => it.id !== tid));
   const toggleTlRole = (tid, r) => setTimeline((t) => t.map((it) => it.id === tid ? { ...it, roles: (it.roles || []).includes(r) ? it.roles.filter((x) => x !== r) : [...(it.roles || []), r] } : it));
+  const applyPreset = (key) => {
+    const p = TL_PRESETS[key]; if (!p) return;
+    const items = p.items.map((it) => ({ id: uid(), note: "", ...it }));
+    setTimeline((t) => [...t, ...items].sort((a, b) => (a.time || "").localeCompare(b.time || "")));
+    setTlOpen(true);
+  };
 
   if (!plan) return <div className="min-h-screen grid place-items-center bg-slate-950 text-white">Yükleniyor…</div>;
 
@@ -201,6 +241,17 @@ export default function FloorPlanBuilder() {
               <button onClick={() => setTlOpen(false)} className="text-white/50"><X size={16} /></button>
             </div>
             <p className="text-[11px] text-white/45 mb-3">Saat, olay ve uyarılacak personel rollerini girin. Personel kioskunda sıra 5 dk kala sesli/pop-up uyarı düşer. Değişiklikleri <b>Kaydet</b> ile saklayın.</p>
+            <div className="mb-3">
+              <div className="text-[10px] uppercase tracking-wider text-white/40 mb-1.5">Hazır Şablon Ekle</div>
+              <div className="flex flex-wrap gap-1.5">
+                {Object.entries(TL_PRESETS).map(([k, p]) => (
+                  <button key={k} onClick={() => applyPreset(k)} data-testid={`tl-preset-${k}`}
+                    className="text-[11px] px-2.5 py-1 rounded-full border border-amber-400/40 text-amber-200 hover:bg-amber-500/15">
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="space-y-2">
               {timeline.map((it) => (
                 <div key={it.id} className="rounded-lg bg-white/5 border border-white/10 p-2.5" data-testid={`tl-item-${it.id}`}>

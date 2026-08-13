@@ -836,3 +836,7 @@ Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay
 - **Not (gerçek hata değil)**: Kupl pazar yeri butonu üye (çift) panelinde `/davetiyelerim`; test davetiyesi admin'e ait olduğu için admin UI'da açamıyor (doğru davranış — admin üye değil). Modal + public uç curl ile doğrulandı; gerçek üye çiftlerde çalışır.
 - **Bekleyen**: Kupl pazar yeri modalını gerçek bir MEMBER hesabıyla UI'da doğrulamak (opsiyonel); Gold stüdyo aylık davetiye (eski backlog); macOS .dmg kullanıcı testi.
 
+
+## Session BC — Akışa Hazır Şablonlar (frontend)
+- FloorPlanBuilder "Akış Programı" panelinde 4 hazır run-of-show şablonu (Düğün/Nişan/Kına/Sünnet) tek tıkla eklenir (tl-preset-*): saat + olay + uyarılacak roller dolu gelir, mevcut timeline'a eklenip saate göre sıralanır. Kaydet ile saklanır (mevcut doğrulanmış PUT akışı). Backend değişikliği yok.
+
