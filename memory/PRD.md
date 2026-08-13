@@ -802,3 +802,9 @@ Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay
 - DialogDescription eklenerek Radix a11y uyarısı giderildi.
 - **macOS .dmg testi**: KULLANICI aksiyonu (Save to Github → GitHub Actions → Mac'te test); kodda ek iş yok.
 
+
+## Session BC — Fotoğraf Kırpma Aracı (verified iteration_66, frontend %100)
+- **Yeni bileşen** `components/invitation/ImageCropper.jsx`: kapak fotoğrafı seçilince açılan kırpma modalı — sürükleyerek konumlandırma + zoom (slider & mouse wheel), sabit çerçeve (foto şablonlarda 3:4, diğerlerinde 1:1). Onayınca `canvas.toBlob` ile kırpılmış JPEG üretir; harici kütüphane yok.
+- **Sihirbaz bağlama** (InvitationCreate): dosya seçimi artık önce kırpıcıyı açar (`onSelectCover` → FileReader dataURL), onayda kırpılmış File yüklenir (`onCropConfirm` → `/api/invitations/cover`). Aspect: `getTemplate(data.template)?.photo ? 3/4 : 1`. Başarısız yüklemede modal açık kalır (retry). testid'ler: cover-upload, cropper-modal, cropper-zoom, cropper-confirm, cropper-cancel, cover-crop-preview, preview-photo.
+- **Doğrulama**: testing_agent iteration_66 %100 — modal yüklemeden ÖNCE açılıyor, 3:4 (foto) / 1:1 (diğer) ölçüldü, zoom çalışıyor, onay POST 200 + toast + önizleme, iptal ağ çağrısı yok, non-foto regresyon dairesel avatar. Console hatası yok.
+

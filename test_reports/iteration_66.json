@@ -1,0 +1,22 @@
+{
+  "summary": "Frontend-only e2e test of the new cover image cropper on /davetiye-olustur. All required flows work end-to-end: cropper modal opens on cover-upload BEFORE any upload; 3:4 frame for photo templates (measured ratio 0.75, 257x343) and 1:1 for non-photo (measured 305x305); zoom slider updates value; confirm triggers POST /api/invitations/cover (200), success toast 'Kapak fotoğrafı eklendi' shows, modal closes, cover-crop-preview thumb and preview-photo (in InvitationPreview) become visible; cancel closes the modal with zero network calls. Regression on wed-botanic (non-photo) uses 1:1 crop and renders as a circular avatar in the live preview. No console errors (only expected 401 on /api/member/me for anonymous user).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ImageCropper.confirm() uses canvas.toBlob asynchronously but has no error path if toBlob returns null (e.g., taint from CORS on remote images). For pre-crop of files loaded via FileReader dataURL this is fine, but if src is later a remote URL the anonymous crossOrigin request may still be blocked and produce a tainted canvas; consider catching SecurityError.",
+    "InvitationCreate.onCropConfirm swallows uploadCover errors (uploadCover catches internally) but always clears cropSrc, so on network failure the user sees a toast error but no way to retry from the modal. Minor UX improvement: keep modal open on failed upload."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "Not needed (public flow). /api/invitations/cover is unauthenticated as expected.",
+  "seed_data_creation": "None. Used /tmp/test_cover.jpg (400x400 solid color, ~3KB) generated with Pillow.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Cropper feature at /davetiye-olustur works. Selectors: cover-upload (hidden file input), cropper-modal, cropper-zoom (range 1..4), cropper-confirm, cropper-cancel, cover-crop-preview (photo tpl only), preview-photo. Aspect logic: getTemplate(data.template)?.photo ? 3/4 : 1. Backend POST /api/invitations/cover returns {id} and GET /api/invitations/cover/{id} serves the file (both returned 200 during test)."
+}

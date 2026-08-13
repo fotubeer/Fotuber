@@ -14,6 +14,7 @@ import InvitationPreview from "@/components/invitation/InvitationPreview";
 import { loadGoogleFont } from "@/lib/designFonts";
 import TemplateReveal from "@/components/invitation/TemplateReveal";
 import TemplateThumb from "@/components/invitation/TemplateThumb";
+import ImageCropper from "@/components/invitation/ImageCropper";
 import VoiceRecorder from "@/components/invitation/VoiceRecorder";
 import { EVENT_TYPE_LABELS, printColors } from "@/lib/invitationThemes";
 import { INVITATION_CATEGORIES, templatesByCategory, photoTemplates, getTemplate, priceThemeFor, resolveVisual, eventLabelFor } from "@/lib/invitationTemplates";
@@ -36,6 +37,8 @@ export default function InvitationCreate() {
     venue_code: "",
   });
   const [galCat, setGalCat] = useState("dugun");
+  const [cropSrc, setCropSrc] = useState(null);
+  const [cropAspect, setCropAspect] = useState(3 / 4);
   const [gate, setGate] = useState(false); // membership gate at the end
   const [authTab, setAuthTab] = useState("register");
   const [authForm, setAuthForm] = useState({ email: "", password: "", full_name: "", phone: "", company_name: "", kvkk_accepted: false, sms_consent: false, email_consent: false });
@@ -125,8 +128,22 @@ export default function InvitationCreate() {
       if (!r.ok) throw new Error(d.detail || "Yüklenemedi");
       set("cover_image_id", d.id);
       toast.success("Kapak fotoğrafı eklendi");
-    } catch (e) { toast.error(e.message); }
+      return true;
+    } catch (e) { toast.error(e.message); return false; }
     finally { setUploading(false); }
+  };
+
+  // Open the cropper first; on confirm we upload the cropped result.
+  const onSelectCover = (file) => {
+    if (!file) return;
+    setCropAspect(getTemplate(data.template)?.photo ? 3 / 4 : 1);
+    const reader = new FileReader();
+    reader.onload = () => setCropSrc(reader.result);
+    reader.readAsDataURL(file);
+  };
+  const onCropConfirm = async (blob) => {
+    const ok = await uploadCover(new File([blob], "cover.jpg", { type: "image/jpeg" }));
+    if (ok) setCropSrc(null);
   };
 
   const startPublish = async () => {
@@ -323,7 +340,7 @@ export default function InvitationCreate() {
               <label className="mt-1 flex items-center gap-2 px-3 py-2 border border-dashed rounded-lg cursor-pointer text-sm text-slate-600 hover:bg-slate-50">
                 {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                 {data.cover_image_id ? "Fotoğraf eklendi — değiştir" : "Fotoğraf yükle"}
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadCover(e.target.files?.[0])} data-testid="cover-upload" />
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => { onSelectCover(e.target.files?.[0]); e.target.value = ""; }} data-testid="cover-upload" />
               </label>
               {data.cover_image_id && currentTpl?.photo && (
                 <div className="mt-2 flex items-center gap-3" data-testid="cover-crop-preview">
@@ -622,6 +639,12 @@ export default function InvitationCreate() {
         </div>
       )}
       {/* Reveal animation preview */}
+      {cropSrc && (
+        <ImageCropper src={cropSrc} aspect={cropAspect} frameW={cropAspect < 1 ? 270 : 320}
+          busy={uploading} onCancel={() => setCropSrc(null)} onCrop={onCropConfirm} />
+      )}
+
+
       {previewReveal && (
         <div className="fixed inset-0 z-[80]" data-testid="reveal-preview-modal">
           <TemplateReveal key={previewKey}
