@@ -9,7 +9,7 @@ digital-invitation wizard to get a FREE premium invitation or a discount.
 Mirrors the established studio auth pattern. No existing routes are touched.
 """
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import jwt
 from fastapi import APIRouter, HTTPException, Depends, Request, Response
@@ -103,7 +103,43 @@ def get_router(db, deps):
     now_iso = deps["now_iso"]
     JWT_SECRET = deps["JWT_SECRET"]
     JWT_ALGORITHM = deps["JWT_ALGORITHM"]
+    require_admin = deps["require_admin"]
     get_current_venue = build_get_current_venue(db, JWT_SECRET, JWT_ALGORITHM)
+
+    # Staff kiosk auth: short-lived JWT (role=venue_staff, sub=staff_id).
+    async def get_current_staff(request: Request) -> dict:
+        token = request.cookies.get("venue_staff_token")
+        if not token:
+            auth = request.headers.get("Authorization", "")
+            if auth.startswith("Bearer "):
+                token = auth[7:]
+        if not token:
+            raise HTTPException(status_code=401, detail="Personel girişi gerekli")
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            if payload.get("role") != "venue_staff":
+                raise HTTPException(status_code=401, detail="Geçersiz personel oturumu")
+            st = await db.venue_staff.find_one({"id": payload["sub"]}, {"_id": 0})
+            if not st or not st.get("active", True):
+                raise HTTPException(status_code=401, detail="Personel bulunamadı")
+            return st
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="Oturum süresi doldu")
+        except jwt.InvalidTokenError:
+            raise HTTPException(status_code=401, detail="Geçersiz token")
+
+    async def _ensure_kiosk_code(acc: dict) -> str:
+        if acc.get("kiosk_code"):
+            return acc["kiosk_code"]
+        alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        for _ in range(40):
+            code = "".join(secrets.choice(alphabet) for _ in range(5))
+            if not await db.venue_accounts.find_one({"kiosk_code": code}):
+                await db.venue_accounts.update_one({"id": acc["id"]}, {"$set": {"kiosk_code": code}})
+                return code
+        code = secrets.token_hex(3).upper()
+        await db.venue_accounts.update_one({"id": acc["id"]}, {"$set": {"kiosk_code": code}})
+        return code
 
     def _set_cookie(response: Response, access: str):
         response.set_cookie(key="venue_token", value=access, httponly=True, secure=True,
@@ -120,31 +156,8 @@ def get_router(db, deps):
     # ---- Auth ----------------------------------------------------------------
     @router.post("/register")
     async def register(payload: VenueRegisterIn, response: Response):
-        email = payload.email.lower().strip()
-        if not payload.kvkk_consent:
-            raise HTTPException(status_code=400, detail="KVKK metnini kabul etmelisiniz")
-        if await db.venue_accounts.find_one({"email": email}):
-            raise HTTPException(status_code=400, detail="Bu e-posta ile kayıtlı bir salon mevcut")
-        now = now_iso()
-        doc = {
-            "id": new_id(), "email": email, "password_hash": hash_password(payload.password),
-            "salon_adi": payload.salon_adi.strip(), "phone": payload.phone.strip(),
-            "city": payload.city.strip(), "role": "venue", "active": True,
-            "kvkk_consent": True, "created_at": now,
-        }
-        await db.venue_accounts.insert_one(doc)
-        try:
-            await db.notifications.insert_one({
-                "id": new_id(), "kind": "venue_register", "title": "Yeni salon kaydı",
-                "message": f"{doc['salon_adi']} ({email}) salon portalına katıldı.",
-                "severity": "general", "link": "/admin/uyelikler", "read": False,
-                "read_at": None, "created_at": now,
-            })
-        except Exception:
-            pass
-        access = create_access_token(doc["id"], email, "venue")
-        _set_cookie(response, access)
-        return {"account": _strip_venue(doc), "token": access}
+        # RBAC: salon hesapları artık yalnızca Site Admini tarafından açılır.
+        raise HTTPException(status_code=403, detail="Salon hesapları yalnızca Fotuber yönetimi tarafından oluşturulur. Lütfen bizimle iletişime geçin.")
 
     @router.post("/login")
     async def login(payload: VenueLoginIn, response: Response):
@@ -271,5 +284,312 @@ def get_router(db, deps):
             "valid": True, "code": c["code"], "code_type": c.get("code_type", "free"),
             "discount_percent": c.get("discount_percent", 0), "venue_name": c.get("venue_name", ""),
         }
+
+    # ========================================================================
+    # FAZ A — RBAC: Admin creates venue accounts + venue admin manages staff.
+    # ========================================================================
+    class AdminVenueAccountIn(BaseModel):
+        email: EmailStr
+        password: str = Field(min_length=6)
+        salon_adi: str = Field(min_length=2)
+        phone: str = ""
+        city: str = ""
+
+    class AdminVenueAccountPatch(BaseModel):
+        active: bool | None = None
+        password: str | None = None
+        salon_adi: str | None = None
+        phone: str | None = None
+        city: str | None = None
+
+    @router.post("/admin/accounts")
+    async def admin_create_venue(payload: AdminVenueAccountIn, admin: dict = Depends(require_admin)):
+        email = payload.email.lower().strip()
+        if await db.venue_accounts.find_one({"email": email}):
+            raise HTTPException(status_code=400, detail="Bu e-posta ile kayıtlı bir salon mevcut")
+        doc = {
+            "id": new_id(), "email": email, "password_hash": hash_password(payload.password),
+            "salon_adi": payload.salon_adi.strip(), "phone": payload.phone.strip(),
+            "city": payload.city.strip(), "role": "venue", "active": True,
+            "kvkk_consent": True, "created_at": now_iso(), "created_by_admin": admin.get("id"),
+        }
+        await db.venue_accounts.insert_one(doc)
+        return {"account": _strip_venue(doc)}
+
+    @router.get("/admin/accounts")
+    async def admin_list_venues(admin: dict = Depends(require_admin)):
+        rows = await db.venue_accounts.find(
+            {"is_admin_super": {"$ne": True}}, {"_id": 0, "password_hash": 0}
+        ).sort("created_at", -1).to_list(1000)
+        for r in rows:
+            r["staff_count"] = await db.venue_staff.count_documents({"venue_id": r["id"]})
+        return {"accounts": rows}
+
+    @router.patch("/admin/accounts/{vid}")
+    async def admin_patch_venue(vid: str, payload: AdminVenueAccountPatch, admin: dict = Depends(require_admin)):
+        acc = await db.venue_accounts.find_one({"id": vid})
+        if not acc:
+            raise HTTPException(status_code=404, detail="Salon bulunamadı")
+        upd = {}
+        if payload.active is not None: upd["active"] = payload.active
+        if payload.password: upd["password_hash"] = hash_password(payload.password)
+        for f in ("salon_adi", "phone", "city"):
+            v = getattr(payload, f)
+            if v is not None: upd[f] = v.strip()
+        if upd:
+            await db.venue_accounts.update_one({"id": vid}, {"$set": upd})
+        return {"ok": True}
+
+    @router.delete("/admin/accounts/{vid}")
+    async def admin_delete_venue(vid: str, admin: dict = Depends(require_admin)):
+        await db.venue_accounts.delete_one({"id": vid})
+        await db.venue_staff.delete_many({"venue_id": vid})
+        return {"ok": True}
+
+    # ---- Venue admin: staff management --------------------------------------
+    STAFF_ROLES = ["fotografci", "garson_sefi", "muzisyen", "salon_gorevlisi", "salon_muduru", "sanatci", "kameraman", "diger"]
+
+    class StaffIn(BaseModel):
+        name: str = Field(min_length=2, max_length=80)
+        job_role: str = "salon_gorevlisi"
+        pin: str = Field(min_length=4, max_length=6)
+
+    class StaffPatch(BaseModel):
+        name: str | None = None
+        job_role: str | None = None
+        pin: str | None = None
+        active: bool | None = None
+
+    def _staff_out(s: dict) -> dict:
+        return {"id": s["id"], "name": s.get("name"), "job_role": s.get("job_role"),
+                "active": s.get("active", True), "created_at": s.get("created_at")}
+
+    @router.get("/kiosk-code")
+    async def get_kiosk_code(acc: dict = Depends(get_current_venue)):
+        code = await _ensure_kiosk_code(acc)
+        return {"kiosk_code": code, "salon_adi": acc.get("salon_adi")}
+
+    @router.get("/staff")
+    async def list_staff(acc: dict = Depends(get_current_venue)):
+        rows = await db.venue_staff.find({"venue_id": acc["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
+        return {"staff": [_staff_out(s) for s in rows], "roles": STAFF_ROLES}
+
+    @router.post("/staff")
+    async def create_staff(payload: StaffIn, acc: dict = Depends(get_current_venue)):
+        if not payload.pin.isdigit():
+            raise HTTPException(status_code=400, detail="PIN yalnızca rakamlardan oluşmalı")
+        doc = {
+            "id": new_id(), "venue_id": acc["id"], "name": payload.name.strip(),
+            "job_role": payload.job_role if payload.job_role in STAFF_ROLES else "salon_gorevlisi",
+            "pin_hash": hash_password(payload.pin), "active": True, "created_at": now_iso(),
+        }
+        await db.venue_staff.insert_one(doc)
+        await _ensure_kiosk_code(acc)
+        return {"staff": _staff_out(doc)}
+
+    @router.patch("/staff/{sid}")
+    async def patch_staff(sid: str, payload: StaffPatch, acc: dict = Depends(get_current_venue)):
+        s = await db.venue_staff.find_one({"id": sid, "venue_id": acc["id"]})
+        if not s:
+            raise HTTPException(status_code=404, detail="Personel bulunamadı")
+        upd = {}
+        if payload.name is not None: upd["name"] = payload.name.strip()
+        if payload.job_role in STAFF_ROLES: upd["job_role"] = payload.job_role
+        if payload.active is not None: upd["active"] = payload.active
+        if payload.pin:
+            if not payload.pin.isdigit():
+                raise HTTPException(status_code=400, detail="PIN yalnızca rakamlardan oluşmalı")
+            upd["pin_hash"] = hash_password(payload.pin)
+        if upd:
+            await db.venue_staff.update_one({"id": sid}, {"$set": upd})
+        return {"ok": True}
+
+    @router.delete("/staff/{sid}")
+    async def delete_staff(sid: str, acc: dict = Depends(get_current_venue)):
+        await db.venue_staff.delete_one({"id": sid, "venue_id": acc["id"]})
+        return {"ok": True}
+
+    # ---- Staff KIOSK login (venue kiosk_code + numeric PIN) ------------------
+    class StaffLoginIn(BaseModel):
+        kiosk_code: str
+        pin: str
+
+    def _set_staff_cookie(response: Response, access: str):
+        response.set_cookie(key="venue_staff_token", value=access, httponly=True, secure=True,
+                            samesite="none", max_age=60 * 60 * 12, path="/")
+
+    @router.post("/staff/login")
+    async def staff_login(payload: StaffLoginIn, response: Response):
+        code = (payload.kiosk_code or "").strip().upper()
+        venue = await db.venue_accounts.find_one({"kiosk_code": code})
+        if not venue or not venue.get("active", True):
+            raise HTTPException(status_code=404, detail="Salon kodu bulunamadı")
+        # Brute-force lockout per (venue kiosk_code) — short PINs are weak.
+        lk = await db.venue_staff_attempts.find_one({"kiosk_code": code})
+        now = datetime.now(timezone.utc)
+        if lk and lk.get("locked_until") and lk["locked_until"] > now.isoformat():
+            raise HTTPException(status_code=429, detail="Çok fazla hatalı deneme. Birkaç dakika sonra tekrar deneyin.")
+        staff_list = await db.venue_staff.find({"venue_id": venue["id"], "active": True}).to_list(500)
+        matched = None
+        for s in staff_list:
+            if verify_password(payload.pin, s.get("pin_hash", "")):
+                matched = s
+                break
+        if not matched:
+            fails = (lk.get("fails", 0) if lk else 0) + 1
+            upd = {"kiosk_code": code, "fails": fails, "updated_at": now.isoformat()}
+            if fails >= 6:
+                upd["locked_until"] = (now + timedelta(minutes=10)).isoformat()
+                upd["fails"] = 0
+            await db.venue_staff_attempts.update_one({"kiosk_code": code}, {"$set": upd}, upsert=True)
+            raise HTTPException(status_code=401, detail="PIN hatalı")
+        await db.venue_staff_attempts.delete_one({"kiosk_code": code})
+        access = create_access_token(matched["id"], f"staff-{matched['id']}", "venue_staff")
+        _set_staff_cookie(response, access)
+        return {"token": access, "staff": {**_staff_out(matched), "venue_id": venue["id"],
+                "venue_name": venue.get("salon_adi"), "kiosk_code": code}}
+
+    @router.post("/staff/logout")
+    async def staff_logout(response: Response):
+        response.delete_cookie("venue_staff_token", path="/")
+        return {"ok": True}
+
+    @router.get("/staff/me")
+    async def staff_me(st: dict = Depends(get_current_staff)):
+        venue = await db.venue_accounts.find_one({"id": st["venue_id"]}, {"_id": 0, "salon_adi": 1})
+        return {"staff": {**_staff_out(st), "venue_id": st["venue_id"], "venue_name": (venue or {}).get("salon_adi")}}
+
+    # ========================================================================
+    # FAZ B — Floor Plan Builder + couple/guest assignment + hostess lookup.
+    # ========================================================================
+    class FloorPlanIn(BaseModel):
+        name: str = Field(default="Yeni Kroki", max_length=120)
+        invitation_id: str | None = None
+        area_type: str = "indoor"  # indoor | garden
+
+    class FloorPlanSaveIn(BaseModel):
+        name: str | None = None
+        invitation_id: str | None = None
+        area_type: str | None = None
+        elements: list = []          # canvas objects (fabric JSON-ish)
+        assignments: dict | None = None  # { elementId: [guestName, ...] }
+
+    def _plan_out(p: dict) -> dict:
+        return {"id": p["id"], "name": p.get("name"), "invitation_id": p.get("invitation_id"),
+                "area_type": p.get("area_type", "indoor"), "elements": p.get("elements", []),
+                "assignments": p.get("assignments", {}), "updated_at": p.get("updated_at"),
+                "created_at": p.get("created_at")}
+
+    @router.get("/floorplans")
+    async def list_plans(acc: dict = Depends(get_current_venue)):
+        rows = await db.venue_floorplans.find({"venue_id": acc["id"]}, {"_id": 0}).sort("updated_at", -1).to_list(200)
+        return {"plans": [{"id": r["id"], "name": r.get("name"), "area_type": r.get("area_type", "indoor"),
+                           "invitation_id": r.get("invitation_id"), "updated_at": r.get("updated_at"),
+                           "element_count": len(r.get("elements", []))} for r in rows]}
+
+    @router.post("/floorplans")
+    async def create_plan(payload: FloorPlanIn, acc: dict = Depends(get_current_venue)):
+        doc = {"id": new_id(), "venue_id": acc["id"], "name": payload.name.strip() or "Yeni Kroki",
+               "invitation_id": payload.invitation_id, "area_type": payload.area_type,
+               "elements": [], "assignments": {}, "created_at": now_iso(), "updated_at": now_iso()}
+        await db.venue_floorplans.insert_one(doc)
+        return {"plan": _plan_out(doc)}
+
+    @router.get("/floorplans/{pid}")
+    async def get_plan(pid: str, acc: dict = Depends(get_current_venue)):
+        p = await db.venue_floorplans.find_one({"id": pid, "venue_id": acc["id"]}, {"_id": 0})
+        if not p:
+            raise HTTPException(status_code=404, detail="Kroki bulunamadı")
+        return {"plan": _plan_out(p)}
+
+    @router.put("/floorplans/{pid}")
+    async def save_plan(pid: str, payload: FloorPlanSaveIn, acc: dict = Depends(get_current_venue)):
+        p = await db.venue_floorplans.find_one({"id": pid, "venue_id": acc["id"]})
+        if not p:
+            raise HTTPException(status_code=404, detail="Kroki bulunamadı")
+        upd = {"updated_at": now_iso(), "elements": payload.elements or []}
+        if payload.name is not None: upd["name"] = payload.name.strip() or p.get("name")
+        if payload.invitation_id is not None: upd["invitation_id"] = payload.invitation_id
+        if payload.area_type is not None: upd["area_type"] = payload.area_type
+        if payload.assignments is not None: upd["assignments"] = payload.assignments
+        await db.venue_floorplans.update_one({"id": pid}, {"$set": upd})
+        p = await db.venue_floorplans.find_one({"id": pid}, {"_id": 0})
+        return {"plan": _plan_out(p)}
+
+    @router.delete("/floorplans/{pid}")
+    async def delete_plan(pid: str, acc: dict = Depends(get_current_venue)):
+        await db.venue_floorplans.delete_one({"id": pid, "venue_id": acc["id"]})
+        return {"ok": True}
+
+    # ---- Couples linked to this venue (via redeemed invite codes) -----------
+    @router.get("/couples")
+    async def venue_couples(acc: dict = Depends(get_current_venue)):
+        codes = await db.venue_invite_codes.find(
+            {"venue_id": acc["id"], "status": "used", "used_invitation_id": {"$ne": None}},
+            {"_id": 0, "used_invitation_id": 1, "couple_name": 1}).to_list(2000)
+        out = []
+        seen = set()
+        for c in codes:
+            iid = c.get("used_invitation_id")
+            if not iid or iid in seen:
+                continue
+            seen.add(iid)
+            inv = await db.invitations.find_one({"id": iid},
+                {"_id": 0, "id": 1, "person1": 1, "person2": 1, "event_date": 1, "event_type": 1, "slug": 1})
+            if not inv:
+                continue
+            names = f"{inv.get('person1','')} & {inv.get('person2','')}".strip(" &") or c.get("couple_name", "")
+            yes = await db.invitation_rsvps.count_documents(
+                {"invitation_id": iid, "$or": [{"rsvp_choice": "yes"}, {"rsvp_choice": {"$in": [None, ""]}, "attending": True}]})
+            out.append({"invitation_id": iid, "names": names, "event_date": inv.get("event_date"),
+                        "event_type": inv.get("event_type"), "slug": inv.get("slug"), "attending_count": yes})
+        return {"couples": out}
+
+    @router.get("/couples/{iid}/guests")
+    async def venue_couple_guests(iid: str, acc: dict = Depends(get_current_venue)):
+        # only couples linked to this venue
+        link = await db.venue_invite_codes.find_one({"venue_id": acc["id"], "used_invitation_id": iid})
+        if not link:
+            raise HTTPException(status_code=403, detail="Bu çift salonunuza bağlı değil")
+        rows = await db.invitation_rsvps.find({"invitation_id": iid}, {"_id": 0}).sort("created_at", -1).to_list(100000)
+        guests = []
+        for r in rows:
+            choice = r.get("rsvp_choice") or ("yes" if r.get("attending") else "no")
+            if choice != "yes":
+                continue
+            full = f"{r.get('name','')} {r.get('surname','')}".strip()
+            party = 1 + len(r.get("companions") or [])
+            if full:
+                guests.append({"name": full, "party": party})
+        return {"guests": guests, "count": len(guests)}
+
+    # ---- Hostess kiosk: find a guest's table on a plan ----------------------
+    @router.get("/floorplans/{pid}/find")
+    async def hostess_find(pid: str, q: str = "", st: dict = Depends(get_current_staff)):
+        p = await db.venue_floorplans.find_one({"id": pid, "venue_id": st["venue_id"]}, {"_id": 0})
+        if not p:
+            raise HTTPException(status_code=404, detail="Kroki bulunamadı")
+        ql = (q or "").strip().lower()
+        results = []
+        assignments = p.get("assignments", {}) or {}
+        labels = {e.get("elId"): (e.get("label") or e.get("name") or "Masa") for e in (p.get("elements", []) or []) if e.get("elId")}
+        for el_id, names in assignments.items():
+            for nm in (names or []):
+                if ql and ql not in nm.lower():
+                    continue
+                results.append({"guest": nm, "element_id": el_id, "table_label": labels.get(el_id, "Masa")})
+        return {"results": results[:50], "plan_name": p.get("name")}
+
+    @router.get("/staff/floorplans")
+    async def staff_list_plans(st: dict = Depends(get_current_staff)):
+        rows = await db.venue_floorplans.find({"venue_id": st["venue_id"]}, {"_id": 0}).sort("updated_at", -1).to_list(200)
+        return {"plans": [{"id": r["id"], "name": r.get("name"), "area_type": r.get("area_type", "indoor")} for r in rows]}
+
+    @router.get("/staff/floorplans/{pid}")
+    async def staff_get_plan(pid: str, st: dict = Depends(get_current_staff)):
+        p = await db.venue_floorplans.find_one({"id": pid, "venue_id": st["venue_id"]}, {"_id": 0})
+        if not p:
+            raise HTTPException(status_code=404, detail="Kroki bulunamadı")
+        return {"plan": _plan_out(p)}
 
     return router

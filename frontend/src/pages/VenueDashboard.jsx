@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   LogOut, Plus, Copy, Trash2, Ticket, CheckCircle2, Clock, MessageCircle, Gift, Percent, Landmark,
-  FileDown, Send, Users, ListChecks, Megaphone, ArrowLeft, QrCode, Printer,
+  FileDown, Send, Users, ListChecks, Megaphone, ArrowLeft, QrCode, Printer, MapPin, KeyRound, UserPlus,
 } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
@@ -135,7 +135,7 @@ export default function VenueDashboard() {
 
         {/* Tabs */}
         <div className="flex gap-1 p-1 rounded-xl bg-white/5 w-fit mb-6">
-          {[["codes", "Kodlar", Ticket], ["report", "Kullanım Raporu", ListChecks], ["campaign", "Toplu Kampanya", Megaphone], ["poster", "QR Afiş", QrCode]].map(([k, label, Icon]) => (
+          {[["codes", "Kodlar", Ticket], ["report", "Kullanım Raporu", ListChecks], ["personel", "Personel", Users], ["kroki", "Salon Krokileri", MapPin], ["campaign", "Toplu Kampanya", Megaphone], ["poster", "QR Afiş", QrCode]].map(([k, label, Icon]) => (
             <button key={k} data-testid={`venue-tab-${k}`}
               onClick={() => { setTab(k); if (k === "report") loadReport(); }}
               className={`px-4 h-9 rounded-lg text-sm font-medium flex items-center gap-1.5 ${tab === k ? "bg-white text-neutral-900" : "text-white/60 hover:text-white"}`}>
@@ -147,6 +147,8 @@ export default function VenueDashboard() {
         {tab === "report" && <ReportView report={report} reload={loadReport} salon={acc?.salon_adi} />}
         {tab === "campaign" && <CampaignView salon={acc?.salon_adi} onDone={load} />}
         {tab === "poster" && <PosterView salon={acc?.salon_adi} city={acc?.city} />}
+        {tab === "personel" && <StaffView />}
+        {tab === "kroki" && <FloorPlansView navigate={navigate} />}
 
         {tab === "codes" && <>
         {/* Generator */}
@@ -501,6 +503,104 @@ function Stat({ icon: Icon, label, value, testid }) {
     <div data-testid={testid} className="rounded-2xl border border-white/12 bg-white/5 p-4">
       <div className="flex items-center gap-2 text-white/50 text-xs"><Icon size={14} /> {label}</div>
       <div className="text-2xl font-semibold mt-1">{value}</div>
+    </div>
+  );
+}
+
+// ── Staff management (venue admin) ──────────────────────────────────────────
+const ROLE_LABELS = { fotografci: "Fotoğrafçı", garson_sefi: "Garson Şefi", muzisyen: "Müzisyen/Orkestra", salon_gorevlisi: "Salon Görevlisi", salon_muduru: "Salon Müdürü", sanatci: "Sanatçı", kameraman: "Kameraman", diger: "Diğer" };
+function StaffView() {
+  const [staff, setStaff] = useState([]);
+  const [roles, setRoles] = useState(Object.keys(ROLE_LABELS));
+  const [kiosk, setKiosk] = useState("");
+  const [form, setForm] = useState({ name: "", job_role: "salon_gorevlisi", pin: "" });
+  const load = useCallback(async () => {
+    try {
+      const [s, k] = await Promise.all([venueApi.get("/venue/staff"), venueApi.get("/venue/kiosk-code")]);
+      setStaff(s.data?.staff || []); setRoles(s.data?.roles || roles); setKiosk(k.data?.kiosk_code || "");
+    } catch { /* ignore */ }
+  }, []); // eslint-disable-line
+  useEffect(() => { load(); }, [load]);
+  const add = async () => {
+    if (!form.name || !/^\d{4,6}$/.test(form.pin)) { toast.error("Ad ve 4-6 haneli PIN girin"); return; }
+    try { await venueApi.post("/venue/staff", form); toast.success("Personel eklendi"); setForm({ name: "", job_role: "salon_gorevlisi", pin: "" }); load(); }
+    catch (e) { toast.error(formatApiError(e)); }
+  };
+  const del = async (id) => { await venueApi.delete(`/venue/staff/${id}`); load(); };
+  const toggle = async (s) => { await venueApi.patch(`/venue/staff/${s.id}`, { active: !s.active }); load(); };
+  return (
+    <div className="space-y-5" data-testid="venue-staff-view">
+      <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-5">
+        <div className="flex items-center gap-2 mb-1"><KeyRound size={16} className="text-amber-300" /><h3 className="font-semibold">Salon Kiosk Kodu</h3></div>
+        <p className="text-xs text-white/50 mb-2">Personel, kapıdaki tablet/telefonda bu kod + kendi PIN'i ile <b>Personel Kiosk</b>'a giriş yapar.</p>
+        <div className="flex items-center gap-3">
+          <span className="text-2xl font-bold tracking-[0.35em] bg-white/10 rounded-lg px-4 py-2" data-testid="venue-kiosk-code">{kiosk || "…"}</span>
+          <a href="/salon/kiosk" target="_blank" rel="noreferrer" className="text-sm text-amber-300 hover:text-amber-200 underline">Kiosk sayfasını aç ↗</a>
+        </div>
+      </div>
+      <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-5">
+        <div className="flex items-center gap-2 mb-3"><UserPlus size={16} /><h3 className="font-semibold">Personel Ekle</h3></div>
+        <div className="grid sm:grid-cols-4 gap-2">
+          <Input data-testid="staff-name" placeholder="Ad Soyad" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-white/5 border-white/15 text-white" />
+          <Select value={form.job_role} onValueChange={(v) => setForm({ ...form, job_role: v })}>
+            <SelectTrigger data-testid="staff-role" className="bg-white/5 border-white/15 text-white"><SelectValue /></SelectTrigger>
+            <SelectContent>{roles.map((r) => <SelectItem key={r} value={r}>{ROLE_LABELS[r] || r}</SelectItem>)}</SelectContent>
+          </Select>
+          <Input data-testid="staff-pin" placeholder="PIN (4-6 hane)" value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, "").slice(0, 6) })} className="bg-white/5 border-white/15 text-white" />
+          <Button data-testid="staff-add" onClick={add} className="bg-amber-500 hover:bg-amber-600 text-black">Ekle</Button>
+        </div>
+      </div>
+      <div className="rounded-2xl border border-white/12 bg-white/[0.04] divide-y divide-white/5">
+        {staff.length === 0 && <p className="text-sm text-white/40 p-5">Henüz personel yok.</p>}
+        {staff.map((s) => (
+          <div key={s.id} className="flex items-center gap-3 p-4" data-testid={`staff-row-${s.id}`}>
+            <div className="flex-1"><div className="font-medium">{s.name}</div><div className="text-xs text-white/50">{ROLE_LABELS[s.job_role] || s.job_role} {!s.active && "· pasif"}</div></div>
+            <Button size="sm" variant="outline" className="text-black" onClick={() => toggle(s)}>{s.active ? "Pasifleştir" : "Aktifleştir"}</Button>
+            <Button size="sm" variant="outline" className="text-red-500" onClick={() => del(s.id)}><Trash2 size={14} /></Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Floor plans list (venue admin) ─────────────────────────────────────────
+function FloorPlansView({ navigate }) {
+  const [plans, setPlans] = useState([]);
+  const [form, setForm] = useState({ name: "", area_type: "indoor" });
+  const load = useCallback(() => venueApi.get("/venue/floorplans").then(({ data }) => setPlans(data.plans || [])).catch(() => {}), []);
+  useEffect(() => { load(); }, [load]);
+  const create = async () => {
+    try { const { data } = await venueApi.post("/venue/floorplans", { name: form.name || "Yeni Kroki", area_type: form.area_type }); navigate(`/salon/kroki/${data.plan.id}`); }
+    catch (e) { toast.error(formatApiError(e)); }
+  };
+  const del = async (id) => { if (!window.confirm("Kroki silinsin mi?")) return; await venueApi.delete(`/venue/floorplans/${id}`); load(); };
+  return (
+    <div className="space-y-5" data-testid="venue-kroki-view">
+      <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-5">
+        <div className="flex items-center gap-2 mb-3"><MapPin size={16} /><h3 className="font-semibold">Yeni Kroki</h3></div>
+        <div className="grid sm:grid-cols-3 gap-2">
+          <Input data-testid="kroki-name" placeholder="Kroki adı (örn. Ana Salon)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-white/5 border-white/15 text-white" />
+          <Select value={form.area_type} onValueChange={(v) => setForm({ ...form, area_type: v })}>
+            <SelectTrigger data-testid="kroki-area" className="bg-white/5 border-white/15 text-white"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="indoor">🏛️ Kapalı Salon</SelectItem><SelectItem value="garden">🌳 Kır Bahçesi</SelectItem></SelectContent>
+          </Select>
+          <Button data-testid="kroki-create" onClick={create} className="bg-amber-500 hover:bg-amber-600 text-black">Oluştur & Çiz</Button>
+        </div>
+      </div>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {plans.length === 0 && <p className="text-sm text-white/40">Henüz kroki yok. Yukarıdan oluşturun.</p>}
+        {plans.map((p) => (
+          <div key={p.id} className="rounded-2xl border border-white/12 bg-white/[0.04] p-4" data-testid={`kroki-card-${p.id}`}>
+            <div className="font-medium">{p.name}</div>
+            <div className="text-xs text-white/50 mb-3">{p.area_type === "garden" ? "🌳 Kır Bahçesi" : "🏛️ Kapalı Salon"} · {p.element_count || 0} öğe</div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => navigate(`/salon/kroki/${p.id}`)} className="bg-white/10 hover:bg-white/20" data-testid={`kroki-open-${p.id}`}>Düzenle</Button>
+              <Button size="sm" variant="outline" className="text-red-500" onClick={() => del(p.id)}><Trash2 size={14} /></Button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

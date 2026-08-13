@@ -7313,6 +7313,7 @@ _module_deps = {
     "set_auth_cookies": set_auth_cookies,
     "clear_auth_cookies": clear_auth_cookies,
     "get_current_user": get_current_user,
+    "require_admin": require_admin,
     "new_id": new_id,
     "now_iso": now_iso,
     "put_object": put_object,

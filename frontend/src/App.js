@@ -30,6 +30,8 @@ import StudioPackages from "@/pages/StudioPackages";
 import StudioGallery from "@/pages/StudioGallery";
 import VenuePortal from "@/pages/VenuePortal";
 import VenueDashboard from "@/pages/VenueDashboard";
+import FloorPlanBuilder from "@/pages/FloorPlanBuilder";
+import StaffKiosk from "@/pages/StaffKiosk";
 import GallerySelect from "@/pages/GallerySelect";
 import StudioChatWidget from "@/components/StudioChatWidget";
 
@@ -63,6 +65,7 @@ import AdminAlbumDetail from "@/pages/admin/AdminAlbumDetail";
 import AdminGuestEvents from "@/pages/admin/AdminGuestEvents";
 import AdminProductOptions from "@/pages/admin/AdminProductOptions";
 import AdminVenues from "@/pages/admin/AdminVenues";
+import AdminVenueAccounts from "@/pages/admin/AdminVenueAccounts";
 import AdminIntroSettings from "@/pages/admin/AdminIntroSettings";
 import AdminInstagramSlideshow from "@/pages/admin/AdminInstagramSlideshow";
 import AdminAIAssistant from "@/pages/admin/AdminAIAssistant";
@@ -142,6 +145,8 @@ function App() {
               <Route path="/galeri/:token" element={<GallerySelect />} />
               <Route path="/salon" element={<VenuePortal />} />
               <Route path="/salon/panel" element={<VenueDashboard />} />
+              <Route path="/salon/kroki/:id" element={<FloorPlanBuilder />} />
+              <Route path="/salon/kiosk" element={<StaffKiosk />} />
 
               <Route
                 path="/randevularim"
@@ -174,6 +179,7 @@ function App() {
               <Route path="/admin/albumler/:id" element={<AdminGuard><AdminAlbumDetail /></AdminGuard>} />
               <Route path="/admin/etkinlikler" element={<AdminGuard><AdminGuestEvents /></AdminGuard>} />
               <Route path="/admin/mekanlar" element={<AdminGuard><AdminVenues /></AdminGuard>} />
+              <Route path="/admin/salon-hesaplari" element={<AdminGuard><AdminVenueAccounts /></AdminGuard>} />
               <Route path="/admin/urun-secenekleri" element={<AdminGuard><AdminProductOptions /></AdminGuard>} />
               <Route path="/admin/animasyon-ayarlari" element={<AdminGuard><AdminIntroSettings /></AdminGuard>} />
               <Route path="/admin/instagram-slayt" element={<AdminGuard><AdminInstagramSlideshow /></AdminGuard>} />

@@ -65,29 +65,12 @@ export default function VenuePortal() {
           <p className="mt-1 text-sm text-white/55">Düğün salonlarına özel · davet kodu üret, takip et</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-white/5 mb-6">
-          {["login", "register"].map((m) => (
-            <button key={m} type="button" data-testid={`venue-tab-${m}`} onClick={() => setMode(m)}
-              className={`h-9 rounded-lg text-sm font-medium transition-colors ${
-                mode === m ? "bg-white text-neutral-900" : "text-white/60 hover:text-white"}`}>
-              {m === "login" ? "Giriş Yap" : "Salon Kaydı"}
-            </button>
-          ))}
+        <div className="mb-6 rounded-xl bg-white/5 p-3 text-center">
+          <span className="text-sm font-medium text-white">Giriş Yap</span>
+          <p className="mt-1 text-[11px] text-white/45">Salon hesapları Fotuber yönetimi tarafından açılır. Personel girişi için <Link to="/salon/kiosk" className="text-rose-300 hover:text-rose-200 underline">Personel Kiosk</Link>.</p>
         </div>
 
         <form onSubmit={submit} noValidate className="space-y-3.5">
-          {mode === "register" && (
-            <>
-              <Field icon={Building2}>
-                <Input data-testid="venue-salon" placeholder="Salon adı" value={form.salon_adi}
-                  onChange={(e) => upd("salon_adi", e.target.value)} required className="pl-10 h-11 bg-white/5 border-white/15 text-white placeholder:text-white/40" />
-              </Field>
-              <Field icon={MapPin}>
-                <Input data-testid="venue-city" placeholder="Şehir (opsiyonel)" value={form.city}
-                  onChange={(e) => upd("city", e.target.value)} className="pl-10 h-11 bg-white/5 border-white/15 text-white placeholder:text-white/40" />
-              </Field>
-            </>
-          )}
           <Field icon={Mail}>
             <Input data-testid="venue-email" type="email" placeholder="E-posta" value={form.email}
               onChange={(e) => upd("email", e.target.value)} required className="pl-10 h-11 bg-white/5 border-white/15 text-white placeholder:text-white/40" />
@@ -100,21 +83,9 @@ export default function VenuePortal() {
               {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </Field>
-          {mode === "register" && (
-            <>
-              <Field icon={Phone}>
-                <Input data-testid="venue-phone" placeholder="Telefon (opsiyonel)" value={form.phone}
-                  onChange={(e) => upd("phone", e.target.value)} className="pl-10 h-11 bg-white/5 border-white/15 text-white placeholder:text-white/40" />
-              </Field>
-              <label className="flex items-start gap-2 text-xs text-white/60 leading-relaxed">
-                <input data-testid="venue-kvkk" type="checkbox" checked={form.kvkk} onChange={(e) => upd("kvkk", e.target.checked)} className="mt-0.5" />
-                KVKK aydınlatma metnini ve kullanım koşullarını okudum, onaylıyorum.
-              </label>
-            </>
-          )}
           <Button data-testid="venue-submit" type="submit" disabled={busy}
             className="w-full h-11 gap-2 bg-gradient-to-r from-rose-400 to-rose-600 text-white font-semibold hover:from-rose-300 hover:to-rose-500">
-            {busy ? "..." : mode === "login" ? "Salon Paneline Giriş" : "Salon Hesabı Oluştur"} <ArrowRight size={18} />
+            {busy ? "..." : "Salon Paneline Giriş"} <ArrowRight size={18} />
           </Button>
         </form>
 

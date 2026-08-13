@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, CalendarDays, CalendarClock, Users, Wallet,
   ImageIcon, Camera, LogOut, Menu, X, Package, Settings, Coins, Ticket, Film, KeyRound, ArrowLeftRight,
-  Images, QrCode, Frame, MapPin, Instagram, Bot, Contact, BadgeCheck, Wand2, Bell, SlidersHorizontal, Megaphone, Inbox, Monitor,
+  Images, QrCode, Frame, MapPin, Instagram, Bot, Contact, BadgeCheck, Wand2, Bell, SlidersHorizontal, Megaphone, Inbox, Monitor, Building2,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
@@ -18,6 +18,7 @@ const items = [
   { to: "/admin/takvim", label: "Takvim & Kapatma", icon: CalendarClock },
   { to: "/admin/albumler", label: "Fotoğraf Seçim Albümleri", icon: Images },
   { to: "/admin/mekanlar", label: "Mekanlar (Sabit QR)", icon: MapPin },
+  { to: "/admin/salon-hesaplari", label: "Salon Hesapları (B2B)", icon: Building2 },
   { to: "/admin/etkinlikler", label: "Etkinlikler & Yükleme Linkleri", icon: QrCode },
   { to: "/admin/urun-secenekleri", label: "Tablo & Albüm Modelleri", icon: Frame },
   { to: "/admin/finans", label: "Finans", icon: Wallet },

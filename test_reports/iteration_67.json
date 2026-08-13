@@ -1,0 +1,31 @@
+{
+  "summary": "Frontend end-to-end verification of the new B2B Wedding Venue module (FAZ A RBAC + FAZ B Floor Plan Builder) via Playwright. All primary flows PASS: admin venue-accounts management, self-register disabled on /salon, venue login, staff CRUD, kiosk PIN login (right & wrong), floor plan create → add symbols → toolbar → save → reload persistence, guest assignment panel (empty-state graceful), and Kodlar regression tab renders. Only minor UX issues found, no functional blockers.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "StaffKiosk", "issue": "Wrong PIN does not display any visible error/toast to the user; the request fails silently (kiosk-home never opens which is correct, but user gets no feedback about why login was rejected).", "selector": "[data-testid=\"kiosk-login-btn\"]", "priority": "MEDIUM"},
+      {"component": "FloorPlanBuilder", "issue": "Every symbol added from the palette is placed at the same default coordinates (left:140, top:120), so multiple elements stack exactly on top of each other and only the last one is visible until the user drags them apart. Recommend auto-offsetting each new element (e.g. +20px per add) or dropping at the canvas centre with jitter.", "selector": "[data-testid^=\"fp-add-\"]", "priority": "LOW"},
+      {"component": "Sonner toast overlay", "issue": "After venue login the 'Giriş başarılı' toast (top-right) can overlay the Kaydet / other action buttons for ~4s. Playwright force-click bypasses it, but a real user clicking Kaydet immediately after landing may find the click swallowed. Consider moving the toast to bottom-right or reducing z-index. Reproduced: first attempt to click fp-save right after login produced NO PUT request; second attempt after waiting for toast dismissal saved correctly.", "selector": "[data-sonner-toast]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Show a visible error (toast or inline text) on wrong kiosk PIN in StaffKiosk.jsx (current silent failure is confusing).",
+    "In FloorPlanBuilder.addSymbol, offset new elements by e.g. (els.length % 10)*24 px on both axes so consecutive additions don't overlap the previous one.",
+    "Lower z-index of the venue-panel success toast or auto-dismiss faster to avoid intercepting Kaydet/fp-save clicks."
+  ],
+  "critical_code_review_comments": [
+    "FloorPlanBuilder.jsx line 41: default position (left:140, top:120) for every new element causes stacking — see UI bug above.",
+    "FloorPlanBuilder.jsx line 86: name onBlur PUT overwrites elements/assignments with current state, which is fine, but there is no debounce; rapid focus/blur cycles will spam PUTs. Not a bug, just an efficiency note."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not-tested (per request)", "frontend": "~95% (all critical flows pass; 3 minor UX issues)"},
+  "test_credentials": "Admin admin@fotuber.com.tr / FTB.2024, Venue salon-b2b@test.com / salon123, Kiosk code FL39N + PIN 4321 — all verified working.",
+  "seed_data_creation": "Playwright created a few test venue accounts (testvenue*@t.com) and floor plans (Persist Plan / Reload Plan / Ana Salon *) under the B2B Test Salonu venue. Also added a couple of 'Test Personel *' staff entries. Non-destructive to seeded data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The venue module is functionally complete. Guest assignment + Hostess find could not be end-to-end tested because no couple has redeemed this venue's invite code (couples list is empty) — the empty state renders correctly with the informational text. To test the hostess-find flow, first generate a venue invite code in the 'Kodlar' tab, redeem it via the digital invitation wizard, add guests to the invitation, publish it, then return to the builder → fp-guests-toggle → select the couple in fp-couple-select → assign a guest to a table → save → open /salon/kiosk, log in with FL39N/4321, select the plan in kiosk-plan-select, type the guest name in kiosk-search, expect kiosk-result-0 and highlighting on kiosk-plan.",
+  "rca of the issue": "Save-not-persisting on first attempt was reproduced twice: root cause is the Sonner 'Giriş başarılı' toast (top-right) rendered above the Kaydet button in the builder page immediately after login and intercepted the pointer event even though Playwright used force=True (React synthetic events not fired for real user click). Mitigation: wait ~3s for toast to dismiss OR reduce toast z-index / move to bottom. Not a data-layer bug — backend PUT works, GET reload correctly returns saved elements."
+}

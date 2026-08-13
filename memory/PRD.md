@@ -815,3 +815,14 @@ Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay
 - **Gatekeeper rehberi**: `components/DesktopDownloadButtons.jsx` içine macOS "nasıl açılır?" açılır bölümü eklendi (hem tam hem compact): sağ tık → Aç; hâlâ "hasarlı" derse Terminal'de `xattr -cr "/Applications/Fotuber Stüdyo.app"` (kopyala butonlu). Apple hesabı olmadan Gatekeeper sürtünmesi kaçınılmaz ama artık yönlendiriliyor. Studio login (/studyo) + dashboard'da görünüyor, doğrulandı (screenshot).
 - **Bekleyen**: Kullanıcı "Save to Github" → GitHub Actions → yeni arm64 `.dmg` indirip Mac'te test edecek. Çözülmezse tek kesin çözüm Apple Developer hesabıyla notarization (P2).
 
+
+## Session BC — B2B Düğün Salonu Modülü FAZ A + B (verified iteration_67, frontend ~%95)
+- **FAZ A (RBAC)**: Salon hesapları YALNIZCA Site Admini açar (self-register 403; VenuePortal artık sadece login). Admin sayfası `/admin/salon-hesaplari` (AdminVenueAccounts): oluştur/listele/aktif-pasif/şifre/sil. Salon admini **personel** tanımlar (ad + iş rolü + sayısal PIN). **Personel kiosk girişi**: salon `kiosk_code` + PIN (e-posta yok), ayrı JWT rol `venue_staff` + `venue_staff_token` cookie/localStorage, per-kiosk_code brute-force lockout (6 hata → 10 dk).
+- **FAZ B (Kat Planı Çizici)**: `/salon/kroki/:id` (FloorPlanBuilder) — özel sürükle-bırak tuval (fabric YOK), `lib/venueSymbols.js` sembol kütüphanesi (mimari/sahne/peyzaj/oturma). Öğe: taşı/döndür/boyutlandır/sil, etiket düzenle. Kaydet/yükle (venue_floorplans). **Davetli atama**: davet kodunu kullanan çiftler (`/venue/couples`) → RSVP "yes" davetlileri (`/venue/couples/{id}/guests`) masalara ata. **Hostes Kiosk** (`/salon/kiosk`, StaffKiosk): numpad PIN girişi, plan seç, davetli ara → masa + krokide vurgulama (read-only plan).
+- **Masa kişi sayısı AYARLANABİLİR** (kullanıcı isteği): her masa öğesi kendi `seats` değerini tutar; toolbar'da +/- ve sayı girişi (fp-seats-*); kapasite aşılırsa sayaç kırmızı olur. Sembol varsayılanları başlangıç değeri.
+- **Backend**: `routers/venue.py` genişletildi (admin/accounts, staff CRUD, staff/login, kiosk-code, floorplans CRUD, couples, couples/{id}/guests, floorplans/{id}/find, staff/floorplans). `require_admin` deps'e eklendi. Tümü curl ile doğrulandı.
+- **Düzeltmeler (iteration_67 minör)**: kiosk yanlış-PIN artık görünür hata (inline + toast, kiosk-error); yeni semboller üst üste binmesin diye offset (els.length%10*26). Bekleyen minör: venue-login success toast'ı builder Kaydet butonunu ~4sn örtebiliyor (LOW).
+- **Test kimlikleri**: Venue `salon-b2b@test.com`/`salon123`, kiosk_code `FL39N`, staff PIN `4321` (test_credentials.md güncellendi).
+- **Not**: Hostes-find uçtan uca UI testi yapılamadı (bu salonun kodunu kullanan çift yok → couples boş, empty-state doğru). Backend find curl ile çalışıyor.
+- **Bekleyen FAZ C + D**: Run of Show akış + personel kiosk sesli/pop-up bildirim (polling); Ek Hizmet Pazar Yeri (upsell).
+
