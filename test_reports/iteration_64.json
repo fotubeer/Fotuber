@@ -1,0 +1,25 @@
+{
+  "summary": "FAZ 2 frontend testing (Turkish digital invitation catalog) verified successfully. Catalog cards render real mini-preview thumbnails via TemplateThumb (gradient bg + decorative SVG overlay + script/foil names 'Elif & Kaan' + divider + 31 ARALIK 2026) across categories. Photo templates (wed-photo, eng-photo, kina-photo, sun-photo) appear in their respective category tabs with the '· Fotoğraflı' label and the small photo icon badge. tpl-inspect-wed-photo opens tpl-inspect-modal with the InvitationPreview + decorative SVG overlay; with no uploaded cover, preview-photo gracefully falls back (no crash). Selecting a template updates the live invitation-preview and the decorative SVG overlay is rendered. GUEST kına photo invitation /davetiye/elif-kaan-173c7b loads (not stuck on spinner), reveal-open-btn works, curtain reveal plays, reveal-mute + reveal-skip are present, and after opening the animated oriental mandala motif is clearly visible above the E&K names. GUEST /davetiye/elif-kaan-33b9f6 (wed-photo envelope) loads and opens without errors. Regression: /davetiye/ahmet-yasemin-9a66eb still loads/reveals and the RSVP flow (rsvp-name + rsvp-surname + rsvp-yes + rsvp-submit) confirms 'Yanıtınız kaydedildi. Teşekkür ederiz!'. No uncaught JS/pageerror from TemplateDecor / TemplateThumb; only benign 401s for an anonymous auth-check resource.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/davetiye/elif-kaan-173c7b (kına-photo)", "issues": ["Category label chip in reveal/preview shows 'DÜĞÜN' rather than 'KINA GECESİ' although visual (bordo + oriental mandala + gold foil) is clearly kına. Likely the stored event_type on this test invitation is 'dugun'. Not a FAZ 2 regression; worth double-checking the seed slug metadata."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "TemplateDecor.jsx: opacity+animate props are well-scoped; the animated oriental mandala uses infinite rotation which could be a mild CPU drain on very low-end mobiles — acceptable for hero scene.",
+    "TemplateThumb.jsx: hard-coded label '31 ARALIK 2026' and 'Elif & Kaan' — fine as a static thumbnail, just document it is preview-only.",
+    "invitationTemplates.js: eng-photo/kina-photo/sun-photo cards not visible in the default (dugun) tab is expected (they filter by category); confirmed present when the correct category tab is selected."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100%"},
+  "test_credentials": "Not used (public flows).",
+  "seed_data_creation": "None. Used existing slugs elif-kaan-173c7b, elif-kaan-33b9f6, ahmet-yasemin-9a66eb.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "FAZ 2 (decor SVG overlays, animated oriental mandala for Kına, canvas-free TemplateThumb previews, photo templates wed/eng/kina/sun-photo) verified 100% end-to-end on the public site. Only cosmetic note: guest slug elif-kaan-173c7b shows 'DÜĞÜN' category label — verify seed event_type if E1 wants strict labelling."
+}

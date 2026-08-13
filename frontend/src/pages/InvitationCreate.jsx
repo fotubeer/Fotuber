@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import InvitationPreview from "@/components/invitation/InvitationPreview";
 import { loadGoogleFont } from "@/lib/designFonts";
 import TemplateReveal from "@/components/invitation/TemplateReveal";
+import TemplateThumb from "@/components/invitation/TemplateThumb";
 import VoiceRecorder from "@/components/invitation/VoiceRecorder";
 import { EVENT_TYPE_LABELS, printColors } from "@/lib/invitationThemes";
 import { INVITATION_CATEGORIES, templatesByCategory, getTemplate, priceThemeFor, resolveVisual } from "@/lib/invitationTemplates";
@@ -516,13 +517,12 @@ export default function InvitationCreate() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-1">
             {templatesByCategory(galCat).map((th) => (
               <div key={th.id} className={`rounded-xl overflow-hidden border ${data.template === th.id ? "ring-2 ring-indigo-500" : "border-slate-200"}`} data-testid={`tpl-card-${th.id}`}>
-                <div className="h-28 flex flex-col items-center justify-center relative gap-1" style={{ background: th.bg }}>
-                  <span style={{ color: th.accent, fontFamily: th.script }} className="text-2xl leading-none">Aa</span>
-                  <span style={{ color: th.sub, fontFamily: th.heading }} className="text-[10px] tracking-widest uppercase">{th.name}</span>
-                  {th.premium && <span className="absolute top-1 right-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950 flex items-center gap-0.5"><Lock className="w-2.5 h-2.5" />PREMIUM</span>}
+                <div className="relative">
+                  <TemplateThumb tpl={th} names={data.person1 ? (data.person2 ? `${data.person1} & ${data.person2}` : data.person1) : "Elif & Kaan"} label={EVENT_TYPE_LABELS[INVITATION_CATEGORIES.find((c)=>c.key===th.category)?.eventType] || "Davetiye"} height={124} />
+                  {th.premium && <span className="absolute top-1 right-1 z-10 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950 flex items-center gap-0.5"><Lock className="w-2.5 h-2.5" />PREMIUM</span>}
                 </div>
                 <div className="p-2 bg-white">
-                  <div className="text-xs font-medium text-slate-800 truncate">{th.name}</div>
+                  <div className="text-xs font-medium text-slate-800 truncate">{th.name}{th.photo && <span className="ml-1 text-[9px] text-indigo-600">· Fotoğraflı</span>}</div>
                   <div className="flex gap-1 mt-1">
                     <button onClick={() => setPreviewTpl(th.id)} className="flex-1 text-[11px] py-1 rounded border border-slate-200 text-slate-600" data-testid={`tpl-inspect-${th.id}`}>İncele</button>
                     <button onClick={() => { selectTemplate(th.id); setTplOpen(false); }} className="flex-1 text-[11px] py-1 rounded bg-indigo-600 text-white" data-testid={`tpl-use-${th.id}`}>Kullan</button>
@@ -604,6 +604,7 @@ export default function InvitationCreate() {
           <TemplateReveal key={previewKey}
             t={resolveVisual(data)} eventLabel={EVENT_TYPE_LABELS[data.event_type] || "Davetiye"}
             welcomeText={data.welcome_text || ""}
+            coverUrl={data.cover_image_id ? `${API}/api/invitations/cover/${data.cover_image_id}` : ""}
             names={data.person2 ? `${data.person1 || "İsim"} & ${data.person2}` : (data.person1 || "İsimler")}
             initials={`${(data.person1 || "").trim()[0] || ""}${(data.person2 || "").trim()[0] || ""}`.toUpperCase() || "♥"}
             onDone={() => {}} />

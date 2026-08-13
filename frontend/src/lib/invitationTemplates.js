@@ -265,7 +265,31 @@ export const INVITATION_TEMPLATES = {
     bg: "radial-gradient(1200px 600px at 50% -10%, #14203a 0%, #0e1729 45%, #070d18 100%)",
     border: "rgba(150,180,230,0.28)", accent: "#9ab4e6", text: "#eaf0fb", sub: "#aabbd8",
     dark: true, heading: MARCELLUS, script: JOSEF, particles: "bokeh", particleColor: "#9ab4e6", texture: "dark", reveal: "card", wax: "#1a2a4a" }),
+
+  // ═══════════ 📷 FOTOĞRAFLI (premium, çift fotoğrafı zarf/kart içinde) ═══════════
+  "wed-photo": T({ category: "dugun", name: "Fotoğraflı Altın", premium: true, photo: true, decor: "art_deco",
+    bg: "radial-gradient(1200px 700px at 50% -10%, #191510 0%, #0f0b07 45%, #060402 100%)",
+    border: "rgba(200,162,74,0.4)", accent: "#d4af37", text: "#f5eede", sub: "#c9bd9a",
+    dark: true, heading: CINZEL, script: S, foil: GOLD_FOIL, particles: "gold_dust", particleColor: "#e6c260", texture: "dark", reveal: "envelope", wax: "#5a3d12" }),
+  "eng-photo": T({ category: "nisan", name: "Fotoğraflı Roz", premium: true, photo: true, decor: "floral_corner",
+    bg: "radial-gradient(1200px 600px at 50% -10%, #f8ecec 0%, #fdf6f4 45%, #efdcd8 100%)",
+    border: "rgba(190,120,120,0.3)", accent: "#c07d76", text: "#432f2c", sub: "#94706a",
+    heading: PLAYFAIR, script: S, foil: ROSE_FOIL, particles: "rose_petals", particleColor: "#e6b3b0", texture: "marble", reveal: "card", wax: "#9a5c56" }),
+  "kina-photo": T({ category: "kina", name: "Fotoğraflı Bordo", premium: true, photo: true, decor: "oriental",
+    bg: "radial-gradient(1200px 700px at 50% -10%, #4a0f12 0%, #33080b 45%, #1c0406 100%)",
+    border: "rgba(230,180,90,0.4)", accent: "#e6b45a", text: "#fbe9cf", sub: "#d9b48a",
+    dark: true, heading: CINZEL, script: S, foil: GOLD_FOIL, particles: "orient", particleColor: "#e6b45a", texture: "dark", reveal: "curtain", wax: "#7a1418" }),
+  "sun-photo": T({ category: "sunnet", name: "Fotoğraflı Mavi", premium: true, photo: true, decor: "star_frame",
+    bg: "radial-gradient(1200px 700px at 50% -10%, #0f2444 0%, #0a1930 45%, #050e1c 100%)",
+    border: "rgba(230,200,120,0.36)", accent: "#e6c878", text: "#eaf2ff", sub: "#a9c0e0",
+    dark: true, heading: CINZEL, script: S, foil: GOLD_FOIL, particles: "confetti", particleColor: "#e6c878", texture: "dark", reveal: "envelope", wax: "#123a6d" }),
 };
+
+// Decorative identity per template (drives TemplateDecor SVG overlay).
+export const decorFor = (tpl) => (tpl && tpl.decor) || ({
+  dugun: "art_deco", nisan: "floral_corner", kina: "oriental",
+  nikah: "minimal_frame", bride: "confetti_frame", sunnet: "star_frame", kurumsal: "geo_corners",
+}[tpl && tpl.category] || "minimal_frame");
 
 export const getTemplate = (id) => INVITATION_TEMPLATES[id] || null;
 
@@ -282,6 +306,8 @@ export const resolveVisual = (data) => {
     const v = { ...tpl };
     if (data.primary_color) v.accent = data.primary_color;
     if (data.font_family) { const fam = `'${data.font_family}', serif`; v.script = fam; v.heading = fam; }
+    v.decor = decorFor(tpl);
+    v.photo = !!tpl.photo;
     return v;
   }
   // Legacy fallback: map old themes → engine defaults so they still get particles.
@@ -298,6 +324,7 @@ export const resolveVisual = (data) => {
     particleColor: t.accent,
     texture: t.dark ? "dark" : "cotton",
     reveal: data && data.reveal_style === "minimal" ? "card" : "envelope",
+    decor: "minimal_frame", photo: false,
     wax: t.accent,
   };
 };

@@ -137,6 +137,7 @@ export default function InvitationView() {
       {!opened && (
         <TemplateReveal t={t} eventLabel={EVENT_TYPE_LABELS[inv.event_type] || "Davetiye"}
           welcomeText={inv.welcome_text || ""}
+          coverUrl={inv.cover_image_id ? `${API}/api/invitations/cover/${inv.cover_image_id}` : ""}
           names={inv.person2 ? `${inv.person1} & ${inv.person2}` : inv.person1}
           initials={initials} onDone={() => setOpened(true)} />
       )}

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Volume2, VolumeX, ChevronsRight, Sparkles } from "lucide-react";
 import FoilText from "@/components/invitation/FoilText";
 import ParticleCanvas from "@/components/invitation/ParticleCanvas";
+import TemplateDecor from "@/components/invitation/TemplateDecor";
 import useParallaxTilt from "@/hooks/useParallaxTilt";
 import { createRevealSound } from "@/components/invitation/revealSound";
 
@@ -25,7 +26,7 @@ const textureBg = (kind, dark) => {
   return "radial-gradient(120% 120% at 30% 20%, #fdfaf4, #f4ecdf 60%, #ece0cd)";
 };
 
-export default function TemplateReveal({ t, names = "", initials = "♥", eventLabel = "Davetiye", welcomeText = "", onDone }) {
+export default function TemplateReveal({ t, names = "", initials = "♥", eventLabel = "Davetiye", welcomeText = "", coverUrl = "", onDone }) {
   const reveal = t?.reveal || "envelope";
   const [phase, setPhase] = useState("idle"); // idle | open
   const [gone, setGone] = useState(false);
@@ -61,9 +62,9 @@ export default function TemplateReveal({ t, names = "", initials = "♥", eventL
   const tiltStyle = { transform: `perspective(1200px) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg)`, transformStyle: "preserve-3d" };
 
   const Scene =
-    reveal === "card" ? <CardScene {...{ t, open, names, initials, welcome, eventLabel, tiltStyle }} />
-    : reveal === "curtain" ? <CurtainScene {...{ t, open, names, initials, welcome, eventLabel, tiltStyle }} />
-    : <EnvelopeScene {...{ t, open, names, initials, welcome, eventLabel, tiltStyle }} />;
+    reveal === "card" ? <CardScene {...{ t, open, names, initials, welcome, eventLabel, tiltStyle, coverUrl }} />
+    : reveal === "curtain" ? <CurtainScene {...{ t, open, names, initials, welcome, eventLabel, tiltStyle, coverUrl }} />
+    : <EnvelopeScene {...{ t, open, names, initials, welcome, eventLabel, tiltStyle, coverUrl }} />;
 
   return (
     <AnimatePresence>
@@ -112,21 +113,29 @@ export default function TemplateReveal({ t, names = "", initials = "♥", eventL
   );
 }
 
-// ── Shared card content (foil names + welcome) ─────────────────────────────
-const CardBody = ({ t, names, initials, welcome, eventLabel, delay = 0 }) => {
+// ── Shared card content (foil names + welcome + optional photo) ────────────
+const CardBody = ({ t, names, initials, welcome, eventLabel, delay = 0, coverUrl }) => {
   const accent = t?.accent || "#c8a24a";
   const foil = t?.foil;
+  const showPhoto = t?.photo && coverUrl;
   return (
     <div className="w-full flex flex-col items-center justify-center text-center px-8">
       <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: delay + 0.1, duration: 0.7 }}
         className="text-[11px] tracking-[0.45em] uppercase mb-5" style={{ color: t?.sub, fontFamily: "'Montserrat', sans-serif" }}>
         {eventLabel}
       </motion.div>
-      <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: delay + 0.2, duration: 0.6, ease: EASE }}
-        className="mx-auto mb-5 w-16 h-16 rounded-full grid place-items-center"
-        style={{ border: `1.5px solid ${accent}`, color: accent, fontFamily: t?.script, fontSize: "1.7rem" }}>
-        {initials}
-      </motion.div>
+      {showPhoto ? (
+        <motion.div initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: delay + 0.2, duration: 0.7, ease: EASE }}
+          className="mb-5 w-40 max-w-[70%] rounded-2xl overflow-hidden" style={{ border: `1px solid ${accent}`, padding: 5, background: t?.panel, boxShadow: `0 20px 50px -22px ${accent}88` }}>
+          <img src={coverUrl} alt="" className="w-full aspect-[3/4] object-cover rounded-xl" />
+        </motion.div>
+      ) : (
+        <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: delay + 0.2, duration: 0.6, ease: EASE }}
+          className="mx-auto mb-5 w-16 h-16 rounded-full grid place-items-center"
+          style={{ border: `1.5px solid ${accent}`, color: accent, fontFamily: t?.script, fontSize: "1.7rem" }}>
+          {initials}
+        </motion.div>
+      )}
       <motion.div initial={{ opacity: 0, y: 18, filter: "blur(6px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
         transition={{ delay: delay + 0.35, duration: 0.9, ease: EASE }}>
         <FoilText as="div" colors={foil} fallback={accent}
@@ -145,7 +154,7 @@ const CardBody = ({ t, names, initials, welcome, eventLabel, delay = 0 }) => {
 };
 
 // ══ 3D TEXTURED ENVELOPE ═════════════════════════════════════════════════════
-function EnvelopeScene({ t, open, names, initials, welcome, eventLabel, tiltStyle }) {
+function EnvelopeScene({ t, open, names, initials, welcome, eventLabel, tiltStyle, coverUrl }) {
   const accent = t?.accent || "#c8a24a";
   const wax = t?.wax || "#7a1414";
   const seal = (initials || "♥").slice(0, 3);
@@ -160,9 +169,10 @@ function EnvelopeScene({ t, open, names, initials, welcome, eventLabel, tiltStyl
         initial={{ height: 150, y: 70, opacity: 0 }}
         animate={open ? { height: "min(76vh,640px)", y: 0, opacity: 1 } : { height: 150, y: 70, opacity: 0 }}
         transition={{ height: { delay: 1.15, duration: 1.25, ease: EASE }, y: { delay: 0.95, duration: 1.2, ease: EASE }, opacity: { delay: 0.95, duration: 0.5 } }}>
-        <div className="h-full w-full grid place-items-center" style={{ color: t?.text }}>
+        {open && t?.decor && <TemplateDecor decor={t.decor} accent={accent} opacity={t?.dark ? 0.5 : 0.42} />}
+        <div className="relative z-[5] h-full w-full grid place-items-center" style={{ color: t?.text }}>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: open ? 1 : 0 }} transition={{ delay: 1.85, duration: 0.8 }} className="w-full">
-            <CardBody t={t} names={names} initials={initials} welcome={welcome} eventLabel={eventLabel} delay={1.85} />
+            <CardBody t={t} names={names} initials={initials} welcome={welcome} eventLabel={eventLabel} delay={1.85} coverUrl={coverUrl} />
           </motion.div>
         </div>
       </motion.div>
@@ -195,7 +205,7 @@ function EnvelopeScene({ t, open, names, initials, welcome, eventLabel, tiltStyl
 }
 
 // ══ CARD RISE (modern / botanic / corporate) ════════════════════════════════
-function CardScene({ t, open, names, initials, welcome, eventLabel, tiltStyle }) {
+function CardScene({ t, open, names, initials, welcome, eventLabel, tiltStyle, coverUrl }) {
   const accent = t?.accent || "#c8a24a";
   const paper = textureBg(t?.texture || "cotton", t?.dark);
   return (
@@ -206,10 +216,11 @@ function CardScene({ t, open, names, initials, welcome, eventLabel, tiltStyle })
         animate={open ? { y: 0, opacity: 1, rotateX: 0, scale: 1 } : { y: 60, opacity: 0.001 }}
         transition={{ duration: 1.1, ease: EASE }}>
         <div className="absolute top-0 inset-x-0 h-1.5" style={{ background: t?.foil ? `linear-gradient(90deg, ${t.foil[0]}, ${t.foil[1]}, ${t.foil[2] || t.foil[0]})` : accent }} />
+        {open && t?.decor && <TemplateDecor decor={t.decor} accent={accent} opacity={t?.dark ? 0.5 : 0.4} />}
         <motion.div className="absolute left-0 right-0 top-1/2 h-px" style={{ background: accent, opacity: 0.4 }}
           initial={{ scaleX: 0 }} animate={{ scaleX: open ? 1 : 0 }} transition={{ delay: 0.4, duration: 0.9, ease: EASE }} />
-        <div className="py-16">
-          {open && <CardBody t={t} names={names} initials={initials} welcome={welcome} eventLabel={eventLabel} delay={0.2} />}
+        <div className="relative z-[5] py-16">
+          {open && <CardBody t={t} names={names} initials={initials} welcome={welcome} eventLabel={eventLabel} delay={0.2} coverUrl={coverUrl} />}
         </div>
       </motion.div>
     </div>
@@ -217,14 +228,15 @@ function CardScene({ t, open, names, initials, welcome, eventLabel, tiltStyle })
 }
 
 // ══ CURTAIN PART (kına / sünnet / party) ════════════════════════════════════
-function CurtainScene({ t, open, names, initials, welcome, eventLabel, tiltStyle }) {
+function CurtainScene({ t, open, names, initials, welcome, eventLabel, tiltStyle, coverUrl }) {
   const accent = t?.accent || "#c8a24a";
   const drape = `linear-gradient(90deg, ${accent}22, ${accent}55 40%, ${accent}22)`;
   return (
     <div className="absolute inset-0 overflow-hidden" style={{ perspective: 1400 }}>
+      {open && t?.decor && <div className="absolute inset-0 max-w-md mx-auto"><TemplateDecor decor={t.decor} accent={accent} opacity={t?.dark ? 0.5 : 0.4} /></div>}
       <div className="absolute inset-0 grid place-items-center px-6" style={tiltStyle}>
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: open ? 1 : 0, scale: open ? 1 : 0.9 }} transition={{ delay: 0.9, duration: 1, ease: EASE }}>
-          {open && <CardBody t={t} names={names} initials={initials} welcome={welcome} eventLabel={eventLabel} delay={0.9} />}
+          {open && <CardBody t={t} names={names} initials={initials} welcome={welcome} eventLabel={eventLabel} delay={0.9} coverUrl={coverUrl} />}
         </motion.div>
       </div>
       {/* two drapes sweeping apart */}

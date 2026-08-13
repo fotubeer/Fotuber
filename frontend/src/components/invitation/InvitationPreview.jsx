@@ -4,6 +4,7 @@ import { EVENT_TYPE_LABELS } from "@/lib/invitationThemes";
 import { resolveVisual } from "@/lib/invitationTemplates";
 import { CalendarDays, Clock, MapPin, Gift } from "lucide-react";
 import ParticleCanvas from "@/components/invitation/ParticleCanvas";
+import TemplateDecor from "@/components/invitation/TemplateDecor";
 import FoilText from "@/components/invitation/FoilText";
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -82,6 +83,7 @@ export const InvitationPreview = ({ data }) => {
   return (
     <div className="relative w-full overflow-hidden" style={{ background: t.bg, color: t.text }} data-testid="invitation-preview">
       <ParticleCanvas type={t.particles} color={t.particleColor || t.accent} density={0.8} />
+      {t.decor && <div className="absolute inset-0 max-w-xl mx-auto"><TemplateDecor decor={t.decor} accent={t.accent} opacity={t.dark ? 0.5 : 0.42} /></div>}
 
       <motion.div
         variants={container}
@@ -96,10 +98,17 @@ export const InvitationPreview = ({ data }) => {
           </motion.div>
 
           {cover && (
-            <motion.div variants={item} className="mx-auto mb-8 w-44 h-44 rounded-full overflow-hidden"
-              style={{ border: `2px solid ${t.accent}`, boxShadow: `0 0 0 8px ${t.accent}1a, 0 20px 50px -20px ${t.accent}66` }}>
-              <img src={cover} alt="cover" className="w-full h-full object-cover" />
-            </motion.div>
+            t.photo ? (
+              <motion.div variants={item} className="mx-auto mb-8 w-64 max-w-[80%] rounded-2xl overflow-hidden"
+                style={{ border: `1px solid ${t.accent}`, padding: 6, background: t.panel, boxShadow: `0 24px 60px -24px ${t.accent}77` }} data-testid="preview-photo">
+                <img src={cover} alt="cover" className="w-full aspect-[3/4] object-cover rounded-xl" />
+              </motion.div>
+            ) : (
+              <motion.div variants={item} className="mx-auto mb-8 w-44 h-44 rounded-full overflow-hidden"
+                style={{ border: `2px solid ${t.accent}`, boxShadow: `0 0 0 8px ${t.accent}1a, 0 20px 50px -20px ${t.accent}66` }}>
+                <img src={cover} alt="cover" className="w-full h-full object-cover" />
+              </motion.div>
+            )
           )}
 
           <motion.div variants={item} className="text-sm mb-1" style={{ color: t.sub, fontFamily: t.heading, letterSpacing: "0.05em" }}>
