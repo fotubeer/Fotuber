@@ -55,7 +55,7 @@
       "icon": "assets/icon.png",
       "category": "public.app-category.photography",
       "identity": null,
-      "hardenedRuntime": true,
+      "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist"

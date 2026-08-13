@@ -1,7 +1,38 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { API_BASE } from "@/lib/api";
-import { Monitor, Apple, Download } from "lucide-react";
+import { Monitor, Apple, Download, Copy, Check, ChevronDown, Info } from "lucide-react";
+
+const MAC_XATTR = 'xattr -cr "/Applications/Fotuber Stüdyo.app"';
+
+function MacHelp() {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copy = () => { navigator.clipboard?.writeText(MAC_XATTR); setCopied(true); setTimeout(() => setCopied(false), 1800); };
+  return (
+    <div className="mt-3" data-testid="mac-help">
+      <button onClick={() => setOpen((o) => !o)} data-testid="mac-help-toggle"
+        className="inline-flex items-center gap-1.5 text-[11px] text-white/55 hover:text-white/80 transition-colors">
+        <Info size={13} className="text-amber-300" /> macOS ilk açılışta uyarı verirse ne yapmalı?
+        <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="mt-2 rounded-xl border border-white/12 bg-black/25 p-3 text-[11px] text-white/60 leading-relaxed space-y-2">
+          <p><b className="text-white/80">1.</b> İndirdiğiniz uygulamayı <b>Uygulamalar (Applications)</b> klasörüne sürükleyin.</p>
+          <p><b className="text-white/80">2.</b> Uygulamaya <b>sağ tıklayın → Aç</b>, çıkan pencerede tekrar <b>Aç</b> deyin.</p>
+          <p><b className="text-white/80">3.</b> Hâlâ "hasarlı" veya "geliştirici doğrulanamadı" derse, <b>Terminal</b>'i açıp aşağıdaki komutu yapıştırıp Enter'a basın, sonra tekrar açın:</p>
+          <div className="flex items-center gap-2 rounded-lg bg-black/40 border border-white/10 px-2.5 py-2 font-mono text-[10.5px] text-amber-200">
+            <code className="flex-1 break-all">{MAC_XATTR}</code>
+            <button onClick={copy} data-testid="mac-xattr-copy" className="shrink-0 text-white/60 hover:text-white transition-colors">
+              {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+            </button>
+          </div>
+          <p className="text-white/40">Bu uyarı, uygulamanın Apple Developer hesabıyla imzalanmamasından kaynaklanır; güvenlidir.</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Studio-facing desktop app download buttons (Windows .exe + macOS .dmg).
 // Admin configures the URLs at /admin/masaustu. Hidden if no URLs are set.
@@ -34,6 +65,7 @@ export default function DesktopDownloadButtons({ className = "", compact = false
             </a>
           )}
         </div>
+        {d.mac_url && <MacHelp />}
       </div>
     );
   }
@@ -60,6 +92,7 @@ export default function DesktopDownloadButtons({ className = "", compact = false
           </a>
         )}
       </div>
+      {d.mac_url && <MacHelp />}
     </div>
   );
 }

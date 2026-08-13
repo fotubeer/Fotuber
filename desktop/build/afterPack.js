@@ -5,8 +5,10 @@
 // izinleri Apple Silicon'a UYGULANMIYOR ve V8 motoru açılışta EXC_BREAKPOINT
 // (SIGTRAP) ile çöküyordu.
 //
-// ÇÖZÜM: tüm iç bileşenleri (frameworks, dylib, Helper .app'ler) ÖNCE, ana .app'i
-// EN SON olacak şekilde (inside-out) hardened runtime + entitlements ile ad-hoc imzala.
+// ÇÖZÜM (güncel): hardened runtime KAPALI. Ad-hoc imza tam güvenilir sayılmadığı
+// için hardened runtime açıkken JIT yine engellenip V8 çöküyordu. Hardened runtime'ı
+// kapatıp tüm iç bileşenleri (frameworks, dylib, Helper .app'ler) ÖNCE, ana .app'i
+// EN SON olacak şekilde (inside-out) ad-hoc + entitlements ile imzalıyoruz.
 const { execFileSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -23,7 +25,6 @@ exports.default = async function afterPack(context) {
       [
         "--force",
         "--timestamp=none",
-        "--options", "runtime",
         "--entitlements", ent,
         "--sign", "-",
         target,
@@ -58,7 +59,7 @@ exports.default = async function afterPack(context) {
     // İç bileşenler (en derin → en sığ), sonra ana uygulama.
     for (const t of targets) sign(t);
     sign(appPath);
-    console.log(`[afterPack] Ad-hoc (hardened runtime + entitlements, inside-out) imzalandı: ${appPath}`);
+    console.log(`[afterPack] Ad-hoc (hardened runtime KAPALI + entitlements, inside-out) imzalandı: ${appPath}`);
     // Doğrulama (bilgi amaçlı; hata verse de build'i kırma).
     try {
       execFileSync("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appPath], { stdio: "inherit" });

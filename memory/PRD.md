@@ -808,3 +808,10 @@ Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay
 - **Sihirbaz bağlama** (InvitationCreate): dosya seçimi artık önce kırpıcıyı açar (`onSelectCover` → FileReader dataURL), onayda kırpılmış File yüklenir (`onCropConfirm` → `/api/invitations/cover`). Aspect: `getTemplate(data.template)?.photo ? 3/4 : 1`. Başarısız yüklemede modal açık kalır (retry). testid'ler: cover-upload, cropper-modal, cropper-zoom, cropper-confirm, cropper-cancel, cover-crop-preview, preview-photo.
 - **Doğrulama**: testing_agent iteration_66 %100 — modal yüklemeden ÖNCE açılıyor, 3:4 (foto) / 1:1 (diğer) ölçüldü, zoom çalışıyor, onay POST 200 + toast + önizleme, iptal ağ çağrısı yok, non-foto regresyon dairesel avatar. Console hatası yok.
 
+
+## Session BC — macOS Çökme: KESİN TEŞHİS + Düzeltme v2 (kullanıcı CI ile test edecek)
+- **Teşhis (kullanıcı onayladı)**: Apple Silicon + `EXC_BREAKPOINT (SIGTRAP)`, pencere AÇILMADAN çöküyor → klasik V8 JIT/ThreadIsolation `brk 0` çökmesi. Sebep: ad-hoc imza tam güvenilir sayılmadığından, **hardened runtime AÇIKKEN** JIT izinleri yine reddediliyor.
+- **Düzeltme v2**: `desktop/package.json` mac `hardenedRuntime: true → false`. `desktop/build/afterPack.js` imzadan `--options runtime` kaldırıldı (inside-out ad-hoc + entitlements, hardened KAPALI). Bu kombinasyon (inside-out + non-hardened) daha önce denenmemişti; önceki non-hardened denemesi bozuk `--deep` imzasıyla çökmüştü.
+- **Gatekeeper rehberi**: `components/DesktopDownloadButtons.jsx` içine macOS "nasıl açılır?" açılır bölümü eklendi (hem tam hem compact): sağ tık → Aç; hâlâ "hasarlı" derse Terminal'de `xattr -cr "/Applications/Fotuber Stüdyo.app"` (kopyala butonlu). Apple hesabı olmadan Gatekeeper sürtünmesi kaçınılmaz ama artık yönlendiriliyor. Studio login (/studyo) + dashboard'da görünüyor, doğrulandı (screenshot).
+- **Bekleyen**: Kullanıcı "Save to Github" → GitHub Actions → yeni arm64 `.dmg` indirip Mac'te test edecek. Çözülmezse tek kesin çözüm Apple Developer hesabıyla notarization (P2).
+
