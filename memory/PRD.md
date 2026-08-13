@@ -826,3 +826,13 @@ Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay
 - **Not**: Hostes-find uçtan uca UI testi yapılamadı (bu salonun kodunu kullanan çift yok → couples boş, empty-state doğru). Backend find curl ile çalışıyor.
 - **Bekleyen FAZ C + D**: Run of Show akış + personel kiosk sesli/pop-up bildirim (polling); Ek Hizmet Pazar Yeri (upsell).
 
+
+## Session BC — Salon FAZ C (Akış) + FAZ D (Ek Hizmet) + Kiosk Ekip Sohbeti (verified iteration_68, frontend ~%90)
+- **FAZ C (Run of Show)**: Kat planı çizicide "Akış Programı" paneli (fp-timeline-toggle) — saat + olay + uyarılacak personel rolleri; plan ile kaydedilir (floorplan.timeline; PUT /floorplans/{pid}/timeline). **Personel kiosk uyarı motoru** (polling 20sn + WebAudio beep + tam ekran pop-up kiosk-alert + tarayıcı bildirimi): sıra ≤5 dk kala ve rol eşleşiyorsa tetiklenir. Kioskta akış listesi (kiosk-timeline).
+- **FAZ D (Upsell Pazar Yeri)**: Salon admini VenueDashboard "Ek Hizmetler" sekmesinde hizmet CRUD (venue_services: 360 Photobooth vb.). Çift, davetiye panelinde (MyInvitations → "Salon Ek Hizmetleri" → VenueServicesModal) davet kodunu kullandığı salonun hizmetlerini seçip onaylar (public /venue/public/invitation/{iid}/services GET+POST → invitation_venue_orders). Salon, /venue/couples/{iid}/orders ile görür.
+- **Kiosk Ekip Sohbeti** (kullanıcı isteği): personel (kiosk) ↔ salon yöneticisi ortak sohbet (venue_chat, venue geneli). Yönetici mesajı **başa sabitleyebilir** (pin/unpin/sil). Bileşen `components/VenueChat.jsx` (VenueDashboard "Ekip Sohbeti" tab + kiosk drawer kiosk-chat-toggle). Polling 8sn.
+- **Backend** (venue.py): timeline PUT, services CRUD, couple public services GET/POST, couple orders, chat (mgr/staff/pin/del). Tümü curl ile uçtan uca doğrulandı.
+- **Düzeltme**: hostess find yolu düzeltildi (`/venue/floorplans/{pid}/find`, staff token). Timeline rol butonlarına data-testid eklendi.
+- **Not (gerçek hata değil)**: Kupl pazar yeri butonu üye (çift) panelinde `/davetiyelerim`; test davetiyesi admin'e ait olduğu için admin UI'da açamıyor (doğru davranış — admin üye değil). Modal + public uç curl ile doğrulandı; gerçek üye çiftlerde çalışır.
+- **Bekleyen**: Kupl pazar yeri modalını gerçek bir MEMBER hesabıyla UI'da doğrulamak (opsiyonel); Gold stüdyo aylık davetiye (eski backlog); macOS .dmg kullanıcı testi.
+

@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, Save, Trash2, RotateCw, RotateCcw, Plus, Minus, Users, X, UserCheck } from "lucide-react";
+import { ArrowLeft, Save, Trash2, RotateCw, RotateCcw, Plus, Minus, Users, X, UserCheck, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { venueApi } from "@/lib/venueApi";
 import { SYMBOL_GROUPS, SYMBOL_MAP, isTable } from "@/lib/venueSymbols";
 
 const uid = () => Math.random().toString(36).slice(2, 9);
+const TL_ROLES = [["fotografci", "Fotoğrafçı"], ["garson_sefi", "Garson Şefi"], ["muzisyen", "Müzisyen"], ["salon_gorevlisi", "Salon Görevlisi"], ["salon_muduru", "Müdür"], ["sanatci", "Sanatçı"], ["kameraman", "Kameraman"]];
 
 export default function FloorPlanBuilder() {
   const { id } = useParams();
@@ -17,6 +18,8 @@ export default function FloorPlanBuilder() {
   const [sel, setSel] = useState(null);
   const [saving, setSaving] = useState(false);
   const [guestOpen, setGuestOpen] = useState(false);
+  const [timeline, setTimeline] = useState([]);
+  const [tlOpen, setTlOpen] = useState(false);
   const [couples, setCouples] = useState([]);
   const [coupleId, setCoupleId] = useState("");
   const [guests, setGuests] = useState([]);
@@ -25,7 +28,7 @@ export default function FloorPlanBuilder() {
 
   useEffect(() => {
     venueApi.get(`/venue/floorplans/${id}`).then(({ data }) => {
-      setPlan(data.plan); setEls(data.plan.elements || []); setAssign(data.plan.assignments || {});
+      setPlan(data.plan); setEls(data.plan.elements || []); setAssign(data.plan.assignments || {}); setTimeline(data.plan.timeline || []);
       if (data.plan.invitation_id) setCoupleId(data.plan.invitation_id);
     }).catch(() => { toast.error("Kroki yüklenemedi"); navigate("/salon/panel"); });
     venueApi.get("/venue/couples").then(({ data }) => setCouples(data.couples || [])).catch(() => {});
@@ -66,7 +69,7 @@ export default function FloorPlanBuilder() {
   const save = async () => {
     setSaving(true);
     try {
-      await venueApi.put(`/venue/floorplans/${id}`, { elements: els, assignments: assign, invitation_id: coupleId || null });
+      await venueApi.put(`/venue/floorplans/${id}`, { elements: els, assignments: assign, timeline, invitation_id: coupleId || null });
       toast.success("Kroki kaydedildi");
     } catch { toast.error("Kaydedilemedi"); } finally { setSaving(false); }
   };
@@ -76,6 +79,11 @@ export default function FloorPlanBuilder() {
   const unassigned = guests.filter((g) => !assignedAll.has(g.name));
   const assignGuest = (name) => { if (!sel) return; setAssign((a) => ({ ...a, [sel]: [...(a[sel] || []), name] })); };
   const unassignGuest = (elId, name) => setAssign((a) => ({ ...a, [elId]: (a[elId] || []).filter((n) => n !== name) }));
+
+  const addTl = () => setTimeline((t) => [...t, { id: uid(), time: "20:00", title: "", roles: [], note: "" }].sort((a, b) => (a.time || "").localeCompare(b.time || "")));
+  const patchTl = (tid, patch) => setTimeline((t) => t.map((it) => (it.id === tid ? { ...it, ...patch } : it)));
+  const delTl = (tid) => setTimeline((t) => t.filter((it) => it.id !== tid));
+  const toggleTlRole = (tid, r) => setTimeline((t) => t.map((it) => it.id === tid ? { ...it, roles: (it.roles || []).includes(r) ? it.roles.filter((x) => x !== r) : [...(it.roles || []), r] } : it));
 
   if (!plan) return <div className="min-h-screen grid place-items-center bg-slate-950 text-white">Yükleniyor…</div>;
 
@@ -90,6 +98,7 @@ export default function FloorPlanBuilder() {
         <span className="text-xs px-2 py-0.5 rounded-full bg-white/10">{plan.area_type === "garden" ? "🌳 Kır Bahçesi" : "🏛️ Kapalı Salon"}</span>
         <div className="ml-auto flex items-center gap-2">
           <Button onClick={() => setGuestOpen((o) => !o)} variant="outline" className="border-white/20 text-black" data-testid="fp-guests-toggle"><Users size={16} className="mr-1" /> Davetli / Masa</Button>
+          <Button onClick={() => setTlOpen((o) => !o)} variant="outline" className="border-white/20 text-black" data-testid="fp-timeline-toggle"><Clock size={16} className="mr-1" /> Akış Programı</Button>
           <Button onClick={save} disabled={saving} className="bg-amber-500 hover:bg-amber-600 text-black" data-testid="fp-save"><Save size={16} className="mr-1" /> {saving ? "…" : "Kaydet"}</Button>
         </div>
       </div>
@@ -181,6 +190,40 @@ export default function FloorPlanBuilder() {
                 )}
               </>
             )}
+          </div>
+        )}
+
+        {/* Run of Show timeline panel */}
+        {tlOpen && (
+          <div className="w-80 shrink-0 border-l border-white/10 bg-slate-900/60 p-3 overflow-y-auto" data-testid="fp-timeline-panel">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-semibold text-sm flex items-center gap-1.5"><Clock size={15} /> Akış Programı</h3>
+              <button onClick={() => setTlOpen(false)} className="text-white/50"><X size={16} /></button>
+            </div>
+            <p className="text-[11px] text-white/45 mb-3">Saat, olay ve uyarılacak personel rollerini girin. Personel kioskunda sıra 5 dk kala sesli/pop-up uyarı düşer. Değişiklikleri <b>Kaydet</b> ile saklayın.</p>
+            <div className="space-y-2">
+              {timeline.map((it) => (
+                <div key={it.id} className="rounded-lg bg-white/5 border border-white/10 p-2.5" data-testid={`tl-item-${it.id}`}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <input type="time" value={it.time} onChange={(e) => patchTl(it.id, { time: e.target.value })} data-testid={`tl-time-${it.id}`}
+                      className="bg-white/10 rounded px-2 py-1 text-sm outline-none" />
+                    <input value={it.title} onChange={(e) => patchTl(it.id, { title: e.target.value })} placeholder="Olay (örn. Pasta Kesimi)" data-testid={`tl-title-${it.id}`}
+                      className="flex-1 bg-white/10 rounded px-2 py-1 text-sm outline-none" />
+                    <button onClick={() => delTl(it.id)} className="text-red-300 p-1"><Trash2 size={14} /></button>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {TL_ROLES.map(([k, lbl]) => (
+                      <button key={k} onClick={() => toggleTlRole(it.id, k)} data-testid={`tl-role-${it.id}-${k}`}
+                        className={`text-[10px] px-2 py-0.5 rounded-full border ${(it.roles || []).includes(k) ? "bg-amber-500 text-black border-amber-400" : "border-white/15 text-white/50"}`}>
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {timeline.length === 0 && <p className="text-[11px] text-white/40">Henüz akış öğesi yok.</p>}
+            </div>
+            <Button onClick={addTl} data-testid="tl-add" className="w-full mt-3 bg-white/10 hover:bg-white/20"><Plus size={15} className="mr-1" /> Olay Ekle</Button>
           </div>
         )}
       </div>

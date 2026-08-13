@@ -473,12 +473,13 @@ def get_router(db, deps):
         area_type: str | None = None
         elements: list = []          # canvas objects (fabric JSON-ish)
         assignments: dict | None = None  # { elementId: [guestName, ...] }
+        timeline: list | None = None     # run-of-show items
 
     def _plan_out(p: dict) -> dict:
         return {"id": p["id"], "name": p.get("name"), "invitation_id": p.get("invitation_id"),
                 "area_type": p.get("area_type", "indoor"), "elements": p.get("elements", []),
-                "assignments": p.get("assignments", {}), "updated_at": p.get("updated_at"),
-                "created_at": p.get("created_at")}
+                "assignments": p.get("assignments", {}), "timeline": p.get("timeline", []),
+                "updated_at": p.get("updated_at"), "created_at": p.get("created_at")}
 
     @router.get("/floorplans")
     async def list_plans(acc: dict = Depends(get_current_venue)):
@@ -512,6 +513,7 @@ def get_router(db, deps):
         if payload.invitation_id is not None: upd["invitation_id"] = payload.invitation_id
         if payload.area_type is not None: upd["area_type"] = payload.area_type
         if payload.assignments is not None: upd["assignments"] = payload.assignments
+        if payload.timeline is not None: upd["timeline"] = payload.timeline
         await db.venue_floorplans.update_one({"id": pid}, {"$set": upd})
         p = await db.venue_floorplans.find_one({"id": pid}, {"_id": 0})
         return {"plan": _plan_out(p)}
@@ -591,5 +593,155 @@ def get_router(db, deps):
         if not p:
             raise HTTPException(status_code=404, detail="Kroki bulunamadı")
         return {"plan": _plan_out(p)}
+
+    # ========================================================================
+    # FAZ C — Run of Show (timeline saved on the plan). Staff kiosk computes alerts.
+    # ========================================================================
+    class TimelineSaveIn(BaseModel):
+        timeline: list = []
+
+    @router.put("/floorplans/{pid}/timeline")
+    async def save_timeline(pid: str, payload: TimelineSaveIn, acc: dict = Depends(get_current_venue)):
+        p = await db.venue_floorplans.find_one({"id": pid, "venue_id": acc["id"]})
+        if not p:
+            raise HTTPException(status_code=404, detail="Kroki bulunamadı")
+        await db.venue_floorplans.update_one({"id": pid}, {"$set": {"timeline": payload.timeline or [], "updated_at": now_iso()}})
+        return {"ok": True, "timeline": payload.timeline or []}
+
+    # ========================================================================
+    # FAZ D — Upsell marketplace. Venue admin defines services; couples select them.
+    # ========================================================================
+    class ServiceIn(BaseModel):
+        name: str = Field(min_length=2, max_length=120)
+        description: str = ""
+        price: float = 0
+        image_url: str = ""
+        active: bool = True
+
+    def _svc_out(s: dict) -> dict:
+        return {"id": s["id"], "name": s.get("name"), "description": s.get("description", ""),
+                "price": s.get("price", 0), "image_url": s.get("image_url", ""), "active": s.get("active", True)}
+
+    @router.get("/services")
+    async def list_services(acc: dict = Depends(get_current_venue)):
+        rows = await db.venue_services.find({"venue_id": acc["id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+        return {"services": [_svc_out(s) for s in rows]}
+
+    @router.post("/services")
+    async def create_service(payload: ServiceIn, acc: dict = Depends(get_current_venue)):
+        doc = {"id": new_id(), "venue_id": acc["id"], "name": payload.name.strip(),
+               "description": payload.description.strip(), "price": max(0, payload.price),
+               "image_url": payload.image_url.strip(), "active": payload.active, "created_at": now_iso()}
+        await db.venue_services.insert_one(doc)
+        return {"service": _svc_out(doc)}
+
+    @router.put("/services/{sid}")
+    async def update_service(sid: str, payload: ServiceIn, acc: dict = Depends(get_current_venue)):
+        s = await db.venue_services.find_one({"id": sid, "venue_id": acc["id"]})
+        if not s:
+            raise HTTPException(status_code=404, detail="Hizmet bulunamadı")
+        await db.venue_services.update_one({"id": sid}, {"$set": {
+            "name": payload.name.strip(), "description": payload.description.strip(),
+            "price": max(0, payload.price), "image_url": payload.image_url.strip(), "active": payload.active}})
+        return {"ok": True}
+
+    @router.delete("/services/{sid}")
+    async def delete_service(sid: str, acc: dict = Depends(get_current_venue)):
+        await db.venue_services.delete_one({"id": sid, "venue_id": acc["id"]})
+        return {"ok": True}
+
+    @router.get("/couples/{iid}/orders")
+    async def venue_couple_orders(iid: str, acc: dict = Depends(get_current_venue)):
+        link = await db.venue_invite_codes.find_one({"venue_id": acc["id"], "used_invitation_id": iid})
+        if not link:
+            raise HTTPException(status_code=403, detail="Bu çift salonunuza bağlı değil")
+        sel = await db.invitation_venue_orders.find_one({"invitation_id": iid}, {"_id": 0})
+        ids = (sel or {}).get("service_ids", [])
+        svcs = await db.venue_services.find({"id": {"$in": ids}}, {"_id": 0}).to_list(200)
+        total = sum(s.get("price", 0) for s in svcs)
+        return {"services": [_svc_out(s) for s in svcs], "total": total}
+
+    # ---- Couple-facing (public via invitation id) ---------------------------
+    async def _venue_for_invitation(iid: str):
+        link = await db.venue_invite_codes.find_one({"used_invitation_id": iid})
+        if not link:
+            return None
+        return await db.venue_accounts.find_one({"id": link["venue_id"]})
+
+    @router.get("/public/invitation/{iid}/services")
+    async def public_invitation_services(iid: str):
+        venue = await _venue_for_invitation(iid)
+        if not venue:
+            return {"venue": None, "services": [], "selected": []}
+        rows = await db.venue_services.find({"venue_id": venue["id"], "active": True}, {"_id": 0}).sort("created_at", -1).to_list(200)
+        sel = await db.invitation_venue_orders.find_one({"invitation_id": iid}, {"_id": 0})
+        return {"venue": {"salon_adi": venue.get("salon_adi")},
+                "services": [_svc_out(s) for s in rows],
+                "selected": (sel or {}).get("service_ids", [])}
+
+    class SelectServicesIn(BaseModel):
+        service_ids: list = []
+
+    @router.post("/public/invitation/{iid}/services")
+    async def public_select_services(iid: str, payload: SelectServicesIn):
+        venue = await _venue_for_invitation(iid)
+        if not venue:
+            raise HTTPException(status_code=404, detail="Bu davetiye bir salona bağlı değil")
+        valid = await db.venue_services.find({"venue_id": venue["id"], "active": True}, {"_id": 0, "id": 1}).to_list(500)
+        valid_ids = {v["id"] for v in valid}
+        chosen = [i for i in (payload.service_ids or []) if i in valid_ids]
+        await db.invitation_venue_orders.update_one(
+            {"invitation_id": iid},
+            {"$set": {"invitation_id": iid, "venue_id": venue["id"], "service_ids": chosen, "updated_at": now_iso()}},
+            upsert=True)
+        return {"ok": True, "selected": chosen}
+
+    # ========================================================================
+    # Venue team CHAT — staff (kiosk) ↔ venue manager. Manager can PIN messages.
+    # ========================================================================
+    class ChatIn(BaseModel):
+        text: str = Field(min_length=1, max_length=1000)
+
+    class PinIn(BaseModel):
+        pinned: bool = True
+
+    async def _chat_list(venue_id: str):
+        rows = await db.venue_chat.find({"venue_id": venue_id}, {"_id": 0}).sort("created_at", -1).to_list(300)
+        rows.reverse()
+        return rows
+
+    @router.get("/chat")
+    async def mgr_chat(acc: dict = Depends(get_current_venue)):
+        return {"messages": await _chat_list(acc["id"])}
+
+    @router.post("/chat")
+    async def mgr_send(payload: ChatIn, acc: dict = Depends(get_current_venue)):
+        doc = {"id": new_id(), "venue_id": acc["id"], "author_type": "manager",
+               "author_name": acc.get("salon_adi", "Yönetici"), "text": payload.text.strip(),
+               "pinned": False, "created_at": now_iso()}
+        await db.venue_chat.insert_one(doc)
+        return {"message": {k: v for k, v in doc.items() if k != "_id"}}
+
+    @router.post("/chat/{mid}/pin")
+    async def mgr_pin(mid: str, payload: PinIn, acc: dict = Depends(get_current_venue)):
+        await db.venue_chat.update_one({"id": mid, "venue_id": acc["id"]}, {"$set": {"pinned": payload.pinned}})
+        return {"ok": True}
+
+    @router.delete("/chat/{mid}")
+    async def mgr_del_chat(mid: str, acc: dict = Depends(get_current_venue)):
+        await db.venue_chat.delete_one({"id": mid, "venue_id": acc["id"]})
+        return {"ok": True}
+
+    @router.get("/staff/chat")
+    async def staff_chat(st: dict = Depends(get_current_staff)):
+        return {"messages": await _chat_list(st["venue_id"])}
+
+    @router.post("/staff/chat")
+    async def staff_send(payload: ChatIn, st: dict = Depends(get_current_staff)):
+        doc = {"id": new_id(), "venue_id": st["venue_id"], "author_type": "staff",
+               "author_name": st.get("name", "Personel"), "job_role": st.get("job_role"),
+               "text": payload.text.strip(), "pinned": False, "created_at": now_iso()}
+        await db.venue_chat.insert_one(doc)
+        return {"message": {k: v for k, v in doc.items() if k != "_id"}}
 
     return router

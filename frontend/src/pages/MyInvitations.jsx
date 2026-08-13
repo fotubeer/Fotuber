@@ -39,6 +39,7 @@ export default function MyInvitations() {
   const [paying, setPaying] = useState(false);
   const [waInvite, setWaInvite] = useState(null);
   const [guestInv, setGuestInv] = useState(null);
+  const [venueSvcInv, setVenueSvcInv] = useState(null);
   const [waMessage, setWaMessage] = useState("");
   const [waNumbers, setWaNumbers] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -427,6 +428,9 @@ export default function MyInvitations() {
                 <Button variant="outline" size="sm" className="w-full mt-2 text-fuchsia-700 border-fuchsia-200 hover:bg-fuchsia-50" onClick={() => setGuestInv(inv)} data-testid={`inv-guests-${inv.id}`}>
                   <Users className="w-4 h-4 mr-1" /> Misafir Yönetimi (Gelin / Damat)
                 </Button>
+                <Button variant="outline" size="sm" className="w-full mt-2 text-amber-700 border-amber-200 hover:bg-amber-50" onClick={() => setVenueSvcInv(inv)} data-testid={`inv-venue-services-${inv.id}`}>
+                  <Sparkles className="w-4 h-4 mr-1" /> Salon Ek Hizmetleri
+                </Button>
                 {!inv.extended ? (
                   <Button variant="outline" size="sm" className="w-full mt-2 text-amber-700 border-amber-300 hover:bg-amber-50" onClick={() => extendInvitation(inv)} disabled={paying} data-testid={`inv-extend-${inv.id}`}>
                     <Clock className="w-4 h-4 mr-1" /> Süreyi Uzat · 99₺ (+15 gün)
@@ -596,6 +600,8 @@ export default function MyInvitations() {
         </DialogContent>
       </Dialog>
 
+      <VenueServicesModal inv={venueSvcInv} onClose={() => setVenueSvcInv(null)} />
+
       {/* WhatsApp bulk invite */}
       <Dialog open={!!waInvite} onOpenChange={(o) => !o && setWaInvite(null)}>
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="whatsapp-dialog">
@@ -645,5 +651,68 @@ export default function MyInvitations() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// Couple-facing venue add-on marketplace (public endpoints, no extra auth).
+function VenueServicesModal({ inv, onClose }) {
+  const [data, setData] = useState(null);
+  const [sel, setSel] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const API = process.env.REACT_APP_BACKEND_URL;
+  useEffect(() => {
+    if (!inv) { setData(null); return; }
+    setData(null);
+    fetch(`${API}/api/venue/public/invitation/${inv.id}/services`)
+      .then((r) => r.json())
+      .then((d) => { setData(d); setSel(d.selected || []); })
+      .catch(() => setData({ venue: null, services: [], selected: [] }));
+  }, [inv, API]);
+  const toggle = (id) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const save = async () => {
+    setSaving(true);
+    try {
+      await fetch(`${API}/api/venue/public/invitation/${inv.id}/services`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ service_ids: sel }) });
+      toast.success("Seçimleriniz salona iletildi");
+      onClose();
+    } catch { toast.error("Kaydedilemedi"); } finally { setSaving(false); }
+  };
+  const services = data?.services || [];
+  const total = services.filter((s) => sel.includes(s.id)).reduce((a, s) => a + (s.price || 0), 0);
+  return (
+    <Dialog open={!!inv} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="venue-services-modal">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Sparkles className="w-5 h-5 text-amber-500" /> Salon Ek Hizmetleri</DialogTitle>
+          <DialogDescription>
+            {data?.venue?.salon_adi ? `${data.venue.salon_adi} tarafından sunulan ek hizmetler. Seçip onaylayın; salon paneline düşer.` : "Bu davetiye bir salona bağlı değil veya salon henüz hizmet tanımlamamış."}
+          </DialogDescription>
+        </DialogHeader>
+        {data === null && <p className="text-sm text-slate-400 py-6 text-center">Yükleniyor…</p>}
+        {data && services.length === 0 && <p className="text-sm text-slate-400 py-6 text-center">Şu an sunulan ek hizmet yok.</p>}
+        <div className="space-y-2">
+          {services.map((s) => {
+            const on = sel.includes(s.id);
+            return (
+              <button key={s.id} onClick={() => toggle(s.id)} data-testid={`svc-opt-${s.id}`}
+                className={`w-full text-left rounded-xl border p-3 flex items-center gap-3 transition ${on ? "border-amber-400 bg-amber-50 ring-2 ring-amber-200" : "border-slate-200 hover:bg-slate-50"}`}>
+                <span className={`w-5 h-5 rounded-md grid place-items-center border ${on ? "bg-amber-500 border-amber-500 text-white" : "border-slate-300"}`}>{on && <Check className="w-3.5 h-3.5" />}</span>
+                <span className="flex-1 min-w-0">
+                  <span className="block font-medium text-slate-800">{s.name}</span>
+                  {s.description && <span className="block text-xs text-slate-500">{s.description}</span>}
+                </span>
+                <span className="font-semibold text-amber-700 whitespace-nowrap">{(s.price || 0).toLocaleString("tr-TR")} ₺</span>
+              </button>
+            );
+          })}
+        </div>
+        {services.length > 0 && (
+          <div className="flex items-center justify-between mt-4 pt-3 border-t">
+            <span className="text-sm text-slate-600">Seçilen toplam: <b className="text-amber-700">{total.toLocaleString("tr-TR")} ₺</b></span>
+            <Button onClick={save} disabled={saving} className="bg-amber-500 hover:bg-amber-600 text-black" data-testid="venue-services-save">{saving ? "…" : "Onayla & Salona İlet"}</Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

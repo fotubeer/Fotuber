@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   LogOut, Plus, Copy, Trash2, Ticket, CheckCircle2, Clock, MessageCircle, Gift, Percent, Landmark,
-  FileDown, Send, Users, ListChecks, Megaphone, ArrowLeft, QrCode, Printer, MapPin, KeyRound, UserPlus,
+  FileDown, Send, Users, ListChecks, Megaphone, ArrowLeft, QrCode, Printer, MapPin, KeyRound, UserPlus, MessageSquare,
 } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { venueApi, clearVenueToken } from "@/lib/venueApi";
+import VenueChat from "@/components/VenueChat";
 import { formatApiError } from "@/lib/api";
 
 const INVITE_URL = (typeof window !== "undefined") ? window.location.origin : "";
@@ -135,7 +136,7 @@ export default function VenueDashboard() {
 
         {/* Tabs */}
         <div className="flex gap-1 p-1 rounded-xl bg-white/5 w-fit mb-6">
-          {[["codes", "Kodlar", Ticket], ["report", "Kullanım Raporu", ListChecks], ["personel", "Personel", Users], ["kroki", "Salon Krokileri", MapPin], ["campaign", "Toplu Kampanya", Megaphone], ["poster", "QR Afiş", QrCode]].map(([k, label, Icon]) => (
+          {[["codes", "Kodlar", Ticket], ["report", "Kullanım Raporu", ListChecks], ["personel", "Personel", Users], ["kroki", "Salon Krokileri", MapPin], ["hizmet", "Ek Hizmetler", Gift], ["sohbet", "Ekip Sohbeti", MessageSquare], ["campaign", "Toplu Kampanya", Megaphone], ["poster", "QR Afiş", QrCode]].map(([k, label, Icon]) => (
             <button key={k} data-testid={`venue-tab-${k}`}
               onClick={() => { setTab(k); if (k === "report") loadReport(); }}
               className={`px-4 h-9 rounded-lg text-sm font-medium flex items-center gap-1.5 ${tab === k ? "bg-white text-neutral-900" : "text-white/60 hover:text-white"}`}>
@@ -148,6 +149,8 @@ export default function VenueDashboard() {
         {tab === "campaign" && <CampaignView salon={acc?.salon_adi} onDone={load} />}
         {tab === "poster" && <PosterView salon={acc?.salon_adi} city={acc?.city} />}
         {tab === "personel" && <StaffView />}
+        {tab === "hizmet" && <ServicesView />}
+        {tab === "sohbet" && <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-4"><VenueChat client={venueApi} base="/venue" isManager /></div>}
         {tab === "kroki" && <FloorPlansView navigate={navigate} />}
 
         {tab === "codes" && <>
@@ -597,6 +600,51 @@ function FloorPlansView({ navigate }) {
             <div className="flex gap-2">
               <Button size="sm" onClick={() => navigate(`/salon/kroki/${p.id}`)} className="bg-white/10 hover:bg-white/20" data-testid={`kroki-open-${p.id}`}>Düzenle</Button>
               <Button size="sm" variant="outline" className="text-red-500" onClick={() => del(p.id)}><Trash2 size={14} /></Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Ek Hizmet (Upsell) yönetimi ─────────────────────────────────────────────
+function ServicesView() {
+  const [rows, setRows] = useState([]);
+  const [form, setForm] = useState({ name: "", description: "", price: "", image_url: "" });
+  const load = useCallback(() => venueApi.get("/venue/services").then(({ data }) => setRows(data.services || [])).catch(() => {}), []);
+  useEffect(() => { load(); }, [load]);
+  const add = async () => {
+    if (!form.name.trim()) { toast.error("Hizmet adı girin"); return; }
+    try { await venueApi.post("/venue/services", { ...form, price: parseFloat(form.price) || 0 }); toast.success("Hizmet eklendi"); setForm({ name: "", description: "", price: "", image_url: "" }); load(); }
+    catch (e) { toast.error(formatApiError(e)); }
+  };
+  const del = async (id) => { if (!window.confirm("Hizmet silinsin mi?")) return; await venueApi.delete(`/venue/services/${id}`); load(); };
+  const toggle = async (s) => { await venueApi.put(`/venue/services/${s.id}`, { ...s, active: !s.active }); load(); };
+  return (
+    <div className="space-y-5" data-testid="venue-hizmet-view">
+      <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-5">
+        <div className="flex items-center gap-2 mb-1"><Gift size={16} className="text-amber-300" /><h3 className="font-semibold">Ek Hizmet Ekle</h3></div>
+        <p className="text-xs text-white/50 mb-3">360 Photobooth, Anı Duvarı, Sis Efekti, Canlı Baskı Kiosk vb. Çiftler kendi davetiye panelinden tek tıkla ekler.</p>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
+          <Input data-testid="svc-name" placeholder="Hizmet adı" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-white/5 border-white/15 text-white" />
+          <Input data-testid="svc-price" type="number" placeholder="Fiyat (₺)" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className="bg-white/5 border-white/15 text-white" />
+          <Input data-testid="svc-desc" placeholder="Kısa açıklama" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="bg-white/5 border-white/15 text-white" />
+          <Button data-testid="svc-add" onClick={add} className="bg-amber-500 hover:bg-amber-600 text-black">Ekle</Button>
+        </div>
+      </div>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {rows.length === 0 && <p className="text-sm text-white/40">Henüz hizmet yok.</p>}
+        {rows.map((s) => (
+          <div key={s.id} className="rounded-2xl border border-white/12 bg-white/[0.04] p-4" data-testid={`svc-row-${s.id}`}>
+            <div className="flex items-start justify-between">
+              <div className="font-medium">{s.name}</div>
+              <div className="text-amber-300 font-semibold whitespace-nowrap">{(s.price || 0).toLocaleString("tr-TR")} ₺</div>
+            </div>
+            {s.description && <div className="text-xs text-white/50 mt-1">{s.description}</div>}
+            <div className="flex gap-2 mt-3">
+              <Button size="sm" variant="outline" className="text-black" onClick={() => toggle(s)}>{s.active ? "Pasifleştir" : "Aktifleştir"}</Button>
+              <Button size="sm" variant="outline" className="text-red-500" onClick={() => del(s.id)}><Trash2 size={14} /></Button>
             </div>
           </div>
         ))}
