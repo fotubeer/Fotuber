@@ -3,7 +3,7 @@
 // Each template is a drop-in "visual" object (same shape the preview/view expect)
 // PLUS engine fields: foil colors, canvas particle type, texture and 3D reveal.
 // ─────────────────────────────────────────────────────────────────────────────
-import { getTheme } from "@/lib/invitationThemes";
+import { getTheme, EVENT_TYPE_LABELS } from "@/lib/invitationThemes";
 
 // Categories shown in the wizard. eventType maps to backend INVITE_EVENT_TYPES.
 export const INVITATION_CATEGORIES = [
@@ -297,6 +297,23 @@ export const templatesByCategory = (catKey) =>
   Object.entries(INVITATION_TEMPLATES)
     .filter(([, t]) => t.category === catKey)
     .map(([id, t]) => ({ id, ...t }));
+
+// All photo-focused templates across categories (for the "Fotoğraflı" quick filter).
+export const photoTemplates = () =>
+  Object.entries(INVITATION_TEMPLATES)
+    .filter(([, t]) => t.photo)
+    .map(([id, t]) => ({ id, ...t }));
+
+// Human category labels (single source: the wizard categories).
+export const CATEGORY_LABELS = Object.fromEntries(INVITATION_CATEGORIES.map((c) => [c.key, c.label]));
+
+// The event label shown on the invitation — prefers the template's category so it
+// never mismatches the visual (fixes "DÜĞÜN on a kına template" issues).
+export const eventLabelFor = (data) => {
+  const tpl = data && data.template ? INVITATION_TEMPLATES[data.template] : null;
+  if (tpl) return CATEGORY_LABELS[tpl.category] || "Davetiye";
+  return EVENT_TYPE_LABELS[data && data.event_type] || "Davetiye";
+};
 
 // Single source of truth for the visual object used by preview / view / reveal.
 // Prefers a rich template; falls back to the legacy 8-theme system.

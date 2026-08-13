@@ -1,0 +1,24 @@
+{
+  "summary": "FAZ 2 follow-ups verified end-to-end via Playwright against the public URL. (1) '📷 Fotoğraflı' quick-filter tab present in template gallery (data-testid=tpl-cat-photo); clicking it renders photo-filter-note and lists exactly the 4 photo templates (tpl-card-wed-photo, tpl-card-eng-photo, tpl-card-kina-photo, tpl-card-sun-photo) with non-photo templates (e.g., tpl-card-wed-botanic) excluded. (2) Photo-upload-tip (dikey 3:4 uyarısı) appears when a photo template is active (tpl-use-kina-photo) and disappears after selecting a non-photo template (tpl-use-wed-botanic). Cover-crop-preview markup is in place (would render after upload). (3) Live preview label syncs with template category: kina-photo → 'KINA GECESİ', wed-botanic → 'DÜĞÜN', eng-pastel → 'NİŞAN', kina-bordo → 'KINA GECESİ'. (4) Guest page /davetiye/elif-kaan-173c7b now shows 'KINA GECESİ' (previously 'DÜĞÜN' cosmetic bug fixed via eventLabelFor preferring template category). Regression /davetiye/ahmet-yasemin-9a66eb still renders 'KINA GECESİ' with RSVP form present and no console errors (401s are the unauthenticated /api/member/me probe — expected).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Template gallery Dialog", "issues": ["Radix Dialog missing Description/aria-describedby — accessibility warning in console (non-blocking)"]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "eventLabelFor correctly prioritises template.category over stored event_type — fixes 'DÜĞÜN on kına template' cosmetic bug for existing invitations without DB migration.",
+    "photoTemplates() filters via t.photo flag — cleanly reuses INVITATION_TEMPLATES.",
+    "Consider adding aria-describedby / DialogDescription to <DialogContent> for a11y (Radix warning)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Frontend-only FAZ 2 follow-ups (photo tab, photo-upload-tip, 3:4 crop preview markup, eventLabelFor category-driven label). All four acceptance criteria pass on the preview URL. Guest slugs elif-kaan-173c7b and ahmet-yasemin-9a66eb both display 'KINA GECESİ'. Only non-blocking Radix a11y warning observed."
+}

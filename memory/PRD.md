@@ -794,3 +794,11 @@ Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay
 - **Fotoğraflı premium şablonlar**: wed-photo, eng-photo, kina-photo, sun-photo (`photo:true`). Çiftin kapak fotoğrafı zarf/kart içinde çerçeveli gösterilir (InvitationPreview preview-photo + TemplateReveal CardBody). Kapak yoksa monograma güvenli fallback. TemplateReveal'e `coverUrl` prop'u eklendi (View + Create geçiriyor). Kart etiketinde "· Fotoğraflı" + foto ikonu.
 - **Doğrulama**: testing_agent iteration_64 %100 — thumbnaillar tüm kategorilerde render, foto şablonlar sekmelerinde + rozet, İncele modalı + dekor, kına misafirinde oryantal mandala görünür + curtain reveal, foto zarf reveal, RSVP regresyonu geçti, console hatası yok. Backend curl: 4 foto şablon id'si publish+persist. (Kozmetik not: test slug elif-kaan-173c7b event_type=dugun ile oluşturulduğu için "DÜĞÜN" etiketi gösteriyor; sihirbaz şablon seçince kategoriyi doğru atar.)
 
+
+## Session BC — FAZ 2 İnce Ayarlar (verified iteration_65, frontend %100)
+- **Etiket senkronu**: `eventLabelFor(data)` — davetiye/önizleme etiketi artık seçilen ŞABLONUN kategorisinden gelir (kına şablonu asla "DÜĞÜN" göstermez). DB migration'sız eski davetiyeleri de düzeltir. InvitationPreview + InvitationView + Create reveal önizlemesi kullanıyor.
+- **"📷 Fotoğraflı" hızlı filtre sekmesi** (tpl-cat-photo): katalogda tüm foto şablonları (wed/eng/kina/sun-photo) tek yerde listeler + açıklama notu.
+- **Kapak yükleme rehberi**: foto şablon seçiliyse "dikey 3:4 fotoğraf yükleyin" ipucu (photo-upload-tip) + yükleme sonrası 3:4 kırpma önizlemesi (cover-crop-preview). Non-foto şablonda ipucu gizli.
+- DialogDescription eklenerek Radix a11y uyarısı giderildi.
+- **macOS .dmg testi**: KULLANICI aksiyonu (Save to Github → GitHub Actions → Mac'te test); kodda ek iş yok.
+

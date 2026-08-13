@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { EVENT_TYPE_LABELS } from "@/lib/invitationThemes";
-import { resolveVisual } from "@/lib/invitationTemplates";
+import { resolveVisual, eventLabelFor } from "@/lib/invitationTemplates";
 import { CalendarDays, Clock, MapPin, Gift } from "lucide-react";
 import ParticleCanvas from "@/components/invitation/ParticleCanvas";
 import TemplateDecor from "@/components/invitation/TemplateDecor";
@@ -94,7 +94,7 @@ export const InvitationPreview = ({ data }) => {
         {/* Hero */}
         <div className="text-center min-h-[70vh] flex flex-col items-center justify-center">
           <motion.div variants={item} className="uppercase tracking-[0.45em] text-[11px] mb-6" style={{ color: t.accent, fontFamily: "'Montserrat', sans-serif" }}>
-            {EVENT_TYPE_LABELS[data.event_type] || "Davetiye"}
+            {eventLabelFor(data)}
           </motion.div>
 
           {cover && (

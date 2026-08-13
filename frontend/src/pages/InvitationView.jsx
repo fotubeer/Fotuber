@@ -9,7 +9,7 @@ import InvitationPreview from "@/components/invitation/InvitationPreview";
 import TemplateReveal from "@/components/invitation/TemplateReveal";
 import PhotoWall from "@/components/invitation/PhotoWall";
 import { EVENT_TYPE_LABELS } from "@/lib/invitationThemes";
-import { resolveVisual } from "@/lib/invitationTemplates";
+import { resolveVisual, eventLabelFor } from "@/lib/invitationTemplates";
 import { loadGoogleFont } from "@/lib/designFonts";
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -135,7 +135,7 @@ export default function InvitationView() {
       {music && musicSrc && <audio ref={audioRef} src={musicSrc} loop preload="auto" />}
 
       {!opened && (
-        <TemplateReveal t={t} eventLabel={EVENT_TYPE_LABELS[inv.event_type] || "Davetiye"}
+        <TemplateReveal t={t} eventLabel={eventLabelFor(inv)}
           welcomeText={inv.welcome_text || ""}
           coverUrl={inv.cover_image_id ? `${API}/api/invitations/cover/${inv.cover_image_id}` : ""}
           names={inv.person2 ? `${inv.person1} & ${inv.person2}` : inv.person1}

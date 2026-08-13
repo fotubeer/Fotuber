@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast, Toaster } from "sonner";
-import { Loader2, Sparkles, Check, Copy, ExternalLink, Upload, ArrowRight, Music, Eye, Lock, QrCode, Images, Download, CreditCard } from "lucide-react";
+import { Loader2, Sparkles, Check, Copy, ExternalLink, Upload, ArrowRight, Music, Eye, Lock, QrCode, Images, Download, CreditCard, Image as ImageIcon } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
 import { loadGoogleFont } from "@/lib/designFonts";
@@ -16,7 +16,7 @@ import TemplateReveal from "@/components/invitation/TemplateReveal";
 import TemplateThumb from "@/components/invitation/TemplateThumb";
 import VoiceRecorder from "@/components/invitation/VoiceRecorder";
 import { EVENT_TYPE_LABELS, printColors } from "@/lib/invitationThemes";
-import { INVITATION_CATEGORIES, templatesByCategory, getTemplate, priceThemeFor, resolveVisual } from "@/lib/invitationTemplates";
+import { INVITATION_CATEGORIES, templatesByCategory, photoTemplates, getTemplate, priceThemeFor, resolveVisual, eventLabelFor } from "@/lib/invitationTemplates";
 import { getMessagesFor } from "@/lib/invitationMessages";
 import { TrDatePicker } from "@/components/TrDatePicker";
 
@@ -313,12 +313,26 @@ export default function InvitationCreate() {
             </div>
 
             <div>
-              <Label>Kapak Fotoğrafı (isteğe bağlı)</Label>
+              <Label>Kapak Fotoğrafı {currentTpl?.photo ? "(bu şablon için önerilir)" : "(isteğe bağlı)"}</Label>
+              {currentTpl?.photo && (
+                <div className="mb-1.5 mt-1 flex items-start gap-2 text-[11px] text-rose-700 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2" data-testid="photo-upload-tip">
+                  <ImageIcon className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>En iyi sonuç için <b>dikey (3:4)</b> bir fotoğraf yükleyin — kart içinde çerçevelenir. Yatay fotoğraflar otomatik olarak dikey kırpılır.</span>
+                </div>
+              )}
               <label className="mt-1 flex items-center gap-2 px-3 py-2 border border-dashed rounded-lg cursor-pointer text-sm text-slate-600 hover:bg-slate-50">
                 {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                 {data.cover_image_id ? "Fotoğraf eklendi — değiştir" : "Fotoğraf yükle"}
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadCover(e.target.files?.[0])} data-testid="cover-upload" />
               </label>
+              {data.cover_image_id && currentTpl?.photo && (
+                <div className="mt-2 flex items-center gap-3" data-testid="cover-crop-preview">
+                  <div className="w-20 rounded-lg overflow-hidden border border-slate-200 shrink-0">
+                    <img src={`${API}/api/invitations/cover/${data.cover_image_id}`} alt="kapak" className="w-full aspect-[3/4] object-cover" />
+                  </div>
+                  <div className="text-[11px] text-slate-500">Kart içinde bu şekilde 3:4 dikey görünecek. Farklı bir fotoğraf için üstten değiştirin.</div>
+                </div>
+              )}
             </div>
 
             <div>
@@ -505,7 +519,7 @@ export default function InvitationCreate() {
       <Dialog open={tplOpen} onOpenChange={setTplOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" data-testid="template-gallery">
           <DialogTitle className="text-lg font-bold text-slate-900">Şablon Kataloğu</DialogTitle>
-          <p className="text-sm text-slate-500 -mt-1">Kategoriden seçin, inceleyin, beğendiğiniz şablonla devam edin. Premium şablonlar ücretlidir.</p>
+          <DialogDescription className="text-sm text-slate-500 -mt-1">Kategoriden seçin, inceleyin, beğendiğiniz şablonla devam edin. Premium şablonlar ücretlidir.</DialogDescription>
           <div className="flex flex-wrap gap-1.5 mt-2 sticky top-0 bg-white py-2 z-10" data-testid="tpl-category-tabs">
             {INVITATION_CATEGORIES.map((c) => (
               <button key={c.key} onClick={() => setGalCat(c.key)} data-testid={`tpl-cat-${c.key}`}
@@ -513,12 +527,21 @@ export default function InvitationCreate() {
                 <span className="mr-1">{c.emoji}</span>{c.label}
               </button>
             ))}
+            <button onClick={() => setGalCat("__photo")} data-testid="tpl-cat-photo"
+              className={`text-xs px-3 py-1.5 rounded-full border transition ${galCat === "__photo" ? "bg-rose-600 text-white border-rose-600" : "border-rose-200 text-rose-600 hover:bg-rose-50"}`}>
+              <span className="mr-1">📷</span>Fotoğraflı
+            </button>
           </div>
+          {galCat === "__photo" && (
+            <div className="text-[11px] text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2 mt-1" data-testid="photo-filter-note">
+              Çift fotoğrafınızı zarf/kart içine yerleştiren premium şablonlar. Seçtikten sonra dikey (3:4) bir kapak fotoğrafı yükleyin.
+            </div>
+          )}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-1">
-            {templatesByCategory(galCat).map((th) => (
+            {(galCat === "__photo" ? photoTemplates() : templatesByCategory(galCat)).map((th) => (
               <div key={th.id} className={`rounded-xl overflow-hidden border ${data.template === th.id ? "ring-2 ring-indigo-500" : "border-slate-200"}`} data-testid={`tpl-card-${th.id}`}>
                 <div className="relative">
-                  <TemplateThumb tpl={th} names={data.person1 ? (data.person2 ? `${data.person1} & ${data.person2}` : data.person1) : "Elif & Kaan"} label={EVENT_TYPE_LABELS[INVITATION_CATEGORIES.find((c)=>c.key===th.category)?.eventType] || "Davetiye"} height={124} />
+                  <TemplateThumb tpl={th} names={data.person1 ? (data.person2 ? `${data.person1} & ${data.person2}` : data.person1) : "Elif & Kaan"} label={INVITATION_CATEGORIES.find((c)=>c.key===th.category)?.label || "Davetiye"} height={124} />
                   {th.premium && <span className="absolute top-1 right-1 z-10 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950 flex items-center gap-0.5"><Lock className="w-2.5 h-2.5" />PREMIUM</span>}
                 </div>
                 <div className="p-2 bg-white">
@@ -602,7 +625,7 @@ export default function InvitationCreate() {
       {previewReveal && (
         <div className="fixed inset-0 z-[80]" data-testid="reveal-preview-modal">
           <TemplateReveal key={previewKey}
-            t={resolveVisual(data)} eventLabel={EVENT_TYPE_LABELS[data.event_type] || "Davetiye"}
+            t={resolveVisual(data)} eventLabel={eventLabelFor(data)}
             welcomeText={data.welcome_text || ""}
             coverUrl={data.cover_image_id ? `${API}/api/invitations/cover/${data.cover_image_id}` : ""}
             names={data.person2 ? `${data.person1 || "İsim"} & ${data.person2}` : (data.person1 || "İsimler")}
