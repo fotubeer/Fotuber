@@ -51,6 +51,7 @@ jobs:
       - name: Build installer
         working-directory: desktop
         env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
           FOTUBER_APP_URL: ${{ github.event.inputs.app_url != '' && github.event.inputs.app_url || secrets.FOTUBER_APP_URL }}
         run: yarn ${{ matrix.script }}
 

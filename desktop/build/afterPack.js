@@ -1,21 +1,70 @@
-// electron-builder afterPack hook: macOS uygulamasını ad-hoc (sertifikasız) imzalar.
-// V8 JIT ve kütüphane yüklemesi için gerekli entitlements + hardened runtime ile imzalanır;
-// böylece uygulama Apple Silicon'da "bozuk" hatası vermeden ve çökmeden açılır.
-// (Apple notarization olmadığı için ilk açılışta "bilinmeyen geliştirici" → sağ tık → Aç normaldir.)
-const { execSync } = require("child_process");
+// electron-builder afterPack hook — macOS ad-hoc (sertifikasız) imzalama.
+//
+// KÖK NEDEN (önceki çökme): imzalama --entitlements ve --options runtime OLMADAN
+// yapılıyordu; bu yüzden entitlements.mac.plist içindeki JIT / executable-memory
+// izinleri Apple Silicon'a UYGULANMIYOR ve V8 motoru açılışta EXC_BREAKPOINT
+// (SIGTRAP) ile çöküyordu.
+//
+// ÇÖZÜM: tüm iç bileşenleri (frameworks, dylib, Helper .app'ler) ÖNCE, ana .app'i
+// EN SON olacak şekilde (inside-out) hardened runtime + entitlements ile ad-hoc imzala.
+const { execFileSync } = require("child_process");
 const path = require("path");
+const fs = require("fs");
 
 exports.default = async function afterPack(context) {
   if (context.electronPlatformName !== "darwin") return;
   const appName = context.packager.appInfo.productFilename;
   const appPath = path.join(context.appOutDir, `${appName}.app`);
   const ent = path.join(__dirname, "entitlements.mac.plist");
-  try {
-    execSync(
-      `codesign --force --deep --timestamp=none --options runtime --entitlements "${ent}" -s - "${appPath}"`,
+
+  const sign = (target) => {
+    execFileSync(
+      "codesign",
+      [
+        "--force",
+        "--timestamp=none",
+        "--options", "runtime",
+        "--entitlements", ent,
+        "--sign", "-",
+        target,
+      ],
       { stdio: "inherit" }
     );
-    console.log(`[afterPack] Ad-hoc (hardened+entitlements) imzalandı: ${appPath}`);
+  };
+
+  // İç bileşenleri derinlemesine topla (inside-out imzalamak için).
+  const targets = [];
+  const walk = (dir) => {
+    if (!fs.existsSync(dir)) return;
+    for (const name of fs.readdirSync(dir)) {
+      const full = path.join(dir, name);
+      let stat;
+      try { stat = fs.lstatSync(full); } catch { continue; }
+      if (stat.isSymbolicLink()) continue;
+      if (name.endsWith(".app") || name.endsWith(".framework")) {
+        // Önce içine gir (daha derin bileşenler önce imzalanmalı), sonra kendisini ekle.
+        walk(full);
+        targets.push(full);
+      } else if (name.endsWith(".dylib") || name.endsWith(".node")) {
+        targets.push(full);
+      } else if (stat.isDirectory()) {
+        walk(full);
+      }
+    }
+  };
+
+  try {
+    walk(path.join(appPath, "Contents", "Frameworks"));
+    // İç bileşenler (en derin → en sığ), sonra ana uygulama.
+    for (const t of targets) sign(t);
+    sign(appPath);
+    console.log(`[afterPack] Ad-hoc (hardened runtime + entitlements, inside-out) imzalandı: ${appPath}`);
+    // Doğrulama (bilgi amaçlı; hata verse de build'i kırma).
+    try {
+      execFileSync("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appPath], { stdio: "inherit" });
+    } catch (v) {
+      console.warn(`[afterPack] Doğrulama uyarısı (kritik değil): ${v.message}`);
+    }
   } catch (e) {
     console.warn(`[afterPack] Ad-hoc imzalama başarısız (kritik değil): ${e.message}`);
   }

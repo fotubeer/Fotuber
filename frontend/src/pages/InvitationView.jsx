@@ -6,9 +6,10 @@ import { Loader2, Send, MessageCircleHeart, Check, X, HelpCircle, Volume2, Volum
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
-import InvitationReveal from "@/components/invitation/InvitationReveal";
+import TemplateReveal from "@/components/invitation/TemplateReveal";
 import PhotoWall from "@/components/invitation/PhotoWall";
-import { getTheme } from "@/lib/invitationThemes";
+import { EVENT_TYPE_LABELS } from "@/lib/invitationThemes";
+import { resolveVisual } from "@/lib/invitationTemplates";
 import { loadGoogleFont } from "@/lib/designFonts";
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -113,7 +114,7 @@ export default function InvitationView() {
     </div>
   );
 
-  const t = getTheme(inv.theme, inv.primary_color);
+  const t = resolveVisual(inv);
   if (inv.font_family) {
     const fam = `'${inv.font_family}', serif`;
     t.script = fam; t.heading = fam;
@@ -134,7 +135,8 @@ export default function InvitationView() {
       {music && musicSrc && <audio ref={audioRef} src={musicSrc} loop preload="auto" />}
 
       {!opened && (
-        <InvitationReveal t={t} themeKey={inv.theme} eventType={inv.event_type} styleKey={inv.reveal_style} opts={inv.reveal_opts}
+        <TemplateReveal t={t} eventLabel={EVENT_TYPE_LABELS[inv.event_type] || "Davetiye"}
+          welcomeText={inv.welcome_text || ""}
           names={inv.person2 ? `${inv.person1} & ${inv.person2}` : inv.person1}
           initials={initials} onDone={() => setOpened(true)} />
       )}

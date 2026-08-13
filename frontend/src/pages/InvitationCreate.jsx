@@ -12,10 +12,10 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import InvitationPreview from "@/components/invitation/InvitationPreview";
 import { loadGoogleFont } from "@/lib/designFonts";
-import InvitationReveal, { SIGNATURE_STYLES } from "@/components/invitation/InvitationReveal";
-import RevealOptions from "@/components/invitation/RevealOptions";
+import TemplateReveal from "@/components/invitation/TemplateReveal";
 import VoiceRecorder from "@/components/invitation/VoiceRecorder";
-import { INVITATION_THEMES, EVENT_TYPE_LABELS, getTheme, printColors } from "@/lib/invitationThemes";
+import { EVENT_TYPE_LABELS, printColors } from "@/lib/invitationThemes";
+import { INVITATION_CATEGORIES, templatesByCategory, getTemplate, priceThemeFor, resolveVisual } from "@/lib/invitationTemplates";
 import { getMessagesFor } from "@/lib/invitationMessages";
 import { TrDatePicker } from "@/components/TrDatePicker";
 
@@ -25,14 +25,16 @@ const api = (path, opts = {}) => fetch(`${API}/api${path}`, { credentials: "incl
 export default function InvitationCreate() {
   const navigate = useNavigate();
   const [data, setData] = useState({
-    event_type: "dugun", person1: "", person2: "", event_date: "", event_time: "",
+    event_type: "dugun", category: "dugun", person1: "", person2: "", event_date: "", event_time: "",
     venue_name: "", venue_address: "", map_url: "", message: "", theme: "romantic",
+    template: "wed-botanic", welcome_text: "",
     primary_color: "", cover_image_id: "", music_url: "", reveal_style: "", reveal_opts: {},
     font_family: "", name_scale: 1,
     gift: { full_name: "", bank_name: "", iban: "", note: "" },
     sections: { countdown: true, map: true, memories: true, rsvp: true, gift: true, music: false },
     venue_code: "",
   });
+  const [galCat, setGalCat] = useState("dugun");
   const [gate, setGate] = useState(false); // membership gate at the end
   const [authTab, setAuthTab] = useState("register");
   const [authForm, setAuthForm] = useState({ email: "", password: "", full_name: "", phone: "", company_name: "", kvkk_accepted: false, sms_consent: false, email_consent: false });
@@ -76,6 +78,15 @@ export default function InvitationCreate() {
   const setGift = (k, v) => setData((d) => ({ ...d, gift: { ...d.gift, [k]: v } }));
   const setSection = (k, v) => setData((d) => ({ ...d, sections: { ...d.sections, [k]: v } }));
 
+  // Selecting a rich template drives the visual + pricing-theme + event type.
+  const selectTemplate = (id) => {
+    const tpl = getTemplate(id);
+    if (!tpl) return;
+    const cat = INVITATION_CATEGORIES.find((c) => c.key === tpl.category);
+    setData((d) => ({ ...d, template: id, category: tpl.category,
+      theme: priceThemeFor(tpl), event_type: cat ? cat.eventType : d.event_type }));
+  };
+
   const uploadAudio = async (file) => {
     if (!file) return;
     setUploading(true);
@@ -92,7 +103,8 @@ export default function InvitationCreate() {
   };
 
   const canPublish = data.person1.trim() && data.event_date;
-  const isPremiumTheme = INVITATION_THEMES[data.theme]?.premium;
+  const currentTpl = getTemplate(data.template);
+  const isPremiumTheme = currentTpl ? !!currentTpl.premium : false;
   const pwTier = data.sections.photowall_tier || "";
   const hasPhotowall = !!pwTier;
   const pwPrice = (pwTiers && pwTier && pwTiers[pwTier]) ? Number(pwTiers[pwTier].price) : 0;
@@ -293,6 +305,13 @@ export default function InvitationCreate() {
             </div>
 
             <div>
+              <Label>Açılış Karşılama Yazısı (misafire)</Label>
+              <Input value={data.welcome_text} onChange={(e) => set("welcome_text", e.target.value)}
+                placeholder="Sizleri aramızda görmekten mutluluk duyarız" data-testid="welcome-text" />
+              <p className="text-[11px] text-slate-400 mt-1">Davetiye açıldığında isimlerin üstünde/altında görünen karşılama metni.</p>
+            </div>
+
+            <div>
               <Label>Kapak Fotoğrafı (isteğe bağlı)</Label>
               <label className="mt-1 flex items-center gap-2 px-3 py-2 border border-dashed rounded-lg cursor-pointer text-sm text-slate-600 hover:bg-slate-50">
                 {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
@@ -315,16 +334,17 @@ export default function InvitationCreate() {
             </div>
 
             <div>
-              <Label>Şablon</Label>
-              <button type="button" onClick={() => setTplOpen(true)} data-testid="open-template-gallery"
+              <Label>Şablon Kataloğu</Label>
+              <button type="button" onClick={() => { setGalCat(data.category || "dugun"); setTplOpen(true); }} data-testid="open-template-gallery"
                 className="mt-1 w-full flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-400 transition"
-                style={{ background: getTheme(data.theme).bg }}>
-                <span className="font-medium" style={{ color: getTheme(data.theme).text }}>
-                  {INVITATION_THEMES[data.theme]?.name}
-                  {INVITATION_THEMES[data.theme]?.premium && <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-400 text-amber-950">PREMIUM</span>}
+                style={{ background: (currentTpl?.bg) || "#f4f4f5" }}>
+                <span className="font-medium" style={{ color: (currentTpl?.text) || "#111", fontFamily: currentTpl?.heading }}>
+                  {currentTpl?.name || "Şablon seçin"}
+                  {currentTpl?.premium && <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-400 text-amber-950">PREMIUM</span>}
                 </span>
-                <span className="text-xs px-3 py-1.5 rounded-full bg-white/80 text-slate-700 flex items-center gap-1"><Eye className="w-3.5 h-3.5" /> Şablonları Gör</span>
+                <span className="text-xs px-3 py-1.5 rounded-full bg-white/80 text-slate-700 flex items-center gap-1"><Images className="w-3.5 h-3.5" /> Kategoriler & Şablonlar</span>
               </button>
+              <p className="text-[11px] text-slate-400 mt-1">7 kategori · 50+ şablon · gerçekçi 3D zarf, foil ışıltı, canvas parçacık motoru</p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -396,34 +416,18 @@ export default function InvitationCreate() {
 
             <div className="rounded-xl border border-slate-200 p-4">
               <div className="font-medium text-sm mb-1">Açılış Deneyimi</div>
-              <p className="text-[11px] text-slate-500 mb-3">Misafir "Davetiye Aç" deyince oynayacak sinematik açılışı seçin. Her biri kendi hareketi, rengi ve sesiyle gelir.</p>
-              <div className="grid sm:grid-cols-2 gap-2.5" data-testid="reveal-style-grid">
-                {SIGNATURE_STYLES.map((s) => {
-                  const Icon = s.Icon;
-                  const active = (data.reveal_style || "envelope") === s.key;
-                  return (
-                    <button key={s.key} type="button" onClick={() => set("reveal_style", s.key)} data-testid={`reveal-style-${s.key}`}
-                      className={`flex items-start gap-3 p-3 rounded-xl border text-left transition ${active ? "border-indigo-500 ring-2 ring-indigo-200 bg-indigo-50/40" : "border-slate-200 hover:bg-slate-50"}`}>
-                      <span className="w-11 h-11 rounded-lg grid place-items-center shrink-0 text-white" style={{ background: `linear-gradient(135deg, ${s.swatch[0]}, ${s.swatch[1]})` }}>
-                        <Icon className="w-5 h-5" />
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-slate-800">{s.label}</span>
-                        <span className="block text-[11px] text-slate-500 leading-tight mt-0.5">{s.desc}</span>
-                      </span>
-                    </button>
-                  );
-                })}
+              <p className="text-[11px] text-slate-500">Açılış animasyonu seçtiğiniz şablona göre otomatik gelir: gerçekçi 3D dokulu <b>zarf</b>, <b>kart</b> yükselişi veya <b>perde</b> — mum mührü, foil ışıltısı, gyroscope 3D eğim ve canvas parçacık motoruyla.</p>
+              <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-600">
+                <span className="px-2 py-1 rounded-full bg-slate-100">Şablon: <b>{currentTpl?.name || "—"}</b></span>
+                <span className="px-2 py-1 rounded-full bg-slate-100">Açılış: <b>{{ envelope: "3D Zarf", card: "Kart Yükselişi", curtain: "Perde" }[currentTpl?.reveal] || "3D Zarf"}</b></span>
               </div>
-              <RevealOptions styleKey={data.reveal_style || "envelope"} opts={data.reveal_opts || {}}
-                setOpt={(k, v) => setData((d) => ({ ...d, reveal_opts: { ...(d.reveal_opts || {}), [k]: v } }))} />
             </div>
 
             <button onClick={() => { setPreviewKey((k) => k + 1); setPreviewReveal(true); }} type="button" data-testid="preview-reveal-btn"
               className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-indigo-200 text-indigo-700 text-sm font-medium hover:bg-indigo-50">
               <Eye className="w-4 h-4" /> Açılış Animasyonunu Önizle
             </button>
-            <p className="text-[11px] text-slate-400 text-center -mt-1">Etkinlik türüne göre açılış: düğün/nikah kapı, kına mum & kına eli, sünnet perde, doğum günü balon, nişan tül.</p>
+            <p className="text-[11px] text-slate-400 text-center -mt-1">Misafirin göreceği tam ekran sinematik açılışı önizleyin.</p>
 
             <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-3" data-testid="venue-code-box">
               <label className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
@@ -496,23 +500,32 @@ export default function InvitationCreate() {
         </div>
       )}
 
-      {/* Template gallery */}
+      {/* Template catalog — categorized */}
       <Dialog open={tplOpen} onOpenChange={setTplOpen}>
-        <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto" data-testid="template-gallery">
-          <DialogTitle className="text-lg font-bold text-slate-900">Şablon Seç</DialogTitle>
-          <p className="text-sm text-slate-500 -mt-1">Önce inceleyin, beğendiğiniz şablonla devam edin. Premium şablonlar ücretlidir.</p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-2">
-            {Object.entries(INVITATION_THEMES).map(([k, th]) => (
-              <div key={k} className={`rounded-xl overflow-hidden border ${data.theme === k ? "ring-2 ring-indigo-500" : "border-slate-200"}`} data-testid={`tpl-card-${k}`}>
-                <div className="h-24 flex items-center justify-center relative" style={{ background: th.bg }}>
-                  <span style={{ color: th.text, fontFamily: th.heading }} className="text-sm">Aa</span>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" data-testid="template-gallery">
+          <DialogTitle className="text-lg font-bold text-slate-900">Şablon Kataloğu</DialogTitle>
+          <p className="text-sm text-slate-500 -mt-1">Kategoriden seçin, inceleyin, beğendiğiniz şablonla devam edin. Premium şablonlar ücretlidir.</p>
+          <div className="flex flex-wrap gap-1.5 mt-2 sticky top-0 bg-white py-2 z-10" data-testid="tpl-category-tabs">
+            {INVITATION_CATEGORIES.map((c) => (
+              <button key={c.key} onClick={() => setGalCat(c.key)} data-testid={`tpl-cat-${c.key}`}
+                className={`text-xs px-3 py-1.5 rounded-full border transition ${galCat === c.key ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                <span className="mr-1">{c.emoji}</span>{c.label}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-1">
+            {templatesByCategory(galCat).map((th) => (
+              <div key={th.id} className={`rounded-xl overflow-hidden border ${data.template === th.id ? "ring-2 ring-indigo-500" : "border-slate-200"}`} data-testid={`tpl-card-${th.id}`}>
+                <div className="h-28 flex flex-col items-center justify-center relative gap-1" style={{ background: th.bg }}>
+                  <span style={{ color: th.accent, fontFamily: th.script }} className="text-2xl leading-none">Aa</span>
+                  <span style={{ color: th.sub, fontFamily: th.heading }} className="text-[10px] tracking-widest uppercase">{th.name}</span>
                   {th.premium && <span className="absolute top-1 right-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950 flex items-center gap-0.5"><Lock className="w-2.5 h-2.5" />PREMIUM</span>}
                 </div>
                 <div className="p-2 bg-white">
                   <div className="text-xs font-medium text-slate-800 truncate">{th.name}</div>
                   <div className="flex gap-1 mt-1">
-                    <button onClick={() => setPreviewTpl(k)} className="flex-1 text-[11px] py-1 rounded border border-slate-200 text-slate-600" data-testid={`tpl-inspect-${k}`}>İncele</button>
-                    <button onClick={() => { set("theme", k); setTplOpen(false); }} className="flex-1 text-[11px] py-1 rounded bg-indigo-600 text-white" data-testid={`tpl-use-${k}`}>Kullan</button>
+                    <button onClick={() => setPreviewTpl(th.id)} className="flex-1 text-[11px] py-1 rounded border border-slate-200 text-slate-600" data-testid={`tpl-inspect-${th.id}`}>İncele</button>
+                    <button onClick={() => { selectTemplate(th.id); setTplOpen(false); }} className="flex-1 text-[11px] py-1 rounded bg-indigo-600 text-white" data-testid={`tpl-use-${th.id}`}>Kullan</button>
                   </div>
                 </div>
               </div>
@@ -526,16 +539,16 @@ export default function InvitationCreate() {
         <div className="fixed inset-0 z-[60] bg-black/70" data-testid="tpl-inspect-modal">
           <div className="absolute inset-x-0 bottom-0 top-6 bg-white rounded-t-2xl overflow-hidden flex flex-col max-w-2xl mx-auto">
             <div className="flex items-center justify-between px-4 py-2 border-b">
-              <span className="font-medium text-slate-700">{INVITATION_THEMES[previewTpl]?.name} {INVITATION_THEMES[previewTpl]?.premium && <span className="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950">PREMIUM</span>}</span>
+              <span className="font-medium text-slate-700">{getTemplate(previewTpl)?.name} {getTemplate(previewTpl)?.premium && <span className="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950">PREMIUM</span>}</span>
               <button onClick={() => setPreviewTpl(null)} className="text-slate-500" data-testid="tpl-inspect-close">Kapat</button>
             </div>
             <div className="flex-1 overflow-y-auto">
-              <InvitationPreview data={{ ...data, theme: previewTpl,
+              <InvitationPreview data={{ ...data, template: previewTpl,
                 person1: data.person1 || "Ahmet", person2: data.person2 || "Yasemin",
                 event_date: data.event_date || "2026-12-31", message: data.message || "Mutluluğumuza ortak olmanızdan onur duyarız." }} />
             </div>
             <div className="p-3 border-t">
-              <Button onClick={() => { set("theme", previewTpl); setPreviewTpl(null); setTplOpen(false); }} className="w-full bg-indigo-600 hover:bg-indigo-700" data-testid="tpl-inspect-use">
+              <Button onClick={() => { selectTemplate(previewTpl); setPreviewTpl(null); setTplOpen(false); }} className="w-full bg-indigo-600 hover:bg-indigo-700" data-testid="tpl-inspect-use">
                 Bu Şablonla Devam Et
               </Button>
             </div>
@@ -588,8 +601,9 @@ export default function InvitationCreate() {
       {/* Reveal animation preview */}
       {previewReveal && (
         <div className="fixed inset-0 z-[80]" data-testid="reveal-preview-modal">
-          <InvitationReveal key={previewKey}
-            t={getTheme(data.theme, data.primary_color)} themeKey={data.theme} eventType={data.event_type} styleKey={data.reveal_style} opts={data.reveal_opts}
+          <TemplateReveal key={previewKey}
+            t={resolveVisual(data)} eventLabel={EVENT_TYPE_LABELS[data.event_type] || "Davetiye"}
+            welcomeText={data.welcome_text || ""}
             names={data.person2 ? `${data.person1 || "İsim"} & ${data.person2}` : (data.person1 || "İsimler")}
             initials={`${(data.person1 || "").trim()[0] || ""}${(data.person2 || "").trim()[0] || ""}`.toUpperCase() || "♥"}
             onDone={() => {}} />

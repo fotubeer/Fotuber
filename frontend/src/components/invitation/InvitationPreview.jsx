@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { getTheme, EVENT_TYPE_LABELS } from "@/lib/invitationThemes";
+import { EVENT_TYPE_LABELS } from "@/lib/invitationThemes";
+import { resolveVisual } from "@/lib/invitationTemplates";
 import { CalendarDays, Clock, MapPin, Gift } from "lucide-react";
-import InvitationMotifs from "@/components/invitation/InvitationMotifs";
+import ParticleCanvas from "@/components/invitation/ParticleCanvas";
+import FoilText from "@/components/invitation/FoilText";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -62,7 +64,7 @@ const CountBox = ({ v, label, t }) => (
 
 // Premium animated invitation card. Used in wizard preview + guest page.
 export const InvitationPreview = ({ data }) => {
-  const t = getTheme(data.theme, data.primary_color);
+  const t = resolveVisual(data);
   if (data.font_family) { const fam = `'${data.font_family}', serif`; t.script = fam; t.heading = fam; }
   const ns = data.name_scale || 1;
   const nameSize = `clamp(${3 * ns}rem, ${12 * ns}vw, ${5.5 * ns}rem)`;
@@ -73,12 +75,13 @@ export const InvitationPreview = ({ data }) => {
     ? new Date(`${data.event_date}T00:00:00`).toLocaleDateString("tr-TR", { day: "2-digit", month: "long", year: "numeric" })
     : "Tarih";
   const cover = data.cover_image_id ? `${API}/api/invitations/cover/${data.cover_image_id}` : null;
+  const welcome = data.welcome_text || "Sizleri aramızda görmekten mutluluk duyarız";
 
-  const shimmer = t.premium;
+  const shimmer = !!t.foil;
 
   return (
     <div className="relative w-full overflow-hidden" style={{ background: t.bg, color: t.text }} data-testid="invitation-preview">
-      <InvitationMotifs t={t} />
+      <ParticleCanvas type={t.particles} color={t.particleColor || t.accent} density={0.8} />
 
       <motion.div
         variants={container}
@@ -100,27 +103,16 @@ export const InvitationPreview = ({ data }) => {
           )}
 
           <motion.div variants={item} className="text-sm mb-1" style={{ color: t.sub, fontFamily: t.heading, letterSpacing: "0.05em" }}>
-            Sizleri aramızda görmekten mutluluk duyarız
+            {welcome}
           </motion.div>
 
           {shimmer ? (
-            <motion.h1
-              variants={item}
-              className="leading-none mb-4"
-              style={{
-                fontFamily: t.script,
-                fontSize: nameSize,
-                backgroundImage: `linear-gradient(100deg, ${t.accent} 0%, #ffffff 45%, ${t.accent} 90%)`,
-                backgroundSize: "220% auto",
-                WebkitBackgroundClip: "text",
-                backgroundClip: "text",
-                color: "transparent",
-              }}
-              animate={{ backgroundPositionX: ["0%", "220%"] }}
-              transition={{ duration: 7, repeat: Infinity, ease: "linear" }}
-            >
-              {names || "İsimler"}
-            </motion.h1>
+            <motion.div variants={item} className="mb-4">
+              <FoilText as="h1" colors={t.foil} className="leading-none"
+                style={{ fontFamily: t.script, fontSize: nameSize }}>
+                {names || "İsimler"}
+              </FoilText>
+            </motion.div>
           ) : (
             <motion.h1 variants={item} className="leading-none mb-4"
               style={{ fontFamily: t.script, fontSize: nameSize, color: t.accent }}>

@@ -6242,6 +6242,7 @@ def _invite_public(doc: dict, owner: bool = False) -> dict:
         "venue_name": doc.get("venue_name"), "venue_address": doc.get("venue_address"),
         "map_url": doc.get("map_url"), "message": doc.get("message"),
         "theme": doc.get("theme"), "primary_color": doc.get("primary_color"),
+        "template": doc.get("template") or "", "welcome_text": doc.get("welcome_text") or "",
         "font_family": doc.get("font_family") or "", "name_scale": doc.get("name_scale") or 1.0,
         "cover_image_id": doc.get("cover_image_id"), "music_url": doc.get("music_url"),
         "greeting_audio_id": doc.get("greeting_audio_id"),
@@ -6274,6 +6275,8 @@ class InvitationIn(BaseModel):
     map_url: Optional[str] = ""
     message: Optional[str] = ""
     theme: str = "romantic"
+    template: Optional[str] = ""
+    welcome_text: Optional[str] = ""
     primary_color: Optional[str] = ""
     font_family: Optional[str] = ""
     name_scale: Optional[float] = 1.0
@@ -6776,6 +6779,7 @@ async def create_invitation(payload: InvitationIn, user: dict = Depends(get_curr
         "venue_name": payload.venue_name, "venue_address": payload.venue_address,
         "map_url": payload.map_url, "message": payload.message,
         "theme": theme,
+        "template": payload.template or "", "welcome_text": payload.welcome_text or "",
         "primary_color": payload.primary_color, "cover_image_id": payload.cover_image_id,
         "font_family": payload.font_family or "", "name_scale": float(payload.name_scale or 1.0),
         "music_url": payload.music_url, "greeting_audio_id": payload.greeting_audio_id,
