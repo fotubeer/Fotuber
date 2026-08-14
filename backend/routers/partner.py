@@ -5,9 +5,22 @@ Firma kendi alanına girer, firma bilgisi + logo yükler, yetkisine göre dosya 
 Depolama: dahili object storage (media/{partner_id}/...). NAS/WebDAV sonra eklenecek.
 """
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends, Request, Response, UploadFile, File
+import os
+import json
+import base64 as _b64
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Form
 from pydantic import BaseModel, Field
 import jwt
+
+
+# Fotuber Medya — platform bazlı Türkçe sosyal medya içerik üretimi (Gemini 3 Flash)
+_PLATFORM_GUIDE = {
+    "instagram_post": ("Instagram Gönderisi", "Sıcak, görsel odaklı, emoji kullan. 3-5 cümle. Sonunda net bir çağrı (yorum/DM/rezervasyon)."),
+    "instagram_story": ("Instagram Story", "Çok kısa, 1-2 satır, dikkat çekici. Anket/soru/kaydır çağrısı gibi story etkileşimi öner."),
+    "facebook": ("Facebook Gönderisi", "Biraz daha uzun, samimi ve bilgilendirici olabilir. Emoji dengeli kullan."),
+    "tiktok": ("TikTok", "Genç, enerjik, trend bir dil kullan. Kısa ve akılda kalıcı. Video fikri de öner."),
+    "twitter": ("X (Twitter)", "280 karakteri geçmeyen, vurucu ve net tek bir metin. En fazla 2-3 hashtag."),
+}
 
 
 def build_get_current_partner(db, JWT_SECRET, JWT_ALGORITHM):
@@ -216,5 +229,83 @@ def get_router(db, deps):
             pass
         await db.media_files.delete_one({"id": fid, "partner_id": p["id"]})
         return {"ok": True}
+
+    # ── PARTNER — Yapay Zeka İçerik Asistanı (FAZ 2) ─────────────────────
+    async def _gemini_content(b64: str, platform_key: str, context: str) -> dict:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+        import uuid as _uuid
+        key = os.environ.get("EMERGENT_LLM_KEY")
+        if not key:
+            raise HTTPException(status_code=503, detail="AI anahtarı yapılandırılmamış")
+        if b64 and b64.startswith("data:") and "," in b64:
+            b64 = b64.split(",", 1)[1]
+        label, tone = _PLATFORM_GUIDE.get(platform_key, _PLATFORM_GUIDE["instagram_post"])
+        ctx = (context or "").strip()
+        system_msg = (
+            "Sen bir fotoğraf/video stüdyosu için çalışan uzman bir Türk sosyal medya içerik üreticisisin. "
+            "Görseli dikkatle incele ve TAMAMEN TÜRKÇE, akıcı, satış odaklı ve markaya uygun içerik üret. "
+            "Klişe ve yapay ifadelerden kaçın; samimi ve profesyonel ol."
+        )
+        prompt = (
+            f"Bu görsel için '{label}' platformuna uygun içerik üret.\n"
+            f"Platform tonu: {tone}\n"
+            + (f"Ek bağlam / not: {ctx}\n" if ctx else "")
+            + "\nSADECE şu JSON formatında yanıt ver (başka hiçbir metin ekleme):\n"
+            '{"captions": ["varyant 1", "varyant 2", "varyant 3"], '
+            '"hashtags": ["#etiket1", "#etiket2", ...], '
+            '"tip": "içeriği daha etkili paylaşmak için tek cümlelik pratik bir öneri"}\n'
+            "captions: 3 farklı açıklama varyantı. hashtags: platforma uygun sayıda (Instagram/TikTok 12-20, X en fazla 3), Türkçe + ilgili yabancı popüler etiketler karışık."
+        )
+        chat = LlmChat(api_key=key, session_id=f"media-ai-{_uuid.uuid4()}", system_message=system_msg) \
+            .with_model("gemini", "gemini-3-flash-preview")
+        try:
+            resp = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(b64)]))
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"AI üretimi başarısız: {e}")
+        text = (resp or "").strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:]
+        s, e = text.find("{"), text.rfind("}")
+        parsed = None
+        if s != -1 and e != -1:
+            try:
+                parsed = json.loads(text[s:e + 1])
+            except Exception:
+                parsed = None
+        if not isinstance(parsed, dict):
+            parsed = {"captions": [text] if text else [], "hashtags": [], "tip": ""}
+        caps = [c for c in (parsed.get("captions") or []) if isinstance(c, str) and c.strip()]
+        tags = [t for t in (parsed.get("hashtags") or []) if isinstance(t, str) and t.strip()]
+        tags = [t if t.startswith("#") else f"#{t.lstrip('#')}" for t in tags]
+        return {"captions": caps, "hashtags": tags, "tip": (parsed.get("tip") or "").strip(), "platform": platform_key}
+
+    @router.get("/partner/ai-platforms")
+    async def ai_platforms(p: dict = Depends(get_current_partner)):
+        return {"platforms": [{"key": k, "label": v[0]} for k, v in _PLATFORM_GUIDE.items()]}
+
+    @router.post("/partner/ai-content")
+    async def ai_content(
+        p: dict = Depends(get_current_partner),
+        image: UploadFile = File(...),
+        platform: str = Form("instagram_post"),
+        context: str = Form(""),
+    ):
+        data = await image.read()
+        if not data:
+            raise HTTPException(status_code=400, detail="Boş görsel")
+        if len(data) > 12 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Görsel çok büyük (en fazla 12 MB)")
+        ctype = (image.content_type or "").lower()
+        if ctype and not ctype.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Sadece görsel dosyası yükleyin")
+        b64 = _b64.b64encode(data).decode()
+        result = await _gemini_content(b64, platform, context)
+        await db.media_ai_logs.insert_one({
+            "id": new_id(), "partner_id": p["id"], "platform": platform,
+            "context": (context or "")[:500], "created_at": now_iso(),
+        })
+        return result
 
     return router

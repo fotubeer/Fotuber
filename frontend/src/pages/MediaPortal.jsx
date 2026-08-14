@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Aperture, LogOut, Upload, Download, Trash2, Image as ImageIcon, Building2, LogIn } from "lucide-react";
+import { Aperture, LogOut, Upload, Download, Trash2, Image as ImageIcon, Building2, LogIn, Sparkles, Wand2, Copy, X } from "lucide-react";
 
 const API = process.env.REACT_APP_BACKEND_URL + "/api/media";
 const TK = "fotuber_partner_token";
@@ -18,6 +18,22 @@ export default function MediaPortal() {
   const [company, setCompany] = useState({ phone: "", website: "", about: "" });
   const fileRef = useRef(null);
   const logoRef = useRef(null);
+
+  // AI İçerik Asistanı
+  const aiImgRef = useRef(null);
+  const [aiFile, setAiFile] = useState(null);
+  const [aiPreview, setAiPreview] = useState("");
+  const [aiPlatform, setAiPlatform] = useState("instagram_post");
+  const [aiContext, setAiContext] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiResult, setAiResult] = useState(null);
+  const PLATFORMS = [
+    { key: "instagram_post", label: "Instagram Gönderi" },
+    { key: "instagram_story", label: "Instagram Story" },
+    { key: "facebook", label: "Facebook" },
+    { key: "tiktok", label: "TikTok" },
+    { key: "twitter", label: "X (Twitter)" },
+  ];
 
   const loadMe = async () => {
     if (!localStorage.getItem(TK)) { setLoading(false); return; }
@@ -71,6 +87,26 @@ export default function MediaPortal() {
     try { const { data } = await axios.put(`${API}/partner/company`, { company }, authCfg()); setPartner(data.partner); toast.success("Bilgiler kaydedildi"); }
     catch { toast.error("Kaydedilemedi"); }
   };
+
+  const pickAiImage = (e) => {
+    const f = e.target.files?.[0]; if (!f) return;
+    if (!f.type.startsWith("image/")) { toast.error("Lütfen bir görsel seçin"); return; }
+    setAiFile(f); setAiResult(null);
+    const rd = new FileReader(); rd.onload = () => setAiPreview(rd.result); rd.readAsDataURL(f);
+  };
+  const clearAiImage = () => { setAiFile(null); setAiPreview(""); setAiResult(null); if (aiImgRef.current) aiImgRef.current.value = ""; };
+  const generateAi = async () => {
+    if (!aiFile) { toast.error("Önce bir görsel yükleyin"); return; }
+    setAiBusy(true); setAiResult(null);
+    const fd = new FormData();
+    fd.append("image", aiFile); fd.append("platform", aiPlatform); fd.append("context", aiContext);
+    try {
+      const { data } = await axios.post(`${API}/partner/ai-content`, fd, authCfg());
+      setAiResult(data); toast.success("İçerik üretildi");
+    } catch (e) { toast.error(e?.response?.data?.detail || "İçerik üretilemedi"); }
+    finally { setAiBusy(false); }
+  };
+  const copyText = (t) => { navigator.clipboard?.writeText(t); toast.success("Kopyalandı"); };
 
   const logoSrc = partner?.logo_url ? (process.env.REACT_APP_BACKEND_URL + partner.logo_url) : null;
 
@@ -141,6 +177,87 @@ export default function MediaPortal() {
                 {perms.backup && <button onClick={() => doDelete(f)} className="text-red-400 hover:text-red-300 p-1" data-testid={`media-del-${f.id}`}><Trash2 size={16} /></button>}
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Yapay Zeka İçerik Asistanı */}
+      <div className="max-w-5xl mx-auto px-5 pb-10">
+        <div className="rounded-2xl border border-fuchsia-400/20 bg-gradient-to-br from-fuchsia-500/[0.07] to-sky-500/[0.05] p-5" data-testid="media-ai-panel">
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles className="text-fuchsia-400" size={18} />
+            <span className="font-semibold text-lg">Yapay Zeka İçerik Asistanı</span>
+          </div>
+          <p className="text-sm text-white/50 mb-4">Bir ürün/mekan fotoğrafı yükleyin, platformu seçin — Fotuber AI sizin için Türkçe açıklama ve hashtag üretsin.</p>
+
+          <div className="grid md:grid-cols-2 gap-5">
+            {/* Sol: giriş */}
+            <div className="space-y-4">
+              <input ref={aiImgRef} type="file" accept="image/*" hidden onChange={pickAiImage} data-testid="ai-image-input" />
+              {!aiPreview ? (
+                <button onClick={() => aiImgRef.current?.click()} data-testid="ai-upload-btn"
+                  className="w-full h-40 rounded-xl border-2 border-dashed border-white/15 hover:border-fuchsia-400/50 bg-white/[0.02] flex flex-col items-center justify-center gap-2 text-white/50 transition-colors">
+                  <ImageIcon size={26} /> <span className="text-sm">Fotoğraf yükle</span>
+                </button>
+              ) : (
+                <div className="relative rounded-xl overflow-hidden border border-white/10">
+                  <img src={aiPreview} alt="önizleme" className="w-full h-40 object-cover" data-testid="ai-image-preview" />
+                  <button onClick={clearAiImage} className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 rounded-full p-1.5" data-testid="ai-image-clear"><X size={15} /></button>
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs text-white/50 mb-1.5 block">Platform</label>
+                <div className="flex flex-wrap gap-2" data-testid="ai-platforms">
+                  {PLATFORMS.map((pl) => (
+                    <button key={pl.key} onClick={() => setAiPlatform(pl.key)} data-testid={`ai-platform-${pl.key}`}
+                      className={`text-sm px-3 py-1.5 rounded-full border transition-colors ${aiPlatform === pl.key ? "bg-fuchsia-500 border-fuchsia-500 text-white" : "border-white/15 text-white/60 hover:border-white/30"}`}>
+                      {pl.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <textarea value={aiContext} onChange={(e) => setAiContext(e.target.value)} rows={3} data-testid="ai-context"
+                placeholder="Ek bağlam (opsiyonel) — ör. düğün paketi kampanyası, %20 indirim, İstanbul stüdyo…"
+                className="w-full rounded-lg bg-white/5 border border-white/15 px-3 py-2 text-sm outline-none focus:border-fuchsia-400" />
+
+              <button onClick={generateAi} disabled={aiBusy || !aiFile} data-testid="ai-generate-btn"
+                className="w-full h-11 rounded-lg bg-gradient-to-r from-fuchsia-500 to-sky-500 hover:opacity-90 disabled:opacity-40 font-semibold flex items-center justify-center gap-2">
+                <Wand2 size={17} /> {aiBusy ? "Üretiliyor…" : "İçerik Üret"}
+              </button>
+            </div>
+
+            {/* Sağ: sonuç */}
+            <div className="rounded-xl border border-white/10 bg-black/20 p-4 min-h-[16rem]" data-testid="ai-result">
+              {aiBusy && <div className="h-full flex items-center justify-center text-white/50 text-sm">Fotuber AI düşünüyor…</div>}
+              {!aiBusy && !aiResult && <div className="h-full flex items-center justify-center text-white/30 text-sm text-center px-4">Üretilen açıklama ve hashtag'ler burada görünecek.</div>}
+              {!aiBusy && aiResult && (
+                <div className="space-y-4">
+                  {(aiResult.captions || []).map((c, i) => (
+                    <div key={i} className="rounded-lg bg-white/[0.04] border border-white/10 p-3" data-testid={`ai-caption-${i}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-xs text-fuchsia-300 font-medium">Varyant {i + 1}</span>
+                        <button onClick={() => copyText(c)} className="text-white/50 hover:text-white shrink-0" data-testid={`ai-caption-copy-${i}`}><Copy size={14} /></button>
+                      </div>
+                      <p className="text-sm mt-1 whitespace-pre-wrap">{c}</p>
+                    </div>
+                  ))}
+                  {(aiResult.hashtags || []).length > 0 && (
+                    <div className="rounded-lg bg-white/[0.04] border border-white/10 p-3" data-testid="ai-hashtags">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-sky-300 font-medium">Hashtag'ler</span>
+                        <button onClick={() => copyText((aiResult.hashtags || []).join(" "))} className="text-white/50 hover:text-white" data-testid="ai-hashtags-copy"><Copy size={14} /></button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {aiResult.hashtags.map((h, i) => <span key={i} className="text-xs bg-sky-500/15 text-sky-200 px-2 py-0.5 rounded-full">{h}</span>)}
+                      </div>
+                    </div>
+                  )}
+                  {aiResult.tip && <p className="text-xs text-white/50 flex items-start gap-1.5"><Sparkles size={13} className="text-fuchsia-400 mt-0.5 shrink-0" /> {aiResult.tip}</p>}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

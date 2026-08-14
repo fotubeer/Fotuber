@@ -127,6 +127,14 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
 ## Admin
 - admin@fotuber.com.tr / FTB.2024
 
+## Session X (Jun 2026) — Fotuber Medya FAZ 2: Yapay Zeka İçerik Asistanı (self-tested: curl + browser E2E)
+- **Backend** (`routers/partner.py`): `POST /api/media/partner/ai-content` (partner auth) — image (multipart) + platform + context. Gemini 3 Flash (`gemini-3-flash-preview`, Emergent LLM Key) görseli analiz edip TÜRKÇE JSON döner: `{captions[3], hashtags[], tip}`. Platform tonları `_PLATFORM_GUIDE` (instagram_post/story, facebook, tiktok, twitter). 12MB limit, image-only. `GET /api/media/partner/ai-platforms`. Loglar `db.media_ai_logs`.
+- **Frontend** (`pages/MediaPortal.jsx`): "Yapay Zeka İçerik Asistanı" paneli (`media-ai-panel`) — fotoğraf yükle/önizleme, platform pill'leri (`ai-platform-*`), bağlam textarea, "İçerik Üret", sonuç kartları (varyantlar + hashtag chip'leri + tip) her biri kopyala butonlu.
+- Doğrulama: curl gerçek Gemini yanıtı (3 TR varyant + hashtag) ✅; tarayıcı E2E (upload→TikTok→üret→sonuç render) ✅.
+- Test partner: aitest@firma.com / Test1234 (yetki: indir/yükle/sil).
+
+
+
 ## Session F (Feb 2026) — Sidebar Scroll Fix + Auto Face Detection + Auto Ledger + BG Removal
 - **AdminLayout.jsx**: Sidebar refactored to flex-column with `overflow-y-auto` on the nav and a sticky footer. Fixes mobile scrolling bug — "Vesikalık Üretici" (last item) is now reachable on all viewports. Added dark overlay + click-to-close.
 - **Vesikalık — Otomatik Yüz Tespiti**: Added `@vladmandic/face-api` integration.
