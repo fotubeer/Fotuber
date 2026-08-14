@@ -880,3 +880,15 @@ Kapsam: SADECE admin/personel fiziki (walk-in) randevu alanı. Anasayfa müşter
 - Regresyon testleri: /app/backend/tests/test_appt_pro.py. Test raporu: iteration_69 (backend 100%, frontend 100%).
 - Kod-review önerileri (bug değil, ertelendi): contract silinince appointment cascade; tekrar onayda 409; AdminApptCatalog dosya bölme.
 
+
+## Session BF (Jun 2026) — Sözleşme: PDF/WhatsApp/QR onay + Nakit Akışı entegrasyonu (tested 100%, iteration_70; 16 pytest yeşil)
+- **Kart/Nakit**: builder'da ödeme şekli (pay-cash/pay-card); contract + appointment + transaction'a yazılır. (Fix: nested contract.payment_method varsayılansa üst seviyeden doldurulur.)
+- **Nakit Akışı entegrasyonu**: `POST /appt-pro/appointments` paid_amount>0 ise mevcut `db.transactions`'a income kaydı ekler (payment_method + created_by/role). Admin TÜM akışı görür. **Personel sadece KENDİ işlemlerini ve son 08:00 TR (05:00 UTC) sınırından bu yana görür** — ertesi sabah 08:00'de önceki dönem gizlenir (server.py list_transactions staff filtresi güncellendi). NOT: canlı test için personel (role=staff) hesabı yok; mantık kod düzeyinde doğrulandı.
+- **Sunucu tarafı PDF**: `GET /appt-pro/contracts/{cid}/pdf` (reportlab) → tek tıkla indirilir. ContractView'da "PDF İndir" butonu (blob). "Yazdır" da korunur.
+- **Cascade silme**: `DELETE /contracts/{cid}` bağlı appointment + contract_id'li transaction'ları da siler.
+- **Dijital onay + bildirim**: public `/sozlesme/:token` onayı → contract approved + `approval_seen=false` + db.notifications kaydı. `GET /appt-pro/approvals` (unseen) + `POST /approvals/seen`. Katalog "Sözleşmeler" sekmesinde yeşil rozet (approvals-badge, 30sn poll), sekme açılınca sıfırlanır. NOT: admin'e OTOMATİK WhatsApp bildirimi YOK (giden WhatsApp API/Twilio gerekir) — panel içi rozet var; müşteriye WhatsApp GÖNDERME (wa.me) mevcut.
+- **Elle toplam override + kalan**: builder'da "Toplam Tutar (elle)" girilince net tutar override olur; kalan = total − peşinat otomatik.
+- **Keşfedilebilirlik**: Sidebar'a "Sözleşmeler" (`/admin/randevu-katalogu?tab=saved`) girişi; katalog ?tab= query'yi okur.
+- Regresyon: /app/backend/tests/test_appt_pro.py (iter69, 10) + test_appt_pro_iter70.py (6). Rapor: iteration_70 (backend 100%, frontend 100%).
+- Ertelenen (bug değil): tekrar onayda 409; sidebar testid'de '?' kırılganlığı; admin dashboard'da undefined cx SVG konsol uyarısı (mevcut, ilgisiz).
+

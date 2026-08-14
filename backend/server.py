@@ -2158,10 +2158,14 @@ async def list_transactions(
 ):
     q: dict = {}
     if user.get("role") == "staff":
-        # Personel sadece bugünün nakit hareketlerini görür
-        today = datetime.now(timezone.utc).date().isoformat()
-        q["date"] = today
-        q["payment_method"] = "cash"
+        # Personel sadece KENDİ işlemlerini ve son 08:00 (TR) sınırından bu yana görür.
+        # Ertesi gün 08:00'de (05:00 UTC) önceki dönem gizlenir.
+        now = datetime.now(timezone.utc)
+        cutoff = now.replace(hour=5, minute=0, second=0, microsecond=0)
+        if now < cutoff:
+            cutoff = cutoff - timedelta(days=1)
+        q["created_by"] = user.get("id")
+        q["created_at"] = {"$gte": cutoff.isoformat()}
     else:
         if kind:
             q["kind"] = kind

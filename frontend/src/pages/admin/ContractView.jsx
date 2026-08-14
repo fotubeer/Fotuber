@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
 import { api, formatApiError } from "@/lib/api";
-import { Printer, ArrowLeft, Copy, Check, MessageCircle, QrCode } from "lucide-react";
+import { Printer, ArrowLeft, Copy, Check, MessageCircle, QrCode, Download } from "lucide-react";
 import { toast } from "sonner";
 import ContractSheet from "@/components/ContractSheet";
 
@@ -29,6 +29,15 @@ export default function ContractView() {
 
   const copyLink = () => { navigator.clipboard?.writeText(publicUrl); setCopied(true); toast.success("Link kopyalandı"); setTimeout(() => setCopied(false), 1800); };
 
+  const downloadPdf = async () => {
+    try {
+      const res = await api.get(`/appt-pro/contracts/${id}/pdf`, { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      const a = document.createElement("a"); a.href = url; a.download = `sozlesme-${id.slice(0, 8)}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove(); window.URL.revokeObjectURL(url);
+    } catch (e) { toast.error(formatApiError(e, "PDF indirilemedi")); }
+  };
+
   return (
     <div className="min-h-screen bg-neutral-100 py-6">
       <style>{`
@@ -48,7 +57,8 @@ export default function ContractView() {
         <button onClick={copyLink} data-testid="contract-copy" className="inline-flex items-center gap-2 rounded-lg bg-white border border-neutral-300 text-sm font-semibold px-4 py-2.5 hover:bg-neutral-50">
           {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />} Linki Kopyala</button>
         <button onClick={() => setShowQr((v) => !v)} data-testid="contract-qr-toggle" className="inline-flex items-center gap-2 rounded-lg bg-white border border-neutral-300 text-sm font-semibold px-4 py-2.5 hover:bg-neutral-50"><QrCode size={16} /> QR</button>
-        <button onClick={() => window.print()} data-testid="contract-print" className="inline-flex items-center gap-2 rounded-lg bg-neutral-900 text-white text-sm font-semibold px-5 py-2.5 hover:bg-neutral-800"><Printer size={16} /> Yazdır / PDF</button>
+        <button onClick={downloadPdf} data-testid="contract-pdf" className="inline-flex items-center gap-2 rounded-lg bg-white border border-neutral-300 text-sm font-semibold px-4 py-2.5 hover:bg-neutral-50"><Download size={16} /> PDF İndir</button>
+        <button onClick={() => window.print()} data-testid="contract-print" className="inline-flex items-center gap-2 rounded-lg bg-neutral-900 text-white text-sm font-semibold px-5 py-2.5 hover:bg-neutral-800"><Printer size={16} /> Yazdır</button>
       </div>
 
       {showQr && (

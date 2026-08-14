@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,17 @@ const CAT_LABELS = { album: "Albüm", canvas: "Kanvas Tablo", fine: "Fine Tablo"
 const tl = (n) => `${Number(n || 0).toLocaleString("tr-TR")} ₺`;
 
 export default function AdminApptCatalog() {
-  const [tab, setTab] = useState("services");
+  const location = useLocation();
+  const initialTab = new URLSearchParams(location.search).get("tab") || "services";
+  const [tab, setTab] = useState(initialTab);
+  const [unseen, setUnseen] = useState(0);
+
+  const loadUnseen = () => api.get("/appt-pro/approvals").then(({ data }) => setUnseen(data.unseen || 0)).catch(() => {});
+  useEffect(() => { loadUnseen(); const t = setInterval(loadUnseen, 30000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    if (tab === "saved" && unseen > 0) { api.post("/appt-pro/approvals/seen").then(() => setUnseen(0)).catch(() => {}); }
+  }, [tab, unseen]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -29,8 +39,9 @@ export default function AdminApptCatalog() {
       <div className="flex gap-1 p-1 rounded-xl bg-slate-100 w-fit">
         {[["services", "Hizmet & Etkinlik", Camera], ["products", "Ürünler", Package], ["contract", "Sözleşme İçeriği", FileText], ["saved", "Sözleşmeler", FileText]].map(([k, l, I]) => (
           <button key={k} data-testid={`cat-tab-${k}`} onClick={() => setTab(k)}
-            className={`px-4 h-9 rounded-lg text-sm font-medium flex items-center gap-1.5 ${tab === k ? "bg-white shadow text-slate-900" : "text-slate-500"}`}>
+            className={`relative px-4 h-9 rounded-lg text-sm font-medium flex items-center gap-1.5 ${tab === k ? "bg-white shadow text-slate-900" : "text-slate-500"}`}>
             <I size={15} /> {l}
+            {k === "saved" && unseen > 0 && <span data-testid="approvals-badge" className="ml-1 min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center">{unseen}</span>}
           </button>
         ))}
       </div>

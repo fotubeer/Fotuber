@@ -32,6 +32,8 @@ export default function ApptBuilder() {
   const [discount, setDiscount] = useState(0);
   const [deposit, setDeposit] = useState(0);
   const [paid, setPaid] = useState(0);
+  const [manualTotal, setManualTotal] = useState("");   // boşsa otomatik toplam kullanılır
+  const [paymentMethod, setPaymentMethod] = useState("cash"); // cash | card
   // Sözleşme tarafı
   const [party, setParty] = useState({ role: "gelin", name: "", tc: "", email: "", address: "", phone: "" });
   const [consentSocial, setConsentSocial] = useState(false);
@@ -81,7 +83,8 @@ export default function ApptBuilder() {
 
   const subtotal = useMemo(() => lineItems.reduce((a, it) => a + Number(it.price || 0), 0), [lineItems]);
   const discountAmount = useMemo(() => Math.round((subtotal * (Number(discount) || 0)) / 100 * 100) / 100, [subtotal, discount]);
-  const total = useMemo(() => Math.max(0, subtotal - discountAmount), [subtotal, discountAmount]);
+  const autoTotal = useMemo(() => Math.max(0, subtotal - discountAmount), [subtotal, discountAmount]);
+  const total = useMemo(() => (manualTotal !== "" && !isNaN(Number(manualTotal)) ? Number(manualTotal) : autoTotal), [manualTotal, autoTotal]);
   const remaining = useMemo(() => Math.max(0, total - (Number(deposit) || 0)), [total, deposit]);
 
   // Marka: seçili hizmetlerden herhangi biri "mekan/davet" ise Davet Evi, yoksa sadece çekim → Photography
@@ -110,7 +113,7 @@ export default function ApptBuilder() {
         line_items: lineItems, subtotal, discount_percent: Number(discount) || 0,
         discount_amount: discountAmount, total, deposit_amount: Number(deposit) || 0,
         remaining_amount: remaining, consent_social: consentSocial, consent_marketing: consentMarketing,
-        brand_variant: brandVariant,
+        brand_variant: brandVariant, payment_method: paymentMethod,
       };
       const payload = {
         customer_name: `${bride.name}${bride.name && groom.name ? " & " : ""}${groom.name}`.trim(),
@@ -119,7 +122,7 @@ export default function ApptBuilder() {
         date: ev.date, time: ev.time, venue: ev.venue, admin_notes: adminNotes,
         line_items: lineItems, subtotal, discount_percent: Number(discount) || 0,
         discount_amount: discountAmount, total, deposit_amount: Number(deposit) || 0,
-        paid_amount: Number(paid) || Number(deposit) || 0, contract,
+        paid_amount: Number(paid) || Number(deposit) || 0, payment_method: paymentMethod, contract,
       };
       const { data } = await api.post("/appt-pro/appointments", payload);
       toast.success("Randevu ve sözleşme oluşturuldu");
@@ -248,10 +251,21 @@ export default function ApptBuilder() {
             <div className="border-t border-slate-200 pt-2 flex justify-between text-sm"><span>Ara Toplam</span><span data-testid="sum-subtotal" className="font-semibold">{tl(subtotal)}</span></div>
             <div className="grid sm:grid-cols-3 gap-3 items-end">
               <div><Label>İndirim (%)</Label><Input data-testid="sum-discount" type="number" min="0" max="100" value={discount} onChange={(e) => setDiscount(e.target.value)} /></div>
+              <div><Label>Toplam Tutar (elle · opsiyonel)</Label><Input data-testid="sum-total-manual" type="number" min="0" placeholder={String(autoTotal)} value={manualTotal} onChange={(e) => setManualTotal(e.target.value)} /></div>
+              <div><Label>Ödeme Şekli</Label>
+                <div className="flex gap-2">
+                  {[["cash", "Nakit"], ["card", "Kart"]].map(([k, l]) => (
+                    <button key={k} type="button" data-testid={`pay-${k}`} onClick={() => setPaymentMethod(k)}
+                      className={`flex-1 h-10 rounded-lg text-sm font-medium border ${paymentMethod === k ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}>{l}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3 items-end">
               <div><Label>Cayma Bedeli / Peşinat (₺)</Label><Input data-testid="sum-deposit" type="number" min="0" value={deposit} onChange={(e) => setDeposit(e.target.value)} /></div>
               <div><Label>Alınan Ödeme (₺)</Label><Input data-testid="sum-paid" type="number" min="0" value={paid} onChange={(e) => setPaid(e.target.value)} /></div>
             </div>
-            <div className="flex justify-between text-sm text-rose-600"><span>İndirim</span><span data-testid="sum-discount-amt">- {tl(discountAmount)}</span></div>
+            {Number(discount) > 0 && <div className="flex justify-between text-sm text-rose-600"><span>İndirim</span><span data-testid="sum-discount-amt">- {tl(discountAmount)}</span></div>}
             <div className="flex justify-between text-lg font-bold"><span>Net Tutar</span><span data-testid="sum-total">{tl(total)}</span></div>
             <div className="flex justify-between text-sm"><span>Kalan Ödeme</span><span data-testid="sum-remaining" className="font-semibold">{tl(remaining)}</span></div>
             <div><Label>Yönetici Notu</Label><Textarea rows={2} value={adminNotes} onChange={(e) => setAdminNotes(e.target.value)} /></div>

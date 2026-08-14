@@ -98,6 +98,7 @@ export default function ContractSheet({ contract: c, settings: s }) {
           <Line k="Net Tutar" v={tl(c.total)} strong />
           <Line k="Cayma Bedeli (Peşinat)" v={tl(c.deposit_amount)} />
           <Line k="Kalan Ödeme" v={tl(c.remaining_amount)} strong />
+          {c.payment_method && <Line k="Ödeme Şekli" v={c.payment_method === "card" ? "Kart" : "Nakit"} />}
         </div>
       </div>
 

@@ -85,6 +85,86 @@ DEFAULT_BRAND_VENUE = "FOTUBER Photography & Davet Evi"
 DEFAULT_BRAND_PHOTO = "FOTUBER Photography"
 
 
+def _build_contract_pdf(c: dict, s: dict) -> bytes:
+    """Sunucu tarafı PDF üretir (reportlab)."""
+    import io
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle)
+
+    def money(n):
+        try: return f"{float(n or 0):,.0f} ₺".replace(",", ".")
+        except Exception: return "0 ₺"
+
+    def fill(body):
+        return (body or "").replace("{{toplam}}", f"{float(c.get('total',0)):,.0f}".replace(",", ".")) \
+            .replace("{{cayma}}", f"{float(c.get('deposit_amount',0)):,.0f}".replace(",", ".")) \
+            .replace("{{kalan}}", f"{float(c.get('remaining_amount',0)):,.0f}".replace(",", "."))
+
+    d = s.get("design") or {}
+    accent = colors.HexColor(d.get("accent_color") or "#111827")
+    brand = (s.get("brand_name_photo") if c.get("brand_variant") == "photo" else s.get("brand_name_venue")) or s.get("company_name") or "Fotuber"
+    couple = f"{c.get('bride_name','')}{' & ' if c.get('bride_name') and c.get('groom_name') else ''}{c.get('groom_name','')}".strip() or c.get("customer_name") or "—"
+    role = {"gelin": "Gelin", "damat": "Damat", "diger": "Diğer"}.get(c.get("party_role"), "—")
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=16*mm, rightMargin=16*mm, topMargin=14*mm, bottomMargin=14*mm)
+    styles = getSampleStyleSheet()
+    h_title = ParagraphStyle("t", parent=styles["Title"], fontSize=20, textColor=accent, spaceAfter=2)
+    sub = ParagraphStyle("s", parent=styles["Normal"], fontSize=9, textColor=colors.grey, spaceAfter=8)
+    body = ParagraphStyle("b", parent=styles["Normal"], fontSize=8.5, leading=12)
+    clause_t = ParagraphStyle("ct", parent=styles["Normal"], fontSize=9, textColor=accent, spaceBefore=6, spaceAfter=1, fontName="Helvetica-Bold")
+    sec = ParagraphStyle("sec", parent=styles["Normal"], fontSize=10, textColor=colors.white, alignment=1, spaceBefore=4, spaceAfter=4)
+
+    el = []
+    el.append(Paragraph(brand, h_title))
+    el.append(Paragraph((d.get("subtitle") or "HİZMET SÖZLEŞMESİ") + f" &nbsp;&nbsp;·&nbsp;&nbsp; {(c.get('created_at') or '')[:10]}", sub))
+
+    info = [
+        ["Çiftin İsmi", couple, "Tarih", c.get("event_date") or "—"],
+        ["Sözleşme Sahibi", f"{c.get('party_name','—')} ({role})", "Saat", c.get("event_time") or "—"],
+        ["T.C. No", c.get("party_tc") or "—", "Mekan", c.get("venue") or "—"],
+        ["Telefon", c.get("party_phone") or "—", "Toplam", money(c.get("subtotal"))],
+        ["E-posta", c.get("party_email") or "—", f"İndirim (%{c.get('discount_percent',0)})", "- " + money(c.get("discount_amount"))],
+        ["Adres", c.get("party_address") or "—", "Net Tutar", money(c.get("total"))],
+        ["Gelin/Damat Tel", f"{c.get('bride_phone','—')} / {c.get('groom_phone','—')}", "Cayma / Kalan", money(c.get("deposit_amount")) + " / " + money(c.get("remaining_amount"))],
+        ["Ödeme Şekli", ("Kart" if c.get("payment_method") == "card" else "Nakit"), "", ""],
+    ]
+    t = Table([[Paragraph(f"<b>{a}</b>", body), Paragraph(str(b), body), Paragraph(f"<b>{cc}</b>", body), Paragraph(str(dd), body)] for a, b, cc, dd in info],
+              colWidths=[32*mm, 58*mm, 34*mm, 54*mm])
+    t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#e5e7eb")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+    el.append(t)
+    el.append(Spacer(1, 6))
+
+    # Hizmet seçimi
+    bar = Table([[Paragraph("HİZMET SEÇİMİ", sec)]], colWidths=[178*mm]); bar.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), accent)]))
+    el.append(bar)
+    for it in (c.get("line_items") or []):
+        el.append(Paragraph(f"☑ {it.get('label','')} &nbsp;&nbsp; <font color='#888'>{money(it.get('price')) if it.get('price') else ''}</font>", body))
+    el.append(Spacer(1, 4))
+    el.append(Paragraph(f"Görsel İzni — Sosyal medya: <b>{'EVET' if c.get('consent_social') else 'HAYIR'}</b> &nbsp;·&nbsp; Ürün/Kampanya: <b>{'EVET' if c.get('consent_marketing') else 'HAYIR'}</b>", body))
+    el.append(Spacer(1, 6))
+
+    bar2 = Table([[Paragraph("SÖZLEŞME MADDELERİ VE ÖDEME PLANI", sec)]], colWidths=[178*mm]); bar2.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), accent)]))
+    el.append(bar2)
+    for cl in (s.get("clauses") or []):
+        el.append(Paragraph(cl.get("title", ""), clause_t))
+        el.append(Paragraph(fill(cl.get("body", "")).replace("\n", "<br/>"), body))
+    if s.get("acceptance_text"):
+        el.append(Spacer(1, 4)); el.append(Paragraph(f"<b>{s['acceptance_text']}</b>", body))
+    if c.get("approval_status") == "approved":
+        el.append(Spacer(1, 4)); el.append(Paragraph(f"<font color='#059669'><b>✔ Dijital olarak onaylandı — {c.get('approver_name','')} ({(c.get('approved_at') or '')[:10]})</b></font>", body))
+    el.append(Spacer(1, 14))
+    sig = Table([["HİZMET VEREN", "HİZMET ALAN"]], colWidths=[89*mm, 89*mm])
+    sig.setStyle(TableStyle([("LINEABOVE", (0, 0), (-1, 0), 0.6, colors.grey), ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("FONTSIZE", (0, 0), (-1, -1), 9), ("TOPPADDING", (0, 0), (-1, 0), 6)]))
+    el.append(sig)
+
+    doc.build(el)
+    return buf.getvalue()
+
+
 def get_router(db, deps):
     from fastapi import APIRouter, HTTPException, Depends
     router = APIRouter(prefix="/api/appt-pro", tags=["appt-pro"])
@@ -297,6 +377,7 @@ def get_router(db, deps):
         consent_social: bool = False
         consent_marketing: bool = False
         brand_variant: str = "venue"   # venue (Davet Evi) | photo (Photography)
+        payment_method: str = "cash"   # cash | card
 
     def _contract_out(c):
         return {k: v for k, v in c.items() if k != "_id"}
@@ -339,7 +420,12 @@ def get_router(db, deps):
 
     @router.delete("/contracts/{cid}")
     async def delete_contract(cid: str, admin: dict = Depends(require_admin)):
+        c = await db.appt_contracts.find_one({"id": cid}, {"_id": 0, "appointment_id": 1})
         await db.appt_contracts.delete_one({"id": cid})
+        # Zincir: bağlı randevu + nakit akışı kayıtlarını da kaldır
+        if c and c.get("appointment_id"):
+            await db.appointments.delete_one({"id": c["appointment_id"]})
+            await db.transactions.delete_many({"contract_id": cid})
         return {"ok": True}
 
     # ── PUBLIC: müşteri sözleşmeyi link/QR ile görüntüler ve onaylar ──────
@@ -362,11 +448,47 @@ def get_router(db, deps):
         c = await db.appt_contracts.find_one({"public_token": token})
         if not c:
             raise HTTPException(status_code=404, detail="Sözleşme bulunamadı")
+        approver = (payload.approver_name or c.get("party_name") or "").strip()
         await db.appt_contracts.update_one({"public_token": token}, {"$set": {
             "approval_status": "approved", "approved_at": now_iso(),
-            "approver_name": (payload.approver_name or c.get("party_name") or "").strip(),
+            "approver_name": approver, "approval_seen": False,
         }})
+        # Panel bildirimi (mevcut notifications koleksiyonu)
+        couple = f"{c.get('bride_name','')}{' & ' if c.get('bride_name') and c.get('groom_name') else ''}{c.get('groom_name','')}".strip() or c.get("customer_name") or "Müşteri"
+        await db.notifications.insert_one({
+            "id": new_id(), "type": "contract_approved",
+            "title": "Sözleşme Onaylandı",
+            "message": f"{couple} sözleşmeyi dijital olarak onayladı.",
+            "contract_id": c.get("id"), "read": False, "created_at": now_iso(),
+        })
         return {"ok": True}
+
+    # ── Onay bildirimleri feed (admin/personel panelinde) ────────────────
+    @router.get("/approvals")
+    async def approvals_feed(acc: dict = Depends(staff)):
+        rows = await db.appt_contracts.find(
+            {"approval_status": "approved"}, {"_id": 0}).sort("approved_at", -1).to_list(200)
+        unseen = sum(1 for r in rows if r.get("approval_seen") is False)
+        return {"approvals": rows, "unseen": unseen}
+
+    @router.post("/approvals/seen")
+    async def approvals_seen(acc: dict = Depends(staff)):
+        await db.appt_contracts.update_many(
+            {"approval_status": "approved", "approval_seen": False}, {"$set": {"approval_seen": True}})
+        return {"ok": True}
+
+    # ── Sunucu tarafı PDF (tek tıkla indir) ──────────────────────────────
+    @router.get("/contracts/{cid}/pdf")
+    async def contract_pdf(cid: str, acc: dict = Depends(staff)):
+        c = await db.appt_contracts.find_one({"id": cid}, {"_id": 0})
+        if not c:
+            raise HTTPException(status_code=404, detail="Sözleşme bulunamadı")
+        s = await db.appt_contract_settings.find_one({"id": "global"}, {"_id": 0}) or {}
+        pdf = _build_contract_pdf(c, s)
+        from fastapi import Response
+        fname = f"sozlesme-{cid[:8]}.pdf"
+        return Response(content=pdf, media_type="application/pdf",
+                        headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
     # =====================================================================
     # FAZ 3 — Birleşik: fiziki randevu + sözleşme oluştur (tek çağrı)
@@ -388,6 +510,7 @@ def get_router(db, deps):
         total: float = 0
         deposit_amount: float = 0
         paid_amount: float = 0
+        payment_method: str = "cash"    # cash | card
         # Sözleşme + çift + KVKK
         contract: ContractIn
 
@@ -397,6 +520,9 @@ def get_router(db, deps):
         now = now_iso()
         # 1) Sözleşme kaydı (KVKK kişisel veri)
         c = payload.contract.model_dump()
+        # Ödeme şekli tutarlılığı: nested değer varsayılansa üst seviyeden doldur.
+        if c.get("payment_method", "cash") == "cash" and payload.payment_method:
+            c["payment_method"] = payload.payment_method
         c["id"] = new_id()
         c["public_token"] = secrets.token_urlsafe(9)
         c["approval_status"] = "pending"
@@ -429,6 +555,7 @@ def get_router(db, deps):
             "deposit_amount": payload.deposit_amount,
             "total_amount": payload.total,
             "paid_amount": payload.paid_amount,
+            "payment_method": payload.payment_method,
             "mid_payments": [],
             "origin": "walkin",
             "contract_accepted": True,
@@ -441,6 +568,19 @@ def get_router(db, deps):
         }
         await db.appointments.insert_one(appt)
         await db.appt_contracts.insert_one(c)
+        # 3) Nakit akışına (transactions) gelir kaydı — kart/nakit
+        paid = float(payload.paid_amount or 0)
+        if paid > 0:
+            method = "card" if (payload.payment_method == "card") else "cash"
+            await db.transactions.insert_one({
+                "id": new_id(), "kind": "income", "amount": paid,
+                "payment_method": method, "category": "Randevu / Sözleşme",
+                "description": f"{appt['customer_name']} — {payload.service_name_snapshot or 'Fiziki Randevu'}",
+                "date": (payload.date or now[:10]),
+                "appointment_id": appt_id, "contract_id": c["id"], "source": "appointment",
+                "created_at": now, "created_by": acc.get("id"),
+                "created_by_name": acc.get("name"), "created_by_role": acc.get("role"),
+            })
         appt.pop("_id", None)
         return {"appointment_id": appt_id, "contract_id": c["id"]}
 

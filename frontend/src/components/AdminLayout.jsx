@@ -16,6 +16,7 @@ const items = [
   { to: "/admin/bildirimler", label: "Bildirimler", icon: Bell },
   { to: "/admin/randevular", label: "Randevular", icon: CalendarDays },
   { to: "/admin/randevu-katalogu", label: "Randevu Kataloğu & Sözleşme", icon: FileText },
+  { to: "/admin/randevu-katalogu?tab=saved", label: "Sözleşmeler", icon: FileText },
   { to: "/admin/takvim", label: "Takvim & Kapatma", icon: CalendarClock },
   { to: "/admin/albumler", label: "Fotoğraf Seçim Albümleri", icon: Images },
   { to: "/admin/mekanlar", label: "Mekanlar (Sabit QR)", icon: MapPin },
