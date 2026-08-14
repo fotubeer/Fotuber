@@ -154,7 +154,10 @@ export default function ContractSheet({ contract: c, settings: s }) {
       {/* İmza */}
       <div className="mt-8 grid grid-cols-2 gap-10 text-center text-sm">
         <div><div className="border-t pt-2 font-semibold" style={{ borderColor: "#9ca3af" }}>HİZMET VEREN</div></div>
-        <div><div className="border-t pt-2 font-semibold" style={{ borderColor: "#9ca3af" }}>HİZMET ALAN</div></div>
+        <div>
+          {c.signature && <img src={c.signature} alt="imza" className="h-16 mx-auto object-contain" data-testid="contract-signature" />}
+          <div className="border-t pt-2 font-semibold" style={{ borderColor: "#9ca3af" }}>HİZMET ALAN</div>
+        </div>
       </div>
       <div className="text-center text-[10px] mt-4" style={{ opacity: 0.4 }}>İş bu sözleşmenin bir nüshası müşteride, diğer nüshası firmamızda kalacaktır.</div>
     </div>

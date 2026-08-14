@@ -157,8 +157,24 @@ def _build_contract_pdf(c: dict, s: dict) -> bytes:
     if c.get("approval_status") == "approved":
         el.append(Spacer(1, 4)); el.append(Paragraph(f"<font color='#059669'><b>✔ Dijital olarak onaylandı — {c.get('approver_name','')} ({(c.get('approved_at') or '')[:10]})</b></font>", body))
     el.append(Spacer(1, 14))
-    sig = Table([["HİZMET VEREN", "HİZMET ALAN"]], colWidths=[89*mm, 89*mm])
-    sig.setStyle(TableStyle([("LINEABOVE", (0, 0), (-1, 0), 0.6, colors.grey), ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("FONTSIZE", (0, 0), (-1, -1), 9), ("TOPPADDING", (0, 0), (-1, 0), 6)]))
+    # İmza görseli (varsa) — HİZMET ALAN üstüne
+    sig_img = None
+    sig_data = c.get("signature") or ""
+    if sig_data.startswith("data:image") and "," in sig_data:
+        try:
+            import base64 as _b64
+            from reportlab.platypus import Image as _Image
+            raw = _b64.b64decode(sig_data.split(",", 1)[1])
+            sig_img = _Image(io.BytesIO(raw), width=55*mm, height=22*mm, kind="proportional")
+        except Exception:
+            sig_img = None
+    right_cell = sig_img if sig_img else ""
+    sig = Table([[ "", right_cell ], ["HİZMET VEREN", "HİZMET ALAN"]], colWidths=[89*mm, 89*mm])
+    sig.setStyle(TableStyle([
+        ("LINEABOVE", (0, 1), (-1, 1), 0.6, colors.grey),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, 0), "BOTTOM"),
+        ("FONTSIZE", (0, 1), (-1, 1), 9), ("TOPPADDING", (0, 1), (-1, 1), 4),
+    ]))
     el.append(sig)
 
     doc.build(el)
@@ -440,6 +456,7 @@ def get_router(db, deps):
     class ApproveIn(BaseModel):
         approver_name: str = ""
         accepted: bool = True
+        signature: str = ""   # dataURL (image/png) — parmakla/fareyle çizilen imza
 
     @router.post("/public/contracts/{token}/approve")
     async def public_approve_contract(token: str, payload: ApproveIn):
@@ -449,10 +466,14 @@ def get_router(db, deps):
         if not c:
             raise HTTPException(status_code=404, detail="Sözleşme bulunamadı")
         approver = (payload.approver_name or c.get("party_name") or "").strip()
-        await db.appt_contracts.update_one({"public_token": token}, {"$set": {
+        upd = {
             "approval_status": "approved", "approved_at": now_iso(),
             "approver_name": approver, "approval_seen": False,
-        }})
+        }
+        # İmza (data URL) — makul boyut sınırı
+        if payload.signature and payload.signature.startswith("data:image") and len(payload.signature) < 400000:
+            upd["signature"] = payload.signature
+        await db.appt_contracts.update_one({"public_token": token}, {"$set": upd})
         # Panel bildirimi (mevcut notifications koleksiyonu)
         couple = f"{c.get('bride_name','')}{' & ' if c.get('bride_name') and c.get('groom_name') else ''}{c.get('groom_name','')}".strip() or c.get("customer_name") or "Müşteri"
         await db.notifications.insert_one({

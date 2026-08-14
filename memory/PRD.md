@@ -892,3 +892,11 @@ Kapsam: SADECE admin/personel fiziki (walk-in) randevu alanı. Anasayfa müşter
 - Regresyon: /app/backend/tests/test_appt_pro.py (iter69, 10) + test_appt_pro_iter70.py (6). Rapor: iteration_70 (backend 100%, frontend 100%).
 - Ertelenen (bug değil): tekrar onayda 409; sidebar testid'de '?' kırılganlığı; admin dashboard'da undefined cx SVG konsol uyarısı (mevcut, ilgisiz).
 
+
+## Session BG (Jun 2026) — Dijital İmza + Personel Nakit Akışı canlı doğrulama + Fiyat
+- **Dijital imza**: Public `/sozlesme/:token` sayfasına imza pad'i (canvas, parmak/fare — pointer+touch). Onayda `signature` (dataURL) gönderilir. Backend approve `signature` alanını saklar (data:image, <400KB). ContractSheet'te "HİZMET ALAN" üstünde imza görseli; PDF'e (reportlab Image) gömülür. Canlı UI testi: çizim→onay→banner+imza+PDF doğrulandı.
+- **Personel hesabı**: `personel@fotuber.com.tr` / `Personel1234` (role=staff) oluşturuldu (`POST /api/users/staff`). test_credentials.md güncellendi.
+- **Nakit akışı görünürlüğü CANLI doğrulandı**: Personel sadece KENDİ işlemini görür (STAFFOWN evet, ADMINONLY hayır); admin ikisini de görür. 08:00 TR (05:00 UTC) sınırı: 2 gün önceki personel işlemi (STAFFOLD) personelden GİZLİ, admin görür. ✓
+- **Fiyatlar**: Katalog → Hizmet/Ürün fiyatı girilince builder toplamları otomatik hesaplar (elle toplam override + kalan = net − peşinat). Fiyatlar seed'de 0; admin girer.
+- Not: Admin'e onayda otomatik WhatsApp bildirimi hâlâ YOK (giden WhatsApp/Twilio entegrasyonu gerekir); panel-içi yeşil onay rozeti mevcut.
+
