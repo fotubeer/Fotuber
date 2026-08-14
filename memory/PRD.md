@@ -147,6 +147,12 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
 - **Frontend** (`MediaPortal.jsx`): 6 sekme (İçerik Asistanı / Özel Gün / Kampanya Görseli / Marka Kiti / Görsel Galerisi / Geçmiş). Kampanya: kredi rozeti + talep dialogu + brief üretim. Marka Kiti: renk seçici + font + iki 9-grid logo konumu. Galeri: kind rozetli grid + indir/sil. `AdminMedia.jsx`: bekleyen kredi talepleri kartı (onayla/reddet) + firma satırında kredi butonu (ekle/düş).
 - Doğrulama: curl — brand kaydet ✅, geçersiz özel gün 400 ✅, kredisiz kampanya 402 ✅, talep→admin onay→3 kredi ✅, kampanya üretimi kredi 3→2 + logo ✅, galeri token'lı servis 200 / tokensız 401 ✅. Screenshot — 6 sekme + Kampanya/Marka Kiti/Galeri + admin kredi butonu render ✅.
 
+## Session Z2 (Jun 2026) — Kredi/Özel Gün E-posta Bildirimleri + Marka Önizleme (self-tested: gerçek Gmail gönderim + screenshot)
+- **Kredi bildirimi e-postaları** (`email_service.py`): `credit_request_admin` (talep gelince ADMIN'e, admin panel linkli), `credit_approved_partner` (onaylanınca FİRMA'ya, portal linkli + toplam kredi). `partner.py`: `request_credits` → admin'e, `approve_credit_request` → firmaya `asyncio.create_task(send_email)`. Deps'e `admin_email`, `public_app_url` eklendi.
+- **Özel gün otomatik hatırlatma** (`server.py`): `_run_media_special_reminders` + `_media_special_reminder_loop` (startup'ta, 12 saatte bir). `routers.partner._upcoming_special_days` içe aktarılır; özel güne **3 gün** ve **0 gün (o gün)** kala aktif firmalara `email_service.special_day_reminder` gönderir. Idempotent `email_log` key `media_special:{pid}:{date}:{days}`. Admin manuel tetik: `POST /api/admin/media-special-reminders`.
+- **Marka Önizleme** (`MediaPortal.jsx`): Marka Kiti panelinde canlı önizleme — Gönderi (1:1) ve Story (9:16) örnek kartları, marka renk gradyanı + seçilen yazı tipi (modern/elegant/script/bold → Montserrat/Playfair/Great Vibes) + logonun seçilen 9-grid konuma CSS ile yerleşimi. Font/renk/konum değişince anında güncellenir.
+- Doğrulama: gerçek Gmail gönderimi ✅ (special_day_reminder, credit_approved_partner, credit_request_admin şablonları fotubeer@gmail.com'a iletildi); email-status configured/gmail ✅; media-special-reminders no-target erken dönüş {partners:0} doğru ✅; Marka Önizleme screenshot (script font + tl/bc logo konumu canlı) ✅.
+
 
 
 ## Session F (Feb 2026) — Sidebar Scroll Fix + Auto Face Detection + Auto Ledger + BG Removal

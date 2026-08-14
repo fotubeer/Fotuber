@@ -63,6 +63,15 @@ export default function MediaPortal() {
     { key: "script", label: "El Yazısı" }, { key: "bold", label: "Kalın / Cesur" },
   ];
   const POS_GRID = ["tl", "tc", "tr", "ml", "mc", "mr", "bl", "bc", "br"];
+  const fontCss = (f) => ({ modern: "'Montserrat', sans-serif", elegant: "'Playfair Display', serif", script: "'Great Vibes', cursive", bold: "'Montserrat', sans-serif" }[f] || "sans-serif");
+  const fontWt = (f) => (f === "bold" ? 900 : f === "modern" ? 600 : 500);
+  const posStyle = (pos) => {
+    const v = pos[0], h = pos[1];
+    const s = { position: "absolute" };
+    if (v === "t") s.top = "7%"; else if (v === "b") s.bottom = "7%"; else { s.top = "50%"; s.transform = "translateY(-50%)"; }
+    if (h === "l") s.left = "7%"; else if (h === "r") s.right = "7%"; else { s.left = "50%"; s.transform = (s.transform ? s.transform + " " : "") + "translateX(-50%)"; }
+    return s;
+  };
 
   const loadMe = async () => {
     if (!localStorage.getItem(TK)) { setLoading(false); return; }
@@ -599,6 +608,29 @@ export default function MediaPortal() {
               ))}
             </div>
           </div>
+          <div className="mt-6 border-t border-white/10 pt-5" data-testid="brand-preview">
+            <p className="text-sm text-white/60 mb-3">Canlı Önizleme — logo konumu ve marka kimliği örnek görsel üzerinde</p>
+            <div className="flex flex-wrap gap-5">
+              {[["post", "Gönderi (1:1)", "aspect-square w-52", brand.logo_pos_post], ["story", "Story (9:16)", "w-40", brand.logo_pos_story]].map(([key, lbl, cls, pos]) => (
+                <div key={key} className="space-y-2">
+                  <span className="text-xs text-white/40">{lbl} · {pos}</span>
+                  <div data-testid={`brand-preview-${key}`}
+                    className={`relative ${cls} ${key === "story" ? "aspect-[9/16]" : ""} rounded-xl overflow-hidden border border-white/10 flex items-center justify-center`}
+                    style={{ background: `linear-gradient(135deg, ${brand.primary_color}, ${brand.secondary_color})` }}>
+                    <span className="text-white text-center px-4 drop-shadow" style={{ fontFamily: fontCss(brand.font), fontWeight: fontWt(brand.font), fontSize: key === "story" ? 22 : 26 }}>
+                      Nice Günlere!
+                    </span>
+                    <div style={posStyle(pos)}>
+                      {logoSrc
+                        ? <img src={logoSrc} alt="logo" style={{ width: key === "story" ? 44 : 54 }} className="rounded bg-black/30 p-1" />
+                        : <span className="text-[10px] text-white/80 bg-black/40 rounded px-1.5 py-0.5">LOGO</span>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <button onClick={saveBrand} disabled={brandBusy} data-testid="brand-save" className="mt-5 h-11 px-6 rounded-lg bg-gradient-to-r from-fuchsia-500 to-sky-500 hover:opacity-90 disabled:opacity-40 font-semibold flex items-center gap-2">
             {brandBusy ? <Loader2 size={17} className="animate-spin" /> : <Palette size={17} />} Marka Kitini Kaydet
           </button>

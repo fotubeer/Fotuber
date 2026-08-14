@@ -593,6 +593,7 @@ async def on_startup():
     asyncio.create_task(_cleanup_expired_uploads())
     # Start membership expiry reminder loop (7 & 3 days before expiry / trial end)
     asyncio.create_task(_membership_reminder_loop())
+    asyncio.create_task(_media_special_reminder_loop())
     # Start Sektör Radarı daily generation loop (key-free internet scan)
     asyncio.create_task(_trend_radar_loop())
 
@@ -5944,6 +5945,48 @@ async def _membership_reminder_loop():
         await asyncio.sleep(6 * 3600)
 
 
+async def _run_media_special_reminders() -> dict:
+    """Notify active media partners a few days before each special day (idempotent)."""
+    from zoneinfo import ZoneInfo
+    from routers.partner import _upcoming_special_days
+    tz = ZoneInfo(email_service.EMAIL_TIMEZONE)
+    portal = PUBLIC_APP_URL.rstrip("/") + "/medya"
+    upcoming = _upcoming_special_days(30)
+    targets = [d for d in upcoming if d.get("days_left") in (3, 0)]
+    if not targets:
+        return {"partners": 0, "sent": 0}
+    partners = await db.media_partners.find({"active": True, "email": {"$ne": None}}).to_list(1000)
+    sent = 0
+    for d in targets:
+        for p in partners:
+            email = p.get("email")
+            if not email:
+                continue
+            company = (p.get("company") or {}).get("name") or p.get("name") or ""
+            key = f"media_special:{p['id']}:{d['date']}:{d['days_left']}"
+            if await db.email_log.find_one({"notification_key": key}):
+                continue
+            subject, html, text = email_service.special_day_reminder(
+                company, d["name"], d["label"], d["days_left"], portal)
+            await _email_send_once(key, email, subject, html, text)
+            sent += 1
+    return {"partners": len(partners), "sent": sent}
+
+
+async def _media_special_reminder_loop():
+    """Every 12 hours notify partners about special days 3 days out and on the day."""
+    await asyncio.sleep(45)
+    while True:
+        try:
+            if email_service.email_configured():
+                res = await _run_media_special_reminders()
+                if res.get("sent"):
+                    logger.info(f"media special-day reminders sent: {res}")
+        except Exception as e:
+            logger.warning(f"media reminder loop error: {e}")
+        await asyncio.sleep(12 * 3600)
+
+
 @api_router.post("/admin/email-test")
 async def admin_email_test(payload: dict = Body(default={}), admin: dict = Depends(require_admin)):
     if not email_service.email_configured():
@@ -5962,6 +6005,13 @@ async def admin_send_reminders(admin: dict = Depends(require_admin)):
     if not email_service.email_configured():
         raise HTTPException(status_code=400, detail="Gmail SMTP yapılandırılmamış")
     return await _run_expiry_reminders()
+
+
+@api_router.post("/admin/media-special-reminders")
+async def admin_media_special_reminders(admin: dict = Depends(require_admin)):
+    if not email_service.email_configured():
+        raise HTTPException(status_code=400, detail="E-posta yapılandırılmamış")
+    return await _run_media_special_reminders()
 
 
 @api_router.get("/admin/email-status")
@@ -7330,6 +7380,8 @@ _module_deps = {
     "create_paytr_order": _create_paytr_order,
     "send_email": email_service.send_email,
     "email_configured": email_service.email_configured,
+    "admin_email": os.environ.get("ADMIN_EMAIL", ""),
+    "public_app_url": PUBLIC_APP_URL,
     "JWT_SECRET": JWT_SECRET,
     "JWT_ALGORITHM": JWT_ALGORITHM,
 }

@@ -205,3 +205,55 @@ def password_reset(name: str, link: str):
     text = (f"Şifre sıfırlama talebi\n\nMerhaba {name}, yeni şifre belirlemek için: {link}\n\n"
             f"Bağlantı 1 saat geçerlidir ve tek kullanımlıktır. Bu talebi siz yapmadıysanız yok sayın.")
     return "Fotuber · Şifre Sıfırlama", _wrap(inner, "Şifre sıfırlama bağlantınız"), text
+
+
+
+# ── Fotuber Medya (B2B firma) bildirimleri ───────────────────────────────
+def credit_request_admin(partner_name: str, partner_email: str, amount: int, note: str, admin_url: str):
+    pn, pe, nt, au = map(escape, [partner_name or "-", partner_email or "-", note or "-", admin_url])
+    subject = f"Yeni kampanya kredisi talebi · {partner_name}"
+    inner = f"""
+      <h2 style="margin:0 0 12px;font-size:18px;">Yeni kredi talebi 🪙</h2>
+      <p style="margin:0 0 12px;"><b>{pn}</b> firması kampanya görseli için kredi talep etti.</p>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;margin:12px 0;">
+        <tr><td style="padding:8px 0;color:#64748b;">Firma</td><td style="text-align:right;font-weight:600;">{pn}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;">E-posta</td><td style="text-align:right;">{pe}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;">Talep Edilen</td><td style="text-align:right;font-weight:600;">{amount} kredi</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;">Not</td><td style="text-align:right;">{nt}</td></tr>
+      </table>
+      <a href="{au}" style="display:inline-block;background:{BRAND_COLOR};color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:600;">Talebi İncele</a>"""
+    text = (f"Yeni kampanya kredisi talebi\n\nFirma: {partner_name} ({partner_email})\n"
+            f"Talep: {amount} kredi\nNot: {note or '-'}\n\nYönet: {admin_url}")
+    return subject, _wrap(inner, "Yeni kampanya kredisi talebi"), text
+
+
+def credit_approved_partner(company_name: str, amount: int, total: int, portal_url: str):
+    cn, pu = escape(company_name or "Değerli iş ortağımız"), escape(portal_url)
+    subject = "Kampanya kredisi talebiniz onaylandı 🎉"
+    inner = f"""
+      <h2 style="margin:0 0 12px;font-size:18px;">Krediniz tanımlandı ✅</h2>
+      <p style="margin:0 0 12px;">Merhaba {cn}, kampanya kredisi talebiniz onaylandı.
+      Hesabınıza <b>{amount} kredi</b> eklendi.</p>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;margin:12px 0;">
+        <tr><td style="padding:8px 0;color:#64748b;">Eklenen Kredi</td><td style="text-align:right;font-weight:600;">{amount}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;">Toplam Krediniz</td><td style="text-align:right;font-weight:600;">{total}</td></tr>
+      </table>
+      <a href="{pu}" style="display:inline-block;background:{BRAND_COLOR};color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:600;">Kampanya Görseli Üret</a>"""
+    text = (f"Kampanya kredisi talebiniz onaylandı\n\nMerhaba {company_name},\n"
+            f"{amount} kredi eklendi. Toplam: {total} kredi.\nPortal: {portal_url}")
+    return subject, _wrap(inner, "Kampanya krediniz onaylandı"), text
+
+
+def special_day_reminder(company_name: str, day_name: str, day_label: str, days: int, portal_url: str):
+    cn, dn, dl, pu = map(escape, [company_name or "Değerli iş ortağımız", day_name, day_label, portal_url])
+    when = "bugün" if days <= 0 else f"{days} gün sonra ({dl})"
+    subject = f"'{day_name}' yaklaşıyor — paylaşımınızı hazırlayın"
+    inner = f"""
+      <h2 style="margin:0 0 12px;font-size:18px;">{dn} {('bugün! 🎉' if days<=0 else 'yaklaşıyor 📅')}</h2>
+      <p style="margin:0 0 12px;">Merhaba {cn}, <b>{dn}</b> {when}. Bu özel gün için firmanızın logosu
+      ve marka kimliğiyle 3 farklı sosyal medya görselini tek tıkla üretebilirsiniz.</p>
+      <a href="{pu}" style="display:inline-block;background:{BRAND_COLOR};color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:600;">Görselimi Üret</a>
+      <p style="margin:14px 0 0;color:#64748b;font-size:13px;">Fotuber Medya · Özel Gün Takvimi</p>"""
+    text = (f"{day_name} {when}\n\nMerhaba {company_name}, bu özel gün için logolu görsellerinizi üretin.\n"
+            f"Portal: {portal_url}")
+    return subject, _wrap(inner, f"{day_name} için görselinizi hazırlayın"), text

@@ -109,6 +109,10 @@ def get_router(db, deps):
     put_object = deps["put_object"]
     get_object = deps["get_object"]
     delete_object = deps["delete_object"]
+    send_email = deps.get("send_email")
+    email_configured = deps.get("email_configured")
+    admin_email = deps.get("admin_email", "")
+    public_app_url = (deps.get("public_app_url") or "https://fotuber.com.tr").rstrip("/")
     get_current_partner = build_get_current_partner(db, deps["JWT_SECRET"], deps["JWT_ALGORITHM"])
 
     def _out(p):
@@ -569,6 +573,14 @@ def get_router(db, deps):
                "partner_email": p.get("email"), "amount": payload.amount, "note": (payload.note or "")[:300],
                "status": "pending", "created_at": now_iso()}
         await db.media_credit_requests.insert_one(doc)
+        if send_email and email_configured and email_configured() and admin_email:
+            try:
+                import email_service as _es
+                subject, html, text = _es.credit_request_admin(
+                    p.get("name"), p.get("email"), payload.amount, payload.note, public_app_url + "/admin/medya")
+                asyncio.create_task(send_email(admin_email, subject, html, text))
+            except Exception:
+                pass
         return {"ok": True, "request": {k: v for k, v in doc.items() if k != "_id"}}
 
     class CampaignImgIn(BaseModel):
@@ -682,6 +694,16 @@ def get_router(db, deps):
             raise HTTPException(status_code=400, detail="Geçersiz miktar")
         await db.media_partners.update_one({"id": req["partner_id"]}, {"$inc": {"campaign_credits": amount}})
         await db.media_credit_requests.update_one({"id": rid}, {"$set": {"status": "approved", "granted": amount, "processed_at": now_iso()}})
+        if send_email and email_configured and email_configured() and req.get("partner_email"):
+            try:
+                import email_service as _es
+                pdoc = await db.media_partners.find_one({"id": req["partner_id"]}, {"_id": 0, "campaign_credits": 1, "company": 1, "name": 1})
+                company = (pdoc.get("company") or {}).get("name") or pdoc.get("name") or req.get("partner_name")
+                total = int((pdoc or {}).get("campaign_credits", amount))
+                subject, html, text = _es.credit_approved_partner(company, amount, total, public_app_url + "/medya")
+                asyncio.create_task(send_email(req["partner_email"], subject, html, text))
+            except Exception:
+                pass
         return {"ok": True, "granted": amount}
 
     @router.post("/admin/credit-requests/{rid}/reject")
