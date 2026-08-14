@@ -115,7 +115,27 @@ def get_router(db, deps):
         return {"id": p["id"], "name": p.get("name"), "email": p.get("email"),
                 "active": p.get("active", True), "perms": p.get("perms", {}),
                 "company": p.get("company", {}), "logo_url": p.get("logo_url", ""),
+                "brand": {**{"primary_color": "#0ea5e9", "secondary_color": "#f59e0b", "font": "modern",
+                             "logo_pos_post": "br", "logo_pos_story": "br"}, **(p.get("brand") or {})},
+                "has_logo": bool(p.get("logo_key")),
+                "campaign_credits": int(p.get("campaign_credits", 0)),
                 "folder": p.get("folder", p["id"]), "created_at": p.get("created_at")}
+
+    def _partner_id_from_token(tok):
+        try:
+            payload = jwt.decode(tok, deps["JWT_SECRET"], algorithms=[deps["JWT_ALGORITHM"]])
+            if payload.get("role") != "partner":
+                return None
+            return payload.get("sub")
+        except jwt.PyJWTError:
+            return None
+
+    _FONT_STYLES = {
+        "modern": "modern, temiz sans-serif tipografi (Montserrat/Helvetica hissi)",
+        "elegant": "zarif, ince serif tipografi (Playfair Display/Didot hissi)",
+        "script": "akıcı el yazısı / script tipografi",
+        "bold": "kalın, cesur ve dikkat çekici display tipografi",
+    }
 
     def _slug(s: str) -> str:
         tr = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
@@ -396,7 +416,7 @@ def get_router(db, deps):
     async def special_days(p: dict = Depends(get_current_partner)):
         return {"days": _upcoming_special_days(14)}
 
-    def _overlay_logo(img_bytes: bytes, logo_bytes: Optional[bytes], target_w: int, target_h: int) -> bytes:
+    def _overlay_logo(img_bytes: bytes, logo_bytes: Optional[bytes], target_w: int, target_h: int, pos: str = "br") -> bytes:
         from PIL import Image
         base = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
         # hedef orana kırp + yeniden boyutlandır (cover)
@@ -413,10 +433,22 @@ def get_router(db, deps):
                 lh = int(logo.height * (lw / logo.width))
                 logo = logo.resize((lw, lh), Image.LANCZOS)
                 pad = int(target_w * 0.04)
-                # yarı saydam koyu zemin (okunabilirlik)
                 bgpad = int(pad * 0.5)
                 plate = Image.new("RGBA", (lw + bgpad * 2, lh + bgpad * 2), (0, 0, 0, 90))
-                px, py = target_w - plate.width - pad, target_h - plate.height - pad
+                pk = (pos or "br").lower()
+                vch, hch = (pk[0] if len(pk) > 0 else "b"), (pk[1] if len(pk) > 1 else "r")
+                if hch == "l":
+                    px = pad
+                elif hch == "c":
+                    px = (target_w - plate.width) // 2
+                else:
+                    px = target_w - plate.width - pad
+                if vch == "t":
+                    py = pad
+                elif vch == "m":
+                    py = (target_h - plate.height) // 2
+                else:
+                    py = target_h - plate.height - pad
                 base.alpha_composite(plate, (px, py))
                 base.alpha_composite(logo, (px + bgpad, py + bgpad))
             except Exception:
@@ -439,35 +471,25 @@ def get_router(db, deps):
             return None
         return images[0].get("data", "")
 
-    class SpecialImgIn(BaseModel):
-        day_name: str = Field(min_length=1, max_length=120)
-        format: str = "post"
-        context: str = ""
+    def _brand_of(p):
+        return {**{"primary_color": "#0ea5e9", "secondary_color": "#f59e0b", "font": "modern",
+                   "logo_pos_post": "br", "logo_pos_story": "br"}, **(p.get("brand") or {})}
 
-    @router.post("/partner/special-day-images")
-    async def special_day_images(payload: SpecialImgIn, p: dict = Depends(get_current_partner)):
-        if not os.environ.get("EMERGENT_LLM_KEY"):
-            raise HTTPException(status_code=503, detail="AI anahtarı yapılandırılmamış")
-        fmt = "story" if payload.format == "story" else "post"
+    _POS_NAMES = {"tl": "sol üst", "tc": "üst orta", "tr": "sağ üst", "ml": "sol orta", "mc": "orta",
+                  "mr": "sağ orta", "bl": "sol alt", "bc": "alt orta", "br": "sağ alt"}
+
+    async def _make_images(p, fmt, base_prompt, kind, day_name=""):
+        fmt = "story" if fmt == "story" else "post"
         tw, th = (1024, 1536) if fmt == "story" else (1024, 1024)
-        ratio = "9:16 dikey story" if fmt == "story" else "1:1 kare gönderi"
-        company_name = (p.get("company", {}) or {}).get("name") or p.get("name", "")
-        ctx = (payload.context or "").strip()
+        brand = _brand_of(p)
+        logo_pos = brand.get("logo_pos_story" if fmt == "story" else "logo_pos_post", "br")
         styles = [
             "zarif ve minimal, bol boşluklu, modern tipografi, pastel tonlar",
             "sıcak ve premium, altın vurgular, lüks ve şık kompozisyon, koyu zemin",
             "canlı ve enerjik, cesur renkler, dikkat çekici modern grafik",
         ]
-        base_prompt = (
-            f"'{payload.day_name}' özel günü için {ratio} formatında profesyonel bir sosyal medya kutlama görseli tasarla. "
-            f"Görselde TÜRKÇE kısa ve şık bir kutlama mesajı yer alsın. Yüksek kaliteli, marka kalitesinde, temiz kompozisyon. "
-            + (f"Firma/marka: {company_name}. " if company_name else "")
-            + (f"Ek istek: {ctx}. " if ctx else "")
-            + "Sağ alt köşede logo için boşluk bırak. Fotoğraf stüdyosu/medya ajansı estetiğinde."
-        )
         prompts = [f"{base_prompt} Stil: {s}." for s in styles]
         raw = await asyncio.gather(*[_gen_one_image(pr) for pr in prompts])
-        # logo bytes (varsa)
         logo_bytes = None
         if p.get("logo_key"):
             try:
@@ -481,22 +503,204 @@ def get_router(db, deps):
                 continue
             try:
                 data = _b64.b64decode(b64img)
-                composed = await asyncio.to_thread(_overlay_logo, data, logo_bytes, tw, th)
+                composed = await asyncio.to_thread(_overlay_logo, data, logo_bytes, tw, th, logo_pos)
             except Exception:
                 continue
             iid = new_id()
-            key = f"media/{folder}/special/{iid}.jpg"
+            key = f"media/{folder}/{kind}/{iid}.jpg"
             try:
                 put_object(key, composed, "image/jpeg")
             except Exception:
                 pass
             await db.media_special_images.insert_one({
-                "id": iid, "partner_id": p["id"], "day_name": payload.day_name,
+                "id": iid, "partner_id": p["id"], "day_name": day_name, "kind": kind,
                 "format": fmt, "path": key, "created_at": now_iso(),
             })
             images.append({"id": iid, "data_url": "data:image/jpeg;base64," + _b64.b64encode(composed).decode()})
+        return images, bool(logo_bytes)
+
+    class SpecialImgIn(BaseModel):
+        day_name: str = Field(min_length=1, max_length=120)
+        format: str = "post"
+
+    @router.post("/partner/special-day-images")
+    async def special_day_images(payload: SpecialImgIn, p: dict = Depends(get_current_partner)):
+        if not os.environ.get("EMERGENT_LLM_KEY"):
+            raise HTTPException(status_code=503, detail="AI anahtarı yapılandırılmamış")
+        # ANTİ-İSTİSMAR: sadece resmi takvimdeki özel günler için üretilebilir
+        valid_names = {d["name"] for d in _upcoming_special_days(60)}
+        if payload.day_name not in valid_names:
+            raise HTTPException(status_code=400, detail="Yalnızca takvimdeki özel günler için görsel üretilebilir")
+        fmt = "story" if payload.format == "story" else "post"
+        ratio = "9:16 dikey story" if fmt == "story" else "1:1 kare gönderi"
+        brand = _brand_of(p)
+        font_desc = _FONT_STYLES.get(brand.get("font", "modern"), _FONT_STYLES["modern"])
+        company_name = (p.get("company", {}) or {}).get("name") or p.get("name", "")
+        logo_pos = brand.get("logo_pos_story" if fmt == "story" else "logo_pos_post", "br")
+        base_prompt = (
+            f"'{payload.day_name}' özel günü için {ratio} formatında profesyonel bir sosyal medya kutlama görseli tasarla. "
+            f"Görselde SADECE bu özel güne dair TÜRKÇE kısa ve şık bir kutlama mesajı yer alsın; başka konu, kişi veya ürün ekleme. "
+            f"Yüksek kaliteli, marka kalitesinde, temiz kompozisyon. "
+            f"Kurumsal kimlik — ana renk {brand.get('primary_color')}, ikincil renk {brand.get('secondary_color')}; tipografi: {font_desc}. "
+            + (f"Firma/marka: {company_name}. " if company_name else "")
+            + f"{_POS_NAMES.get(logo_pos, 'sağ alt')} köşede logo için boşluk bırak. Fotoğraf stüdyosu/medya ajansı estetiğinde."
+        )
+        images, has_logo = await _make_images(p, fmt, base_prompt, "special", payload.day_name)
         if not images:
             raise HTTPException(status_code=502, detail="AI görsel üretemedi, lütfen tekrar deneyin")
-        return {"images": images, "day_name": payload.day_name, "format": fmt, "has_logo": bool(logo_bytes)}
+        return {"images": images, "day_name": payload.day_name, "format": fmt, "has_logo": has_logo}
+
+    # ── PARTNER — Kampanya Kredisi (admin onaylı) + kampanya görseli ──────
+    @router.get("/partner/credits")
+    async def partner_credits(p: dict = Depends(get_current_partner)):
+        fresh = await db.media_partners.find_one({"id": p["id"]}, {"_id": 0, "campaign_credits": 1})
+        pending = await db.media_credit_requests.find_one({"partner_id": p["id"], "status": "pending"}, {"_id": 0})
+        return {"campaign_credits": int((fresh or {}).get("campaign_credits", 0)), "pending_request": pending}
+
+    class CreditReqIn(BaseModel):
+        amount: int = Field(default=5, ge=1, le=100)
+        note: str = ""
+
+    @router.post("/partner/credit-request")
+    async def request_credits(payload: CreditReqIn, p: dict = Depends(get_current_partner)):
+        if await db.media_credit_requests.find_one({"partner_id": p["id"], "status": "pending"}):
+            raise HTTPException(status_code=400, detail="Zaten bekleyen bir talebiniz var")
+        doc = {"id": new_id(), "partner_id": p["id"], "partner_name": p.get("name"),
+               "partner_email": p.get("email"), "amount": payload.amount, "note": (payload.note or "")[:300],
+               "status": "pending", "created_at": now_iso()}
+        await db.media_credit_requests.insert_one(doc)
+        return {"ok": True, "request": {k: v for k, v in doc.items() if k != "_id"}}
+
+    class CampaignImgIn(BaseModel):
+        brief: str = Field(min_length=3, max_length=600)
+        format: str = "post"
+
+    @router.post("/partner/campaign-images")
+    async def campaign_images(payload: CampaignImgIn, p: dict = Depends(get_current_partner)):
+        if not os.environ.get("EMERGENT_LLM_KEY"):
+            raise HTTPException(status_code=503, detail="AI anahtarı yapılandırılmamış")
+        # kredi düş (atomik) — yetersizse reddet
+        r = await db.media_partners.update_one(
+            {"id": p["id"], "campaign_credits": {"$gte": 1}}, {"$inc": {"campaign_credits": -1}})
+        if r.modified_count == 0:
+            raise HTTPException(status_code=402, detail="Kampanya krediniz yok. Lütfen yöneticiden kredi talep edin.")
+        fmt = "story" if payload.format == "story" else "post"
+        ratio = "9:16 dikey story" if fmt == "story" else "1:1 kare gönderi"
+        brand = _brand_of(p)
+        font_desc = _FONT_STYLES.get(brand.get("font", "modern"), _FONT_STYLES["modern"])
+        company_name = (p.get("company", {}) or {}).get("name") or p.get("name", "")
+        logo_pos = brand.get("logo_pos_story" if fmt == "story" else "logo_pos_post", "br")
+        base_prompt = (
+            f"Bir fotoğraf/medya firması için {ratio} formatında profesyonel bir KAMPANYA / tanıtım görseli tasarla. "
+            f"Kampanya özeti: {payload.brief}. Görselde TÜRKÇE, satış odaklı kısa ve şık bir metin yer alsın. "
+            f"Yüksek kaliteli, marka kalitesinde, temiz kompozisyon. "
+            f"Kurumsal kimlik — ana renk {brand.get('primary_color')}, ikincil renk {brand.get('secondary_color')}; tipografi: {font_desc}. "
+            + (f"Firma/marka: {company_name}. " if company_name else "")
+            + f"{_POS_NAMES.get(logo_pos, 'sağ alt')} köşede logo için boşluk bırak."
+        )
+        images, has_logo = await _make_images(p, fmt, base_prompt, "campaign", "")
+        if not images:
+            # üretim başarısızsa krediyi iade et
+            await db.media_partners.update_one({"id": p["id"]}, {"$inc": {"campaign_credits": 1}})
+            raise HTTPException(status_code=502, detail="AI görsel üretemedi, krediniz iade edildi")
+        left = (await db.media_partners.find_one({"id": p["id"]}, {"_id": 0, "campaign_credits": 1})).get("campaign_credits", 0)
+        return {"images": images, "format": fmt, "has_logo": has_logo, "campaign_credits": int(left)}
+
+    # ── PARTNER — Marka Kiti ─────────────────────────────────────────────
+    class BrandIn(BaseModel):
+        primary_color: str = "#0ea5e9"
+        secondary_color: str = "#f59e0b"
+        font: str = "modern"
+        logo_pos_post: str = "br"
+        logo_pos_story: str = "br"
+
+    @router.put("/partner/brand")
+    async def update_brand(payload: BrandIn, p: dict = Depends(get_current_partner)):
+        font = payload.font if payload.font in _FONT_STYLES else "modern"
+        valid_pos = {"tl", "tc", "tr", "ml", "mc", "mr", "bl", "bc", "br"}
+        brand = {
+            "primary_color": payload.primary_color[:9], "secondary_color": payload.secondary_color[:9],
+            "font": font,
+            "logo_pos_post": payload.logo_pos_post if payload.logo_pos_post in valid_pos else "br",
+            "logo_pos_story": payload.logo_pos_story if payload.logo_pos_story in valid_pos else "br",
+        }
+        await db.media_partners.update_one({"id": p["id"]}, {"$set": {"brand": brand}})
+        return {"brand": brand}
+
+    # ── PARTNER — Özel Gün Görsel Galerisi ───────────────────────────────
+    @router.get("/partner/special-gallery")
+    async def special_gallery(p: dict = Depends(get_current_partner)):
+        rows = await db.media_special_images.find({"partner_id": p["id"]}, {"_id": 0, "path": 0}).sort("created_at", -1).to_list(500)
+        return {"images": rows}
+
+    @router.get("/partner/special-image/{iid}")
+    async def special_image(iid: str, request: Request, t: str = ""):
+        tok = t or request.cookies.get("partner_token", "")
+        if not tok:
+            auth = request.headers.get("Authorization", "")
+            if auth.startswith("Bearer "):
+                tok = auth[7:]
+        pid = _partner_id_from_token(tok)
+        if not pid:
+            raise HTTPException(status_code=401, detail="Giriş gerekli")
+        rec = await db.media_special_images.find_one({"id": iid, "partner_id": pid}, {"_id": 0})
+        if not rec:
+            raise HTTPException(status_code=404, detail="Görsel bulunamadı")
+        content, ctype = get_object(rec["path"])
+        return Response(content=content, media_type=ctype or "image/jpeg")
+
+    @router.delete("/partner/special-image/{iid}")
+    async def delete_special_image(iid: str, p: dict = Depends(get_current_partner)):
+        rec = await db.media_special_images.find_one({"id": iid, "partner_id": p["id"]})
+        if rec:
+            try:
+                delete_object(rec["path"])
+            except Exception:
+                pass
+            await db.media_special_images.delete_one({"id": iid, "partner_id": p["id"]})
+        return {"ok": True}
+
+    # ── ADMIN — kampanya kredisi yönetimi ────────────────────────────────
+    @router.get("/admin/credit-requests")
+    async def admin_credit_requests(admin: dict = Depends(require_admin)):
+        rows = await db.media_credit_requests.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+        rows.sort(key=lambda r: (r.get("status") != "pending", r.get("created_at", "")), reverse=False)
+        return {"requests": rows}
+
+    class GrantIn(BaseModel):
+        amount: Optional[int] = None
+
+    @router.post("/admin/credit-requests/{rid}/approve")
+    async def approve_credit_request(rid: str, payload: GrantIn, admin: dict = Depends(require_admin)):
+        req = await db.media_credit_requests.find_one({"id": rid}, {"_id": 0})
+        if not req:
+            raise HTTPException(status_code=404, detail="Talep bulunamadı")
+        if req.get("status") != "pending":
+            raise HTTPException(status_code=400, detail="Bu talep zaten işlenmiş")
+        amount = int(payload.amount) if payload.amount is not None else int(req.get("amount", 0))
+        if amount < 1:
+            raise HTTPException(status_code=400, detail="Geçersiz miktar")
+        await db.media_partners.update_one({"id": req["partner_id"]}, {"$inc": {"campaign_credits": amount}})
+        await db.media_credit_requests.update_one({"id": rid}, {"$set": {"status": "approved", "granted": amount, "processed_at": now_iso()}})
+        return {"ok": True, "granted": amount}
+
+    @router.post("/admin/credit-requests/{rid}/reject")
+    async def reject_credit_request(rid: str, admin: dict = Depends(require_admin)):
+        r = await db.media_credit_requests.update_one({"id": rid, "status": "pending"}, {"$set": {"status": "rejected", "processed_at": now_iso()}})
+        if r.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Bekleyen talep bulunamadı")
+        return {"ok": True}
+
+    class AdjustIn(BaseModel):
+        amount: int
+
+    @router.post("/admin/partners/{pid}/credits")
+    async def adjust_partner_credits(pid: str, payload: AdjustIn, admin: dict = Depends(require_admin)):
+        p = await db.media_partners.find_one({"id": pid}, {"_id": 0, "campaign_credits": 1})
+        if not p:
+            raise HTTPException(status_code=404, detail="Firma bulunamadı")
+        new_val = max(0, int(p.get("campaign_credits", 0)) + int(payload.amount))
+        await db.media_partners.update_one({"id": pid}, {"$set": {"campaign_credits": new_val}})
+        return {"campaign_credits": new_val}
 
     return router

@@ -139,6 +139,14 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
 - **Frontend** (`MediaPortal.jsx`): Üç sekmeli alt panel (`media-tabs`: İçerik Asistanı / Özel Gün Takvimi / İçerik Geçmişi). Özel Gün: gün listesi (`special-day-*`), format pill'leri, bağlam, "Logolu Görsel Üret" → 3 görsel + indir. Geçmiş: favori yıldızı + favori filtresi + kopyala + sil.
 - Doğrulama: curl — special-days 14 gün ✅, image gen 3 görsel (logosuz) ✅ + logolu story 1024×1536 has_logo:true ✅, history populate/favorite/filter/delete ✅. Screenshot — 3 sekme + Özel Gün paneli render ✅.
 
+## Session Z (Jun 2026) — Marka Kiti + Görsel Galerisi + Anti-İstismar Kredi Modeli (self-tested: curl E2E + screenshot)
+- **Anti-istismar kilidi**: Özel gün görsel üretimi ARTIK serbest metin ("context") almıyor; `day_name` sunucuda resmi takvime karşı doğrulanıyor (uymayan istek 400). Çalışan kendine kişisel/keyfi görsel üretemez. Kampanya görselleri ise ayrı, **admin onaylı kredi** ile üretilir.
+- **Kampanya Kredisi**: partner `campaign_credits` (default 0). `GET /partner/credits`, `POST /partner/credit-request` (tek bekleyen talep), `POST /partner/campaign-images` {brief, format} → 1 kredi düşer (atomik `$gte:1` + `$inc:-1`), 3 varyant üretir; üretim tümüyle başarısızsa kredi iade. Admin: `GET /media/admin/credit-requests`, `.../{rid}/approve` (miktar), `.../{rid}/reject`, `POST /media/admin/partners/{pid}/credits` (delta). `_out` + admin liste `campaign_credits` döner.
+- **Marka Kiti**: `PUT /partner/brand` {primary_color, secondary_color, font(modern/elegant/script/bold), logo_pos_post, logo_pos_story (9-grid tl..br)}. `_make_images` ortak helper hem özel gün hem kampanyada marka rengi+font'u prompt'a enjekte eder, `_overlay_logo` logoyu seçilen 9-grid konuma bindirir.
+- **Görsel Galerisi**: üretilen tüm görseller `db.media_special_images` (kind: special|campaign). `GET /partner/special-gallery`, `GET /partner/special-image/{id}?t=<token>` (query veya header token, sahiplik kontrolü — `<img src>` uyumlu), `DELETE /partner/special-image/{id}`.
+- **Frontend** (`MediaPortal.jsx`): 6 sekme (İçerik Asistanı / Özel Gün / Kampanya Görseli / Marka Kiti / Görsel Galerisi / Geçmiş). Kampanya: kredi rozeti + talep dialogu + brief üretim. Marka Kiti: renk seçici + font + iki 9-grid logo konumu. Galeri: kind rozetli grid + indir/sil. `AdminMedia.jsx`: bekleyen kredi talepleri kartı (onayla/reddet) + firma satırında kredi butonu (ekle/düş).
+- Doğrulama: curl — brand kaydet ✅, geçersiz özel gün 400 ✅, kredisiz kampanya 402 ✅, talep→admin onay→3 kredi ✅, kampanya üretimi kredi 3→2 + logo ✅, galeri token'lı servis 200 / tokensız 401 ✅. Screenshot — 6 sekme + Kampanya/Marka Kiti/Galeri + admin kredi butonu render ✅.
+
 
 
 ## Session F (Feb 2026) — Sidebar Scroll Fix + Auto Face Detection + Auto Ledger + BG Removal

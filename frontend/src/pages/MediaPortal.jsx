@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Aperture, LogOut, Upload, Download, Trash2, Image as ImageIcon, Building2, LogIn, Sparkles, Wand2, Copy, X, CalendarDays, Star, History, Loader2 } from "lucide-react";
+import { Aperture, LogOut, Upload, Download, Trash2, Image as ImageIcon, Building2, LogIn, Sparkles, Wand2, Copy, X, CalendarDays, Star, History, Loader2, Palette, Coins, Images, Send, Megaphone } from "lucide-react";
 
 const API = process.env.REACT_APP_BACKEND_URL + "/api/media";
 const TK = "fotuber_partner_token";
@@ -40,17 +40,36 @@ export default function MediaPortal() {
   const [days, setDays] = useState([]);
   const [selDay, setSelDay] = useState(null);
   const [spFormat, setSpFormat] = useState("post");
-  const [spContext, setSpContext] = useState("");
   const [spBusy, setSpBusy] = useState(false);
   const [spImages, setSpImages] = useState([]);
   const [history, setHistory] = useState([]);
   const [favOnly, setFavOnly] = useState(false);
+  // Marka Kiti
+  const [brand, setBrand] = useState({ primary_color: "#0ea5e9", secondary_color: "#f59e0b", font: "modern", logo_pos_post: "br", logo_pos_story: "br" });
+  const [brandBusy, setBrandBusy] = useState(false);
+  // Kampanya kredisi
+  const [credits, setCredits] = useState({ campaign_credits: 0, pending_request: null });
+  const [campBrief, setCampBrief] = useState("");
+  const [campFormat, setCampFormat] = useState("post");
+  const [campBusy, setCampBusy] = useState(false);
+  const [campImages, setCampImages] = useState([]);
+  const [reqOpen, setReqOpen] = useState(false);
+  const [reqAmount, setReqAmount] = useState(5);
+  const [reqNote, setReqNote] = useState("");
+  // Galeri
+  const [gallery, setGallery] = useState([]);
+  const FONTS = [
+    { key: "modern", label: "Modern (Sans)" }, { key: "elegant", label: "Zarif (Serif)" },
+    { key: "script", label: "El Yazısı" }, { key: "bold", label: "Kalın / Cesur" },
+  ];
+  const POS_GRID = ["tl", "tc", "tr", "ml", "mc", "mr", "bl", "bc", "br"];
 
   const loadMe = async () => {
     if (!localStorage.getItem(TK)) { setLoading(false); return; }
     try {
       const { data } = await axios.get(`${API}/partner/me`, authCfg());
       setPartner(data.partner); setCompany({ phone: "", website: "", about: "", ...(data.partner.company || {}) });
+      if (data.partner.brand) setBrand(data.partner.brand);
       loadFiles();
     } catch { localStorage.removeItem(TK); }
     finally { setLoading(false); }
@@ -129,9 +148,10 @@ export default function MediaPortal() {
     setSpBusy(true); setSpImages([]);
     try {
       const { data } = await axios.post(`${API}/partner/special-day-images`,
-        { day_name: selDay.name, format: spFormat, context: spContext }, authCfg());
+        { day_name: selDay.name, format: spFormat }, authCfg());
       setSpImages(data.images || []);
       toast.success(data.has_logo ? "Logolu görseller üretildi" : "Görseller üretildi (logo bulunamadı)");
+      loadGallery();
     } catch (e) { toast.error(e?.response?.data?.detail || "Görsel üretilemedi"); }
     finally { setSpBusy(false); }
   };
@@ -139,6 +159,57 @@ export default function MediaPortal() {
     const a = document.createElement("a"); a.href = im.data_url;
     a.download = `${(selDay?.name || "ozel-gun").replace(/\s+/g, "-")}-${i + 1}.jpg`;
     document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  // Marka Kiti
+  const saveBrand = async () => {
+    setBrandBusy(true);
+    try { const { data } = await axios.put(`${API}/partner/brand`, brand, authCfg()); setBrand(data.brand); toast.success("Marka kiti kaydedildi"); }
+    catch { toast.error("Kaydedilemedi"); }
+    finally { setBrandBusy(false); }
+  };
+
+  // Kampanya kredisi
+  const loadCredits = async () => {
+    try { const { data } = await axios.get(`${API}/partner/credits`, authCfg()); setCredits(data); } catch { /* */ }
+  };
+  const requestCredits = async () => {
+    try { await axios.post(`${API}/partner/credit-request`, { amount: Number(reqAmount) || 5, note: reqNote }, authCfg());
+      toast.success("Kredi talebiniz yöneticiye iletildi"); setReqOpen(false); setReqNote(""); loadCredits(); }
+    catch (e) { toast.error(e?.response?.data?.detail || "Talep gönderilemedi"); }
+  };
+  const genCampaign = async () => {
+    if (campBrief.trim().length < 3) { toast.error("Kampanya açıklaması girin"); return; }
+    setCampBusy(true); setCampImages([]);
+    try {
+      const { data } = await axios.post(`${API}/partner/campaign-images`, { brief: campBrief, format: campFormat }, authCfg());
+      setCampImages(data.images || []); setCredits((c) => ({ ...c, campaign_credits: data.campaign_credits }));
+      toast.success("Kampanya görselleri üretildi"); loadGallery();
+    } catch (e) { toast.error(e?.response?.data?.detail || "Üretilemedi"); loadCredits(); }
+    finally { setCampBusy(false); }
+  };
+  const downloadCamp = (im, i) => {
+    const a = document.createElement("a"); a.href = im.data_url; a.download = `kampanya-${i + 1}.jpg`;
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  // Galeri
+  const imgUrl = (id) => `${API}/partner/special-image/${id}?t=${encodeURIComponent(localStorage.getItem(TK) || "")}`;
+  const loadGallery = async () => {
+    try { const { data } = await axios.get(`${API}/partner/special-gallery`, authCfg()); setGallery(data.images || []); } catch { /* */ }
+  };
+  const dlGallery = async (g) => {
+    try {
+      const res = await axios.get(`${API}/partner/special-image/${g.id}`, { ...authCfg(), responseType: "blob" });
+      const url = URL.createObjectURL(res.data); const a = document.createElement("a"); a.href = url;
+      a.download = `${(g.day_name || g.kind || "gorsel").replace(/\s+/g, "-")}-${g.id.slice(0, 6)}.jpg`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    } catch { toast.error("İndirilemedi"); }
+  };
+  const delGallery = async (g) => {
+    if (!window.confirm("Görsel silinsin mi?")) return;
+    try { await axios.delete(`${API}/partner/special-image/${g.id}`, authCfg()); setGallery((rows) => rows.filter((r) => r.id !== g.id)); }
+    catch { toast.error("Silinemedi"); }
   };
 
   // İçerik Geçmişi
@@ -156,7 +227,7 @@ export default function MediaPortal() {
     catch { toast.error("Silinemedi"); }
   };
 
-  useEffect(() => { if (partner) { loadDays(); loadHistory(false); } }, [partner]);
+  useEffect(() => { if (partner) { loadDays(); loadHistory(false); loadCredits(); loadGallery(); } }, [partner]);
 
   const logoSrc = partner?.logo_url ? (process.env.REACT_APP_BACKEND_URL + partner.logo_url) : null;
 
@@ -236,6 +307,9 @@ export default function MediaPortal() {
         {[
           { key: "ai", label: "İçerik Asistanı", icon: Sparkles },
           { key: "special", label: "Özel Gün Takvimi", icon: CalendarDays },
+          { key: "campaign", label: "Kampanya Görseli", icon: Megaphone },
+          { key: "brand", label: "Marka Kiti", icon: Palette },
+          { key: "gallery", label: "Görsel Galerisi", icon: Images },
           { key: "history", label: "İçerik Geçmişi", icon: History },
         ].map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)} data-testid={`tab-${t.key}`}
@@ -358,9 +432,9 @@ export default function MediaPortal() {
                 </div>
               </div>
 
-              <textarea value={spContext} onChange={(e) => setSpContext(e.target.value)} rows={2} data-testid="special-context"
-                placeholder="Ek istek (opsiyonel) — ör. kampanya, renk tercihi, slogan…"
-                className="w-full rounded-lg bg-white/5 border border-white/15 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+              <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-xs text-white/40" data-testid="special-context-note">
+                Bu görseller yalnızca seçili resmi özel gün için, firmanızın logo ve marka kimliğiyle üretilir. Kampanya görselleri için <b className="text-white/60">Kampanya Görseli</b> sekmesini kullanın.
+              </div>
 
               <button onClick={genSpecial} disabled={spBusy || !selDay} data-testid="special-generate-btn"
                 className="w-full h-11 rounded-lg bg-gradient-to-r from-amber-500 to-rose-500 hover:opacity-90 disabled:opacity-40 font-semibold flex items-center justify-center gap-2">
@@ -384,6 +458,179 @@ export default function MediaPortal() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Kampanya Görseli (admin onaylı kredi) */}
+      <div className={`max-w-5xl mx-auto px-5 pb-10 ${tab === "campaign" ? "" : "hidden"}`}>
+        <div className="rounded-2xl border border-emerald-400/20 bg-gradient-to-br from-emerald-500/[0.07] to-sky-500/[0.05] p-5" data-testid="media-campaign-panel">
+          <div className="flex items-center gap-2 mb-1">
+            <Megaphone className="text-emerald-400" size={18} />
+            <span className="font-semibold text-lg">Kampanya Görseli</span>
+            <span className="ml-auto flex items-center gap-1.5 text-sm bg-white/10 rounded-full px-3 py-1" data-testid="campaign-credits">
+              <Coins size={14} className="text-amber-300" /> {credits.campaign_credits} kredi
+            </span>
+          </div>
+          <p className="text-sm text-white/50 mb-4">Özel gün dışındaki kampanya/tanıtım görselleri için yönetici onaylı kredi gerekir. Her üretim 1 kredi harcar ve 3 varyant üretir.</p>
+
+          {credits.campaign_credits < 1 ? (
+            <div className="rounded-xl border border-white/10 bg-black/20 p-6 text-center space-y-3" data-testid="campaign-nocredit">
+              <p className="text-white/60 text-sm">Kampanya krediniz yok.</p>
+              {credits.pending_request ? (
+                <p className="text-amber-300 text-sm" data-testid="campaign-pending">Kredi talebiniz onay bekliyor ({credits.pending_request.amount} kredi).</p>
+              ) : (
+                <button onClick={() => setReqOpen(true)} data-testid="campaign-request-btn" className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 px-4 py-2 font-medium text-sm"><Send size={15} /> Yöneticiden Kredi Talep Et</button>
+              )}
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-5">
+              <div className="space-y-4">
+                <textarea value={campBrief} onChange={(e) => setCampBrief(e.target.value)} rows={4} data-testid="campaign-brief"
+                  placeholder="Kampanya açıklaması — ör. Sevgililer Günü çift çekimi %25 indirim, sınırlı kontenjan…"
+                  className="w-full rounded-lg bg-white/5 border border-white/15 px-3 py-2 text-sm outline-none focus:border-emerald-400" />
+                <div className="flex gap-2">
+                  <button onClick={() => setCampFormat("post")} data-testid="campaign-format-post" className={`text-sm px-3 py-1.5 rounded-full border ${campFormat === "post" ? "bg-emerald-500 border-emerald-500 text-white" : "border-white/15 text-white/60"}`}>Gönderi (1:1)</button>
+                  <button onClick={() => setCampFormat("story")} data-testid="campaign-format-story" className={`text-sm px-3 py-1.5 rounded-full border ${campFormat === "story" ? "bg-emerald-500 border-emerald-500 text-white" : "border-white/15 text-white/60"}`}>Story (9:16)</button>
+                </div>
+                <button onClick={genCampaign} disabled={campBusy} data-testid="campaign-generate-btn"
+                  className="w-full h-11 rounded-lg bg-gradient-to-r from-emerald-500 to-sky-500 hover:opacity-90 disabled:opacity-40 font-semibold flex items-center justify-center gap-2">
+                  {campBusy ? <><Loader2 size={17} className="animate-spin" /> Üretiliyor…</> : <><Wand2 size={17} /> Kampanya Görseli Üret (1 kredi)</>}
+                </button>
+                <button onClick={() => setReqOpen(true)} data-testid="campaign-request-more" className="w-full text-xs text-white/50 hover:text-white/80">Daha fazla kredi talep et</button>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-4 min-h-[16rem]" data-testid="campaign-result">
+                {!campBusy && campImages.length === 0 && <div className="h-full flex items-center justify-center text-white/30 text-sm text-center px-4">Üretilen 3 kampanya görseli burada görünecek.</div>}
+                {campBusy && <div className="h-full flex items-center justify-center text-white/50 text-sm">Fotuber AI görselleri hazırlıyor…</div>}
+                {campImages.length > 0 && (
+                  <div className="grid grid-cols-3 gap-3">
+                    {campImages.map((im, i) => (
+                      <div key={im.id} className="space-y-2" data-testid={`campaign-img-${i}`}>
+                        <img src={im.data_url} alt={`kampanya ${i + 1}`} className="w-full rounded-lg border border-white/10" />
+                        <button onClick={() => downloadCamp(im, i)} className="w-full text-xs rounded-lg bg-white/10 hover:bg-white/20 py-1.5 flex items-center justify-center gap-1"><Download size={13} /> İndir</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Kredi talep dialogu */}
+      {reqOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" data-testid="credit-request-dialog" onClick={() => setReqOpen(false)}>
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-neutral-900 p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2"><Coins className="text-amber-300" size={18} /><span className="font-semibold">Kredi Talebi</span></div>
+            <label className="text-xs text-white/50 block">Kaç kredi istiyorsunuz?</label>
+            <input type="number" min={1} max={100} value={reqAmount} onChange={(e) => setReqAmount(e.target.value)} data-testid="credit-request-amount"
+              className="w-full h-10 rounded-lg bg-white/5 border border-white/15 px-3 text-sm outline-none focus:border-emerald-400" />
+            <textarea value={reqNote} onChange={(e) => setReqNote(e.target.value)} rows={3} placeholder="Not (opsiyonel) — hangi kampanya için?" data-testid="credit-request-note"
+              className="w-full rounded-lg bg-white/5 border border-white/15 px-3 py-2 text-sm outline-none focus:border-emerald-400" />
+            <div className="flex gap-2">
+              <button onClick={() => setReqOpen(false)} className="flex-1 h-10 rounded-lg bg-white/10 hover:bg-white/15 text-sm">Vazgeç</button>
+              <button onClick={requestCredits} data-testid="credit-request-send" className="flex-1 h-10 rounded-lg bg-emerald-500 hover:bg-emerald-400 font-medium text-sm">Talep Gönder</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Marka Kiti */}
+      <div className={`max-w-5xl mx-auto px-5 pb-10 ${tab === "brand" ? "" : "hidden"}`}>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5" data-testid="media-brand-panel">
+          <div className="flex items-center gap-2 mb-1">
+            <Palette className="text-fuchsia-400" size={18} />
+            <span className="font-semibold text-lg">Marka Kiti</span>
+          </div>
+          <p className="text-sm text-white/50 mb-4">Logo, kurumsal renk, yazı tipi ve logo konumu — üretilen tüm AI görselleri bu kimliğe uyar.</p>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-16 h-16 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
+                  {logoSrc ? <img src={logoSrc} alt="logo" className="w-full h-full object-contain" /> : <ImageIcon className="text-white/30" />}
+                </div>
+                <div>
+                  <button onClick={() => logoRef.current?.click()} className="text-sm rounded-lg bg-white/10 hover:bg-white/15 px-3 py-2" data-testid="brand-logo-btn">Logo Yükle / Değiştir</button>
+                  <p className="text-xs text-white/40 mt-1">PNG (şeffaf) önerilir.</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-white/50 block mb-1">Ana Renk</label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={brand.primary_color} onChange={(e) => setBrand({ ...brand, primary_color: e.target.value })} data-testid="brand-primary" className="w-10 h-10 rounded bg-transparent border border-white/15" />
+                    <span className="text-sm text-white/60">{brand.primary_color}</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-white/50 block mb-1">İkincil Renk</label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={brand.secondary_color} onChange={(e) => setBrand({ ...brand, secondary_color: e.target.value })} data-testid="brand-secondary" className="w-10 h-10 rounded bg-transparent border border-white/15" />
+                    <span className="text-sm text-white/60">{brand.secondary_color}</span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-white/50 block mb-1.5">Yazı Tipi Stili</label>
+                <div className="flex flex-wrap gap-2" data-testid="brand-fonts">
+                  {FONTS.map((f) => (
+                    <button key={f.key} onClick={() => setBrand({ ...brand, font: f.key })} data-testid={`brand-font-${f.key}`}
+                      className={`text-sm px-3 py-1.5 rounded-full border ${brand.font === f.key ? "bg-fuchsia-500 border-fuchsia-500 text-white" : "border-white/15 text-white/60"}`}>{f.label}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-5">
+              {[["logo_pos_post", "Gönderi (1:1) logo konumu"], ["logo_pos_story", "Story (9:16) logo konumu"]].map(([field, lbl]) => (
+                <div key={field}>
+                  <label className="text-xs text-white/50 block mb-1.5">{lbl}</label>
+                  <div className="grid grid-cols-3 gap-1.5 w-40" data-testid={`brand-${field}`}>
+                    {POS_GRID.map((pk) => (
+                      <button key={pk} onClick={() => setBrand({ ...brand, [field]: pk })} data-testid={`brand-${field}-${pk}`}
+                        className={`aspect-square rounded-md border flex items-center justify-center ${brand[field] === pk ? "bg-fuchsia-500 border-fuchsia-500" : "border-white/15 bg-white/5 hover:border-white/30"}`}>
+                        <span className={`w-2 h-2 rounded-full ${brand[field] === pk ? "bg-white" : "bg-white/30"}`} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <button onClick={saveBrand} disabled={brandBusy} data-testid="brand-save" className="mt-5 h-11 px-6 rounded-lg bg-gradient-to-r from-fuchsia-500 to-sky-500 hover:opacity-90 disabled:opacity-40 font-semibold flex items-center gap-2">
+            {brandBusy ? <Loader2 size={17} className="animate-spin" /> : <Palette size={17} />} Marka Kitini Kaydet
+          </button>
+        </div>
+      </div>
+
+      {/* Görsel Galerisi */}
+      <div className={`max-w-5xl mx-auto px-5 pb-10 ${tab === "gallery" ? "" : "hidden"}`}>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5" data-testid="media-gallery-panel">
+          <div className="flex items-center gap-2 mb-4">
+            <Images className="text-sky-400" size={18} />
+            <span className="font-semibold text-lg">Görsel Galerisi</span>
+            <span className="text-xs text-white/40">({gallery.length})</span>
+          </div>
+          {gallery.length === 0 && <p className="text-white/40 text-sm py-8 text-center">Henüz üretilmiş görsel yok.</p>}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {gallery.map((g) => (
+              <div key={g.id} data-testid={`gallery-${g.id}`} className="rounded-xl border border-white/10 bg-black/20 overflow-hidden">
+                <img src={imgUrl(g.id)} alt={g.day_name || g.kind} className="w-full aspect-square object-cover" loading="lazy" />
+                <div className="p-2">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${g.kind === "campaign" ? "bg-emerald-500/20 text-emerald-200" : "bg-amber-500/20 text-amber-200"}`}>{g.kind === "campaign" ? "Kampanya" : "Özel Gün"}</span>
+                    <span className="text-[10px] text-white/40">{g.format === "story" ? "9:16" : "1:1"}</span>
+                  </div>
+                  <div className="text-xs truncate text-white/70">{g.day_name || "Kampanya"}</div>
+                  <div className="flex gap-1 mt-1.5">
+                    <button onClick={() => dlGallery(g)} data-testid={`gallery-dl-${g.id}`} className="flex-1 text-xs rounded-md bg-white/10 hover:bg-white/20 py-1 flex items-center justify-center gap-1"><Download size={12} /> İndir</button>
+                    <button onClick={() => delGallery(g)} data-testid={`gallery-del-${g.id}`} className="text-red-400 hover:text-red-300 px-2 rounded-md bg-white/5"><Trash2 size={13} /></button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

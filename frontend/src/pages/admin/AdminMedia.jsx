@@ -6,14 +6,33 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Aperture, Plus, Pencil, Trash2, ExternalLink } from "lucide-react";
+import { Aperture, Plus, Pencil, Trash2, ExternalLink, Coins, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
 export default function AdminMedia() {
   const [rows, setRows] = useState([]);
   const [ed, setEd] = useState(null);
+  const [reqs, setReqs] = useState([]);
   const load = () => api.get("/media/admin/partners").then(({ data }) => setRows(data.partners || [])).catch((e) => toast.error(formatApiError(e)));
-  useEffect(() => { load(); }, []);
+  const loadReqs = () => api.get("/media/admin/credit-requests").then(({ data }) => setReqs(data.requests || [])).catch(() => {});
+  useEffect(() => { load(); loadReqs(); }, []);
+
+  const approveReq = async (r) => {
+    const amt = window.prompt(`Kaç kredi verilsin? (talep: ${r.amount})`, r.amount);
+    if (amt === null) return;
+    try { await api.post(`/media/admin/credit-requests/${r.id}/approve`, { amount: Number(amt) }); toast.success("Kredi verildi"); load(); loadReqs(); }
+    catch (e) { toast.error(formatApiError(e)); }
+  };
+  const rejectReq = async (r) => {
+    try { await api.post(`/media/admin/credit-requests/${r.id}/reject`, {}); toast.success("Talep reddedildi"); loadReqs(); }
+    catch (e) { toast.error(formatApiError(e)); }
+  };
+  const addCredits = async (p) => {
+    const amt = window.prompt(`${p.name} için eklenecek kredi (negatif = düş):`, "5");
+    if (amt === null || !amt) return;
+    try { await api.post(`/media/admin/partners/${p.id}/credits`, { amount: Number(amt) }); toast.success("Kredi güncellendi"); load(); }
+    catch (e) { toast.error(formatApiError(e)); }
+  };
 
   const save = async () => {
     const body = { name: ed.name, email: ed.email, active: ed.active,
@@ -43,6 +62,24 @@ export default function AdminMedia() {
         </div>
       </div>
 
+      {reqs.filter((r) => r.status === "pending").length > 0 && (
+        <Card className="border-amber-300 bg-amber-50/50" data-testid="credit-requests-card">
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Coins size={16} className="text-amber-600" /> Bekleyen Kredi Talepleri</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {reqs.filter((r) => r.status === "pending").map((r) => (
+              <div key={r.id} data-testid={`credit-req-${r.id}`} className="rounded-xl border border-amber-200 bg-white p-3 flex items-center gap-3">
+                <div className="flex-1">
+                  <div className="font-medium">{r.partner_name} <span className="text-amber-700">· {r.amount} kredi</span></div>
+                  <div className="text-xs text-slate-500">{r.partner_email}{r.note ? ` · ${r.note}` : ""}</div>
+                </div>
+                <Button size="sm" onClick={() => approveReq(r)} className="bg-emerald-600 hover:bg-emerald-500 gap-1" data-testid={`credit-approve-${r.id}`}><Check size={14} /> Onayla</Button>
+                <Button size="sm" variant="outline" onClick={() => rejectReq(r)} className="gap-1 text-red-600" data-testid={`credit-reject-${r.id}`}><X size={14} /> Reddet</Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="border-slate-200"><CardHeader><CardTitle className="text-base">Firmalar ({rows.length})</CardTitle></CardHeader>
         <CardContent className="space-y-2">
           {rows.length === 0 && <p className="text-sm text-slate-400 py-4 text-center">Henüz firma yok.</p>}
@@ -52,6 +89,7 @@ export default function AdminMedia() {
                 <div className="font-medium">{p.name} {!p.active && <span className="text-xs text-red-500">(pasif)</span>}</div>
                 <div className="text-xs text-slate-500">{p.email} · {[p.perms?.download && "indir", p.perms?.upload && "yükle", p.perms?.backup && "yedek"].filter(Boolean).join(" · ") || "yetki yok"}</div>
               </div>
+              <button onClick={() => addCredits(p)} className="text-amber-600 hover:text-amber-500 flex items-center gap-1 text-sm px-2 py-1 rounded-lg border border-amber-200" data-testid={`media-credits-${p.id}`}><Coins size={14} /> {p.campaign_credits ?? 0}</button>
               <button onClick={() => openEdit(p)} className="text-slate-500 p-1" data-testid={`media-edit-${p.id}`}><Pencil size={15} /></button>
               <button onClick={() => del(p.id)} className="text-red-500 p-1" data-testid={`media-del-${p.id}`}><Trash2 size={15} /></button>
             </div>
