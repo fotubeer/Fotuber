@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Trash2, Pencil, Camera, Package, FileText, ExternalLink, Save, X, DollarSign, Search } from "lucide-react";
+import { Plus, Trash2, Pencil, Camera, Package, FileText, ExternalLink, Save, X, DollarSign, Search, Download } from "lucide-react";
 import { toast } from "sonner";
 
 const CAT_LABELS = { album: "Albüm", canvas: "Kanvas Tablo", fine: "Fine Tablo", poster: "Poster", print: "Baskı", magazine: "Dergi" };
@@ -390,9 +390,35 @@ function ContractsTab() {
     return true;
   }), [rows, q, status, from, to]);
 
+  const exportCsv = () => {
+    const cols = ["Çift", "Sözleşme Sahibi", "Rol", "TC", "Telefon", "E-posta", "Etkinlik Tarihi", "Mekan",
+      "Ara Toplam", "İndirim %", "İndirim Tutar", "Net Tutar", "Cayma Bedeli", "Kalan", "Ödeme", "Durum", "Onaylayan", "Oluşturma"];
+    const roleL = { gelin: "Gelin", damat: "Damat", diger: "Diğer" };
+    const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const lines = [cols.join(";")];
+    filtered.forEach((c) => {
+      const couple = `${c.bride_name || ""}${c.bride_name && c.groom_name ? " & " : ""}${c.groom_name || ""}`.trim() || c.customer_name || "";
+      lines.push([couple, c.party_name || "", roleL[c.party_role] || "", c.party_tc || "", c.party_phone || "", c.party_email || "",
+        c.event_date || "", c.venue || "", c.subtotal || 0, c.discount_percent || 0, c.discount_amount || 0,
+        c.total || 0, c.deposit_amount || 0, c.remaining_amount || 0,
+        c.payment_method === "card" ? "Kart" : "Nakit",
+        c.approval_status === "approved" ? "Onaylandı" : "Onay Bekliyor",
+        c.approver_name || "", (c.created_at || "").slice(0, 10)].map(esc).join(";"));
+    });
+    const csv = "\uFEFF" + lines.join("\r\n"); // BOM → Excel Türkçe uyumu
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url;
+    a.download = `sozlesme-arsivi-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    toast.success(`${filtered.length} sözleşme dışa aktarıldı`);
+  };
+
   return (
     <Card className="border-slate-200" data-testid="contracts-list">
-      <CardHeader><CardTitle className="text-base">Sözleşme Arşivi ({filtered.length}/{rows.length})</CardTitle></CardHeader>
+      <CardHeader className="flex-row items-center justify-between"><CardTitle className="text-base">Sözleşme Arşivi ({filtered.length}/{rows.length})</CardTitle>
+        <Button size="sm" variant="outline" onClick={exportCsv} disabled={filtered.length === 0} className="gap-1.5" data-testid="arch-export"><Download size={15} /> Excel/CSV İndir</Button>
+      </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid sm:grid-cols-4 gap-2">
           <div className="relative"><Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" /><Input className="pl-8" placeholder="Çift / kişi ara" data-testid="arch-search" value={q} onChange={(e) => setQ(e.target.value)} /></div>

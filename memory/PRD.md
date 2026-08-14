@@ -907,3 +907,6 @@ Kapsam: SADECE admin/personel fiziki (walk-in) randevu alanı. Anasayfa müşter
 - **Sözleşme Arşivi** (cat-tab-saved, eski "Sözleşmeler"): çift/kişi arama (arch-search), durum filtresi (arch-status: tümü/onaylı/bekliyor), tarih aralığı (arch-from/arch-to), client-side filtre; "Aç" ile ContractView.
 - Doğrulama: backend curl (imza kuralı 400/200) + frontend screenshot (3 sekme + toggle). Test verisi temizlendi; base_price'lar 0'a resetlendi.
 
+
+## Session BI (Jun 2026) — Sözleşme Arşivi Excel/CSV Dışa Aktarım
+- ContractsTab (Sözleşme Arşivi) başlığına "Excel/CSV İndir" (arch-export). İstemci-taraflı CSV: UTF-8 BOM (Excel Türkçe uyumu), ";" ayraç, filtrelenmiş satırları dışa aktarır. Sütunlar: Çift, Sözleşme Sahibi, Rol, TC, Telefon, E-posta, Etkinlik Tarihi, Mekan, Ara Toplam, İndirim %, İndirim Tutar, Net, Cayma, Kalan, Ödeme, Durum, Onaylayan, Oluşturma. Playwright ile indirme doğrulandı (sozlesme-arsivi-YYYY-MM-DD.csv).
