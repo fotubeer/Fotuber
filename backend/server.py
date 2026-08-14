@@ -887,8 +887,8 @@ async def _enrich_appointment(a: dict, service_map: Optional[dict] = None) -> di
         svc = service_map.get(a.get("service_id"))
     else:
         svc = await db.services.find_one({"id": a.get("service_id")}, {"_id": 0, "name": 1, "price": 1})
-    a["service_name"] = svc["name"] if svc else "Bilinmeyen Hizmet"
-    a["service_price"] = svc["price"] if svc else 0
+    a["service_name"] = svc["name"] if svc else (a.get("service_name_snapshot") or "Bilinmeyen Hizmet")
+    a["service_price"] = svc["price"] if svc else float(a.get("total_amount") or 0)
     # Compute derived financials
     mp = a.get("mid_payments") or []
     mid_total = sum(float(p.get("amount", 0) or 0) for p in mp)
@@ -7305,6 +7305,7 @@ from routers import studio as _studio
 from routers import gallery as _gallery
 from routers import venue as _venue
 from routers import photobooth as _photobooth
+from routers import appt_pro as _appt_pro
 
 _module_deps = {
     "hash_password": hash_password,
@@ -7315,6 +7316,7 @@ _module_deps = {
     "clear_auth_cookies": clear_auth_cookies,
     "get_current_user": get_current_user,
     "require_admin": require_admin,
+    "require_staff_or_admin": require_staff_or_admin,
     "new_id": new_id,
     "now_iso": now_iso,
     "put_object": put_object,
@@ -7331,6 +7333,7 @@ app.include_router(_studio.get_router(db, _module_deps))
 app.include_router(_gallery.get_router(db, _module_deps))
 app.include_router(_venue.get_router(db, _module_deps))
 app.include_router(_photobooth.get_router(db, _module_deps))
+app.include_router(_appt_pro.get_router(db, _module_deps))
 
 
 # CORS - allow credentials with reflected origin

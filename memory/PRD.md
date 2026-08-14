@@ -858,3 +858,25 @@ Kullanıcı kararları: Faz faz ilerle (Faz 1'den başla). Object Storage + 6 ay
   - `pages/PhotoboothMemory.jsx` (`/anilarim/:token`, PUBLIC): QR ile açılan sayfa, foto önizleme + indir.
   - `pages/admin/AdminPhotobooth.jsx` (`/admin/photobooth`, ownerOnly, sidebar "Photobooth Kiosk (Taslak)"): özet (çekim/ciro/aktif çerçeve), marka+PIN+geri sayım+özellik toggle'ları (video/AI/anı duvarı — taslak), çerçeve kataloğu CRUD, paket CRUD, "Kiosk'u Aç". Ekran görüntüsüyle doğrulandı.
 - **Sonraki fazlar (Photobooth)**: PayTR fiziksel POS tetikleme, AI arka plan silme (yeşil-perdesiz), video/GIF + overlay, Anı Duvarı canlı yükleme, yazıcı entegrasyonu, 30+ çerçeve varyasyonu, belirli Stüdyo kullanıcılarına RBAC açılımı, cihaz (device) bağlama.
+
+## Session BE (Jun 2026) — Fiziki Randevu Kataloğu + Otomatik Sözleşme (tested 100%, iteration_69)
+Kapsam: SADECE admin/personel fiziki (walk-in) randevu alanı. Anasayfa müşteri randevu formuna DOKUNULMADI.
+### Backend `routers/appt_pro.py` (prefix /api/appt-pro, `require_staff_or_admin` okuma + oluşturma, `require_admin` katalog yönetimi)
+- Koleksiyonlar: appt_services, appt_products, appt_contract_settings (singleton "global"), appt_contracts.
+- FAZ 1 Hizmetler: `GET/POST/PATCH/DELETE /services`. Seed: 8 hizmet (İsteme/Nişan, Doğum Günü, Bride, Davet/Toplantı = venue_enabled + 4 opsiyon [İkramlı/İkramsız/Fotoğraflı/Klipli]; Dış Çekim/Reels/Klip/Drone = opsiyonsuz). Her opsiyon fiyatlı, base_price, venue_enabled, sort.
+- FAZ 2 Ürünler: `GET/POST/PATCH/DELETE /products`. Seed: 24 ürün, 6 kategori (album tekli/aile, canvas, fine tekli/üçlü, poster, print 10x15→A3+, magazine 3 varyant). Fiyat default 0 (admin girer).
+- FAZ 4 Sözleşme ayarları: `GET/PUT /contract-settings`. design{accent_color,text_color,title_font,body_font,header_align,show_emblem,emblem_letter/top/bottom,subtitle,title_size} + brand_name_venue/brand_name_photo + clauses (6 madde, "kapora"→"cayma bedeli") + acceptance_text. Backfill mevcut kaydı tamamlar.
+- FAZ 3 Birleşik: `POST /appointments` tek çağrıda hem db.appointments (takvimde görünür, service_name_snapshot + total_amount) hem appt_contracts (public_token, approval_status=pending, brand_variant) oluşturur. `_enrich_appointment` service_name_snapshot fallback eklendi (server.py ~890).
+- Sözleşme kayıtları: `GET /contracts`, `GET/PUT/DELETE /contracts/{cid}`.
+- PUBLIC (auth yok): `GET /public/contracts/{token}` (created_by gizli), `POST /public/contracts/{token}/approve` {approver_name,accepted}. accepted:false → 400.
+### Frontend
+- `/admin/randevu-katalogu` (AdminApptCatalog.jsx, admin, AdminLayout, sidebar "Randevu Kataloğu & Sözleşme"): 4 sekme — Hizmet&Etkinlik (opsiyon+fiyat CRUD), Ürünler (kategori CRUD), Sözleşme İçeriği (tasarım: renk/font/hiza/amblem/marka + madde editörü + kabul metni), Sözleşmeler (kayıtlı liste + durum + Aç).
+- `/admin/randevu-olustur` (ApptBuilder.jsx, admin+staff, standalone): çift (gelin/damat isim+tel), etkinlik (tarih/saat/**mekan her zaman görünür**), hizmet+opsiyon seçimi, ürün adetleri, otomatik ara toplam + % indirim + peşinat(cayma) + kalan, sözleşme sahibi (Gelin/Damat isim+tel otomatik & disabled / Farklı kişi manuel) + TC/e-posta/adres, KVKK medya izinleri (sosyal + kampanya), brand_variant otomatik (venue hizmet seçiliyse "venue" değilse "photo"). Kaydet → /admin/sozlesme/:id.
+- `/admin/sozlesme/:id` (ContractView.jsx) + `components/ContractSheet.jsx`: A4 modern sözleşme, amblem/dinamik marka (venue→"…Davet Evi", photo→"Fotuber Photography"), tasarım ayarları uygulanır, {{toplam}}/{{cayma}}/{{kalan}} otomatik dolar, KVKK EVET/HAYIR, imza. Paylaşım: WhatsApp (wa.me + link), Linki Kopyala, QR (qrcode.react), Yazdır/PDF (window.print @media print), onay durumu rozeti.
+- `/sozlesme/:token` (PublicContract.jsx, PUBLIC): müşteri sözleşmeyi görür, ad + kabul kutucuğu + Onayla → approved banner. Onaylananlar appt_contracts'ta approval_status=approved olarak saklanır.
+- DesktopDownloadButtons.jsx düzeltildi: Windows aktif (varsayılan GitHub release URL fallback) + "macOS · Yakında" (devre dışı). MacHelp kaldırıldı.
+### Notlar
+- Fiyatlar seed'de 0; builder toplamları 0 görünür (beklenen) — admin fiyat girince otomatik hesaplar.
+- Regresyon testleri: /app/backend/tests/test_appt_pro.py. Test raporu: iteration_69 (backend 100%, frontend 100%).
+- Kod-review önerileri (bug değil, ertelendi): contract silinince appointment cascade; tekrar onayda 409; AdminApptCatalog dosya bölme.
+

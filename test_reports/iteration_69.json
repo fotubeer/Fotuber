@@ -1,0 +1,30 @@
+{
+  "summary": "Full end-to-end testing of the new /api/appt-pro (Fiziki Randevu + Sözleşme) module. Backend: 9/9 pytest tests passed (services/products CRUD + seed defaults, contract-settings design + brand + clauses persistence with 'cayma bedeli' present and no 'kapora', combined appointment+contract create integrating with /api/appointments approved list including service_name_snapshot & total_amount, PUBLIC token-based GET + approve with reject-on-accepted=false → 400, RBAC unauth 401). Frontend: catalog page 4 tabs render (Hizmet/Ürünler/Sözleşme İçeriği/Sözleşmeler), 8 default services and 24 default products listed, contract settings design (brand-venue field + save button) present, saved contracts list rendered. ApptBuilder full flow works: fill bride/groom/date/venue → select service+option → set qty → discount/deposit → auto-total computes (0₺ due to default seed prices = expected per spec) → party role Gelin auto-fills name+phone and disables inputs; Farklı Kişi re-enables → KVKK toggle → 'Sözleşmeyi Oluştur & Önizle' navigates to /admin/sozlesme/:id and renders ContractSheet with emblem/venue brand ('FOTUBER Photography & Davet Evi'), HİZMET SEÇİMİ checklist, KVKK EVET/HAYIR, clauses with amounts, status badge 'Onay Bekliyor', WhatsApp/Copy/QR/Yazdır buttons. Public /sozlesme/:token loads without login, accept+name+approve → shows approved banner (pc-approved-banner). Desktop download: /studyo shows desktop-download-windows (active) + desktop-download-mac-soon ('macOS · Yakında').",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Studio login (/studyo)", "issues": ["Multiple 401 console errors when navigating unauthenticated; expected but noisy — consider suppressing /api/studio/me 401 in interceptor for the login screen."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_appt_pro.py",
+    "/app/test_reports/pytest/appt_pro.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "appt_pro.py: DELETE /appointments cleanup is not performed when a contract with an appointment_id is deleted from /api/appt-pro/contracts/{cid} — consider cascading (or vice versa) so orphaned appointments don't remain if admin deletes a contract.",
+    "public_approve_contract: overwrites approval_status even if already approved — idempotent (fine) but consider returning 409 if already approved.",
+    "BuilderIn.contract nesting duplicates several fields (subtotal/discount/total/deposit) that already exist at the top level — small data-duplication risk of drift; consider deriving contract totals from the top-level values on the server.",
+    "GET /appt-pro/public/contracts/{token} projects out 'created_by' but leaves 'appointment_id' and full customer TC/email/address exposed — acceptable for the customer's own contract, but worth verifying no PII leaks if token is guessable (secrets.token_urlsafe(9) is ~72 bits — OK).",
+    "Frontend AdminApptCatalog.jsx is 303 lines with 4 sub-tabs in one file — near the recommended limit; consider splitting into files per tab for maintainability."
+  ],
+  "updated_files": ["/app/backend/tests/test_appt_pro.py"],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024",
+  "seed_data_creation": "Backend tests cleaned up all TEST_ contracts/appointments/services/products created during the run. Frontend end-to-end contract cleaned up via API after screenshot capture.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Module fully green. Default seed prices are 0 (by design) so builder totals show 0₺ unless services/products get priced; totals math is verified elsewhere (subtotal=qty*price, discount %, cayma bedeli, remaining). Reusable regression tests live at /app/backend/tests/test_appt_pro.py."
+}

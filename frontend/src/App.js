@@ -35,6 +35,7 @@ import StaffKiosk from "@/pages/StaffKiosk";
 import GallerySelect from "@/pages/GallerySelect";
 import PhotoboothKiosk from "@/pages/PhotoboothKiosk";
 import PhotoboothMemory from "@/pages/PhotoboothMemory";
+import PublicContract from "@/pages/PublicContract";
 import StudioChatWidget from "@/components/StudioChatWidget";
 
 import Home from "@/pages/Home";
@@ -84,6 +85,9 @@ import AdminSitePricing from "@/pages/admin/AdminSitePricing";
 import AdminAnnouncements from "@/pages/admin/AdminAnnouncements";
 import AdminInbox from "@/pages/admin/AdminInbox";
 import AdminPhotobooth from "@/pages/admin/AdminPhotobooth";
+import AdminApptCatalog from "@/pages/admin/AdminApptCatalog";
+import ApptBuilder from "@/pages/admin/ApptBuilder";
+import ContractView from "@/pages/admin/ContractView";
 
 import DiscountCode from "@/pages/DiscountCode";
 import FotuberMedya from "@/pages/FotuberMedya";
@@ -151,6 +155,7 @@ function App() {
               <Route path="/salon/kroki/:id" element={<FloorPlanBuilder />} />
               <Route path="/salon/kiosk" element={<StaffKiosk />} />
               <Route path="/anilarim/:token" element={<PhotoboothMemory />} />
+              <Route path="/sozlesme/:token" element={<PublicContract />} />
               <Route path="/photobooth-kiosk" element={<ProtectedRoute requireRole="admin"><PhotoboothKiosk /></ProtectedRoute>} />
 
               <Route
@@ -202,6 +207,9 @@ function App() {
               <Route path="/admin/reklamlar" element={<AdminGuard><AdminAdBanners /></AdminGuard>} />
               <Route path="/admin/masaustu" element={<AdminGuard><AdminDesktopApp /></AdminGuard>} />
               <Route path="/admin/photobooth" element={<AdminGuard><AdminPhotobooth /></AdminGuard>} />
+              <Route path="/admin/randevu-katalogu" element={<AdminGuard><AdminApptCatalog /></AdminGuard>} />
+              <Route path="/admin/randevu-olustur" element={<ProtectedRoute requireRoles={["admin", "staff"]}><ApptBuilder /></ProtectedRoute>} />
+              <Route path="/admin/sozlesme/:id" element={<ProtectedRoute requireRoles={["admin", "staff"]}><ContractView /></ProtectedRoute>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

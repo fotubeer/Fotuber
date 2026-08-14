@@ -297,8 +297,15 @@ const AdminAppointments = () => {
           <h1 className="text-3xl font-semibold tracking-tight" data-testid="admin-appointments-title">Randevular</h1>
           <p className="text-sm text-slate-500 mt-1">Talepleri onaylayın, kapora ekleyin veya iptal edin.</p>
         </div>
+        <div className="flex items-center gap-2">
+        <a href="/admin/randevu-olustur">
+          <Button data-testid="builder-launch-btn" className="bg-slate-900 hover:bg-slate-800">
+            <FileText className="w-4 h-4 mr-2" /> Randevu + Sözleşme Oluştur
+          </Button>
+        </a>
         <Button
           data-testid="walkin-add-btn"
+          variant="outline"
           onClick={() => setWalkin({
             customer_name: "", customer_phone: "", customer_email: "", phone_2: "",
             service_id: services[0]?.id || "", date: new Date().toISOString().slice(0, 10),
@@ -306,10 +313,10 @@ const AdminAppointments = () => {
             event_type: "", event_addons: [], extra_services_note: "", admin_notes: "",
             notes: "Fiziki randevu (yüzyüze imzalanmış sözleşme)", auto_approve: true, file: null,
           })}
-          className="bg-slate-900 hover:bg-slate-800"
         >
-          <UserPlus className="w-4 h-4 mr-2" /> Fiziki Randevu Ekle
+          <UserPlus className="w-4 h-4 mr-2" /> Hızlı Ekle
         </Button>
+        </div>
       </div>
 
       <Tabs value={status} onValueChange={setStatus}>
