@@ -133,6 +133,12 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
 - Doğrulama: curl gerçek Gemini yanıtı (3 TR varyant + hashtag) ✅; tarayıcı E2E (upload→TikTok→üret→sonuç render) ✅.
 - Test partner: aitest@firma.com / Test1234 (yetki: indir/yükle/sil).
 
+## Session Y (Jun 2026) — Fotuber Medya FAZ 3: Özel Gün Takvimi + İçerik Geçmişi (self-tested: curl E2E + screenshot)
+- **Özel Gün Takvimi** (`routers/partner.py`): `GET /api/media/partner/special-days` — bugünden itibaren yaklaşan 14 Türk özel günü (`_FIXED_SPECIAL_DAYS` + dinamik Anneler/Babalar Günü hesabı `_nth_weekday`). `POST /api/media/partner/special-day-images` {day_name, format(post/story), context} — **Gemini Nano Banana** (`gemini-2.5-flash-image`) ile 3 farklı stilde görsel üretir (asyncio.gather paralel), PIL ile hedef orana (post 1024², story 1024×1536) kırpar + partner logosunu (logo_key) sağ alta yarı saydam zeminle bindirir, storage'a kaydeder, base64 data_url döner. `db.media_special_images`.
+- **İçerik Geçmişi**: `ai-content` artık her üretimi `db.media_ai_history`'ye kaydeder. `GET /api/media/partner/ai-history?favorites=` (liste + platform_label), `POST .../ai-history/{hid}/favorite` (toggle), `DELETE .../ai-history/{hid}`.
+- **Frontend** (`MediaPortal.jsx`): Üç sekmeli alt panel (`media-tabs`: İçerik Asistanı / Özel Gün Takvimi / İçerik Geçmişi). Özel Gün: gün listesi (`special-day-*`), format pill'leri, bağlam, "Logolu Görsel Üret" → 3 görsel + indir. Geçmiş: favori yıldızı + favori filtresi + kopyala + sil.
+- Doğrulama: curl — special-days 14 gün ✅, image gen 3 görsel (logosuz) ✅ + logolu story 1024×1536 has_logo:true ✅, history populate/favorite/filter/delete ✅. Screenshot — 3 sekme + Özel Gün paneli render ✅.
+
 
 
 ## Session F (Feb 2026) — Sidebar Scroll Fix + Auto Face Detection + Auto Ledger + BG Removal

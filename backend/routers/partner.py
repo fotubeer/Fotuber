@@ -6,8 +6,11 @@ Depolama: dahili object storage (media/{partner_id}/...). NAS/WebDAV sonra eklen
 """
 from typing import Optional
 import os
+import io
 import json
 import base64 as _b64
+import asyncio
+from datetime import date, datetime
 from fastapi import APIRouter, HTTPException, Depends, Request, Response, UploadFile, File, Form
 from pydantic import BaseModel, Field
 import jwt
@@ -21,6 +24,56 @@ _PLATFORM_GUIDE = {
     "tiktok": ("TikTok", "Genç, enerjik, trend bir dil kullan. Kısa ve akılda kalıcı. Video fikri de öner."),
     "twitter": ("X (Twitter)", "280 karakteri geçmeyen, vurucu ve net tek bir metin. En fazla 2-3 hashtag."),
 }
+
+
+# Türk özel günleri (sabit Gregoryen tarihler). Anneler/Babalar Günü dinamik hesaplanır.
+_FIXED_SPECIAL_DAYS = [
+    (1, 1, "Yılbaşı", "🎉"),
+    (2, 14, "Sevgililer Günü", "❤️"),
+    (3, 8, "Dünya Kadınlar Günü", "💐"),
+    (3, 18, "Çanakkale Zaferi", "🇹🇷"),
+    (3, 21, "Nevruz Bayramı", "🌱"),
+    (4, 23, "Ulusal Egemenlik ve Çocuk Bayramı", "🎈"),
+    (5, 1, "Emek ve Dayanışma Günü", "🌷"),
+    (5, 19, "Gençlik ve Spor Bayramı", "🎽"),
+    (8, 30, "Zafer Bayramı", "🎖️"),
+    (9, 1, "Yeni Sezon / Okula Dönüş", "🍂"),
+    (10, 29, "Cumhuriyet Bayramı", "🇹🇷"),
+    (11, 10, "10 Kasım Atatürk'ü Anma", "🕊️"),
+    (11, 24, "Öğretmenler Günü", "📚"),
+    (12, 31, "Yılbaşı Arifesi", "✨"),
+]
+
+
+def _nth_weekday(year, month, weekday, n):
+    d = date(year, month, 1)
+    offset = (weekday - d.weekday()) % 7
+    return date(year, month, 1 + offset + (n - 1) * 7)
+
+
+def _upcoming_special_days(limit=14):
+    today = date.today()
+    items = []
+    for yr in (today.year, today.year + 1):
+        for m, d, name, emoji in _FIXED_SPECIAL_DAYS:
+            items.append((date(yr, m, d), name, emoji))
+        # Anneler Günü — Mayıs'ın 2. Pazarı ; Babalar Günü — Haziran'ın 3. Pazarı
+        items.append((_nth_weekday(yr, 5, 6, 2), "Anneler Günü", "🌸"))
+        items.append((_nth_weekday(yr, 6, 6, 3), "Babalar Günü", "👔"))
+    seen, out = set(), []
+    for dt, name, emoji in sorted(items, key=lambda x: x[0]):
+        if dt < today:
+            continue
+        key = (dt.isoformat(), name)
+        if key in seen:
+            continue
+        seen.add(key)
+        days_left = (dt - today).days
+        out.append({"date": dt.isoformat(), "name": name, "emoji": emoji,
+                    "label": dt.strftime("%d.%m.%Y"), "days_left": days_left})
+        if len(out) >= limit:
+            break
+    return out
 
 
 def build_get_current_partner(db, JWT_SECRET, JWT_ALGORITHM):
@@ -302,10 +355,148 @@ def get_router(db, deps):
             raise HTTPException(status_code=400, detail="Sadece görsel dosyası yükleyin")
         b64 = _b64.b64encode(data).decode()
         result = await _gemini_content(b64, platform, context)
-        await db.media_ai_logs.insert_one({
-            "id": new_id(), "partner_id": p["id"], "platform": platform,
-            "context": (context or "")[:500], "created_at": now_iso(),
+        hid = new_id()
+        await db.media_ai_history.insert_one({
+            "id": hid, "partner_id": p["id"], "platform": platform,
+            "context": (context or "")[:500], "captions": result.get("captions", []),
+            "hashtags": result.get("hashtags", []), "tip": result.get("tip", ""),
+            "favorite": False, "created_at": now_iso(),
         })
+        result["history_id"] = hid
         return result
+
+    # ── PARTNER — İçerik Geçmişi ─────────────────────────────────────────
+    @router.get("/partner/ai-history")
+    async def ai_history(favorites: bool = False, p: dict = Depends(get_current_partner)):
+        q = {"partner_id": p["id"]}
+        if favorites:
+            q["favorite"] = True
+        rows = await db.media_ai_history.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+        labels = {k: v[0] for k, v in _PLATFORM_GUIDE.items()}
+        for r in rows:
+            r["platform_label"] = labels.get(r.get("platform"), r.get("platform"))
+        return {"history": rows}
+
+    @router.post("/partner/ai-history/{hid}/favorite")
+    async def ai_history_favorite(hid: str, p: dict = Depends(get_current_partner)):
+        h = await db.media_ai_history.find_one({"id": hid, "partner_id": p["id"]}, {"_id": 0, "favorite": 1})
+        if not h:
+            raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
+        fav = not h.get("favorite", False)
+        await db.media_ai_history.update_one({"id": hid, "partner_id": p["id"]}, {"$set": {"favorite": fav}})
+        return {"favorite": fav}
+
+    @router.delete("/partner/ai-history/{hid}")
+    async def ai_history_delete(hid: str, p: dict = Depends(get_current_partner)):
+        await db.media_ai_history.delete_one({"id": hid, "partner_id": p["id"]})
+        return {"ok": True}
+
+    # ── PARTNER — Özel Gün Takvimi + logolu görsel üretimi (FAZ 3) ────────
+    @router.get("/partner/special-days")
+    async def special_days(p: dict = Depends(get_current_partner)):
+        return {"days": _upcoming_special_days(14)}
+
+    def _overlay_logo(img_bytes: bytes, logo_bytes: Optional[bytes], target_w: int, target_h: int) -> bytes:
+        from PIL import Image
+        base = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+        # hedef orana kırp + yeniden boyutlandır (cover)
+        bw, bh = base.size
+        scale = max(target_w / bw, target_h / bh)
+        base = base.resize((max(1, int(bw * scale)), max(1, int(bh * scale))), Image.LANCZOS)
+        bw, bh = base.size
+        left, top = (bw - target_w) // 2, (bh - target_h) // 2
+        base = base.crop((left, top, left + target_w, top + target_h))
+        if logo_bytes:
+            try:
+                logo = Image.open(io.BytesIO(logo_bytes)).convert("RGBA")
+                lw = int(target_w * 0.22)
+                lh = int(logo.height * (lw / logo.width))
+                logo = logo.resize((lw, lh), Image.LANCZOS)
+                pad = int(target_w * 0.04)
+                # yarı saydam koyu zemin (okunabilirlik)
+                bgpad = int(pad * 0.5)
+                plate = Image.new("RGBA", (lw + bgpad * 2, lh + bgpad * 2), (0, 0, 0, 90))
+                px, py = target_w - plate.width - pad, target_h - plate.height - pad
+                base.alpha_composite(plate, (px, py))
+                base.alpha_composite(logo, (px + bgpad, py + bgpad))
+            except Exception:
+                pass
+        out = io.BytesIO()
+        base.convert("RGB").save(out, format="JPEG", quality=90)
+        return out.getvalue()
+
+    async def _gen_one_image(prompt: str) -> Optional[str]:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        import uuid as _uuid
+        key = os.environ.get("EMERGENT_LLM_KEY")
+        chat = LlmChat(api_key=key, session_id=f"media-img-{_uuid.uuid4()}", system_message="Profesyonel sosyal medya görsel tasarımcısısın.") \
+            .with_model("gemini", "gemini-2.5-flash-image").with_params(modalities=["image", "text"])
+        try:
+            _text, images = await chat.send_message_multimodal_response(UserMessage(text=prompt))
+        except Exception:
+            return None
+        if not images:
+            return None
+        return images[0].get("data", "")
+
+    class SpecialImgIn(BaseModel):
+        day_name: str = Field(min_length=1, max_length=120)
+        format: str = "post"
+        context: str = ""
+
+    @router.post("/partner/special-day-images")
+    async def special_day_images(payload: SpecialImgIn, p: dict = Depends(get_current_partner)):
+        if not os.environ.get("EMERGENT_LLM_KEY"):
+            raise HTTPException(status_code=503, detail="AI anahtarı yapılandırılmamış")
+        fmt = "story" if payload.format == "story" else "post"
+        tw, th = (1024, 1536) if fmt == "story" else (1024, 1024)
+        ratio = "9:16 dikey story" if fmt == "story" else "1:1 kare gönderi"
+        company_name = (p.get("company", {}) or {}).get("name") or p.get("name", "")
+        ctx = (payload.context or "").strip()
+        styles = [
+            "zarif ve minimal, bol boşluklu, modern tipografi, pastel tonlar",
+            "sıcak ve premium, altın vurgular, lüks ve şık kompozisyon, koyu zemin",
+            "canlı ve enerjik, cesur renkler, dikkat çekici modern grafik",
+        ]
+        base_prompt = (
+            f"'{payload.day_name}' özel günü için {ratio} formatında profesyonel bir sosyal medya kutlama görseli tasarla. "
+            f"Görselde TÜRKÇE kısa ve şık bir kutlama mesajı yer alsın. Yüksek kaliteli, marka kalitesinde, temiz kompozisyon. "
+            + (f"Firma/marka: {company_name}. " if company_name else "")
+            + (f"Ek istek: {ctx}. " if ctx else "")
+            + "Sağ alt köşede logo için boşluk bırak. Fotoğraf stüdyosu/medya ajansı estetiğinde."
+        )
+        prompts = [f"{base_prompt} Stil: {s}." for s in styles]
+        raw = await asyncio.gather(*[_gen_one_image(pr) for pr in prompts])
+        # logo bytes (varsa)
+        logo_bytes = None
+        if p.get("logo_key"):
+            try:
+                logo_bytes, _ = get_object(p["logo_key"])
+            except Exception:
+                logo_bytes = None
+        images = []
+        folder = p.get("folder", p["id"])
+        for b64img in raw:
+            if not b64img:
+                continue
+            try:
+                data = _b64.b64decode(b64img)
+                composed = await asyncio.to_thread(_overlay_logo, data, logo_bytes, tw, th)
+            except Exception:
+                continue
+            iid = new_id()
+            key = f"media/{folder}/special/{iid}.jpg"
+            try:
+                put_object(key, composed, "image/jpeg")
+            except Exception:
+                pass
+            await db.media_special_images.insert_one({
+                "id": iid, "partner_id": p["id"], "day_name": payload.day_name,
+                "format": fmt, "path": key, "created_at": now_iso(),
+            })
+            images.append({"id": iid, "data_url": "data:image/jpeg;base64," + _b64.b64encode(composed).decode()})
+        if not images:
+            raise HTTPException(status_code=502, detail="AI görsel üretemedi, lütfen tekrar deneyin")
+        return {"images": images, "day_name": payload.day_name, "format": fmt, "has_logo": bool(logo_bytes)}
 
     return router
