@@ -900,3 +900,10 @@ Kapsam: SADECE admin/personel fiziki (walk-in) randevu alanı. Anasayfa müşter
 - **Fiyatlar**: Katalog → Hizmet/Ürün fiyatı girilince builder toplamları otomatik hesaplar (elle toplam override + kalan = net − peşinat). Fiyatlar seed'de 0; admin girer.
 - Not: Admin'e onayda otomatik WhatsApp bildirimi hâlâ YOK (giden WhatsApp/Twilio entegrasyonu gerekir); panel-içi yeşil onay rozeti mevcut.
 
+
+## Session BH (Jun 2026) — İmza zorunluluğu + Toplu Fiyat + Sözleşme Arşivi
+- **İmza zorunluluğu ayarı**: contract-settings `require_signature` (varsayılan True). Katalog → Sözleşme İçeriği'nde "İmza zorunlu (müşteri onayında)" anahtarı (ct-require-sig). Public approve: require_signature açıkken imzasız → 400; kapalıyken imzasız → 200 (curl doğrulandı). PublicContract imza pad'i ayara göre opsiyonel/zorunlu; label "(opsiyonel)" gösterir.
+- **Toplu Fiyat sekmesi** (cat-tab-bulk): tüm hizmet base_price + alt seçenek fiyatları + tüm ürün fiyatları tek ekranda; değişenler PATCH ile "Tümünü Kaydet" (bulk-save). Smoke: "1 kalem güncellendi" doğrulandı.
+- **Sözleşme Arşivi** (cat-tab-saved, eski "Sözleşmeler"): çift/kişi arama (arch-search), durum filtresi (arch-status: tümü/onaylı/bekliyor), tarih aralığı (arch-from/arch-to), client-side filtre; "Aç" ile ContractView.
+- Doğrulama: backend curl (imza kuralı 400/200) + frontend screenshot (3 sekme + toggle). Test verisi temizlendi; base_price'lar 0'a resetlendi.
+

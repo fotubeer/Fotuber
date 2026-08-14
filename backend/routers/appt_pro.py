@@ -210,7 +210,7 @@ def get_router(db, deps):
                 "id": "global", "company_name": DEFAULT_BRAND_VENUE,
                 "brand_name_venue": DEFAULT_BRAND_VENUE, "brand_name_photo": DEFAULT_BRAND_PHOTO,
                 "logo_url": "", "clauses": DEFAULT_CLAUSES, "acceptance_text": DEFAULT_ACCEPTANCE,
-                "design": DEFAULT_DESIGN, "created_at": now_iso(),
+                "design": DEFAULT_DESIGN, "require_signature": True, "created_at": now_iso(),
             })
         else:
             # Eski kayıtları yeni alanlarla tamamla (backfill)
@@ -222,6 +222,7 @@ def get_router(db, deps):
                 if merged != doc.get("design"): patch["design"] = merged
             if "brand_name_venue" not in doc: patch["brand_name_venue"] = doc.get("company_name") or DEFAULT_BRAND_VENUE
             if "brand_name_photo" not in doc: patch["brand_name_photo"] = DEFAULT_BRAND_PHOTO
+            if "require_signature" not in doc: patch["require_signature"] = True
             if patch:
                 await db.appt_contract_settings.update_one({"id": "global"}, {"$set": patch})
 
@@ -343,6 +344,7 @@ def get_router(db, deps):
         clauses: Optional[List[ClauseIn]] = None
         acceptance_text: Optional[str] = None
         design: Optional[dict] = None
+        require_signature: Optional[bool] = None
 
     @router.get("/contract-settings")
     async def get_contract_settings(acc: dict = Depends(staff)):
@@ -360,6 +362,7 @@ def get_router(db, deps):
         if payload.acceptance_text is not None: upd["acceptance_text"] = payload.acceptance_text
         if payload.clauses is not None: upd["clauses"] = [{"title": c.title, "body": c.body} for c in payload.clauses]
         if payload.design is not None: upd["design"] = {**DEFAULT_DESIGN, **payload.design}
+        if payload.require_signature is not None: upd["require_signature"] = payload.require_signature
         await db.appt_contract_settings.update_one({"id": "global"}, {"$set": upd}, upsert=True)
         s = await db.appt_contract_settings.find_one({"id": "global"}, {"_id": 0})
         return {"settings": s}
@@ -465,6 +468,10 @@ def get_router(db, deps):
         c = await db.appt_contracts.find_one({"public_token": token})
         if not c:
             raise HTTPException(status_code=404, detail="Sözleşme bulunamadı")
+        settings = await db.appt_contract_settings.find_one({"id": "global"}, {"_id": 0}) or {}
+        has_sig = bool(payload.signature and payload.signature.startswith("data:image"))
+        if settings.get("require_signature", True) and not has_sig:
+            raise HTTPException(status_code=400, detail="İmza zorunludur")
         approver = (payload.approver_name or c.get("party_name") or "").strip()
         upd = {
             "approval_status": "approved", "approved_at": now_iso(),

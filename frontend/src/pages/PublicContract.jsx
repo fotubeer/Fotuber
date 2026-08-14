@@ -6,7 +6,7 @@ import { Check, ShieldCheck, Eraser } from "lucide-react";
 import { toast } from "sonner";
 import ContractSheet from "@/components/ContractSheet";
 
-function SignaturePad({ canvasRef }) {
+function SignaturePad({ canvasRef, optional }) {
   const drawing = useRef(false);
   const last = useRef({ x: 0, y: 0 });
 
@@ -30,7 +30,7 @@ function SignaturePad({ canvasRef }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
-        <label className="text-sm font-medium text-neutral-700">İmza (parmağınız veya farenizle çizin)</label>
+        <label className="text-sm font-medium text-neutral-700">İmza (parmağınız veya farenizle çizin){optional ? " — opsiyonel" : ""}</label>
         <button type="button" onClick={clear} data-testid="pc-sign-clear" className="text-xs text-neutral-500 inline-flex items-center gap-1 hover:text-neutral-800"><Eraser size={13} /> Temizle</button>
       </div>
       <canvas ref={canvasRef} width={600} height={180} data-testid="pc-signature-canvas"
@@ -64,10 +64,12 @@ export default function PublicContract() {
 
   const approve = async () => {
     if (!accepted) { toast.error("Onaylamak için kutucuğu işaretleyin"); return; }
-    if (isEmptyCanvas()) { toast.error("Lütfen imzanızı çizin"); return; }
+    const sigRequired = s?.require_signature !== false;
+    const empty = isEmptyCanvas();
+    if (sigRequired && empty) { toast.error("Lütfen imzanızı çizin"); return; }
     setSaving(true);
     try {
-      const signature = canvasRef.current.toDataURL("image/png");
+      const signature = empty ? "" : canvasRef.current.toDataURL("image/png");
       await axios.post(`${API_BASE}/appt-pro/public/contracts/${token}/approve`, { approver_name: name, accepted: true, signature });
       toast.success("Sözleşme onaylandı, teşekkürler!");
       load();
@@ -109,7 +111,7 @@ export default function PublicContract() {
               <input type="checkbox" data-testid="pc-accept" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="mt-1" />
               <span>{s.acceptance_text || "Sözleşmenin tüm maddelerini okudum, anladım ve kabul ediyorum."}</span>
             </label>
-            <SignaturePad canvasRef={canvasRef} />
+            <SignaturePad canvasRef={canvasRef} optional={s?.require_signature === false} />
             <button onClick={approve} disabled={saving} data-testid="pc-approve"
               className="w-full h-12 rounded-xl bg-neutral-900 text-white font-semibold hover:bg-neutral-800 disabled:opacity-60">
               {saving ? "Kaydediliyor…" : "Sözleşmeyi Onayla"}

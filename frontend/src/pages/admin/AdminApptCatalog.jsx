@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Trash2, Pencil, Camera, Package, FileText, ExternalLink, Save, X } from "lucide-react";
+import { Plus, Trash2, Pencil, Camera, Package, FileText, ExternalLink, Save, X, DollarSign, Search } from "lucide-react";
 import { toast } from "sonner";
 
 const CAT_LABELS = { album: "Albüm", canvas: "Kanvas Tablo", fine: "Fine Tablo", poster: "Poster", print: "Baskı", magazine: "Dergi" };
@@ -37,7 +37,7 @@ export default function AdminApptCatalog() {
         <Link to="/admin/randevu-olustur"><Button className="bg-slate-900 hover:bg-slate-800 gap-2" data-testid="go-builder"><ExternalLink size={16} /> Randevu Oluştur</Button></Link>
       </div>
       <div className="flex gap-1 p-1 rounded-xl bg-slate-100 w-fit">
-        {[["services", "Hizmet & Etkinlik", Camera], ["products", "Ürünler", Package], ["contract", "Sözleşme İçeriği", FileText], ["saved", "Sözleşmeler", FileText]].map(([k, l, I]) => (
+        {[["services", "Hizmet & Etkinlik", Camera], ["products", "Ürünler", Package], ["bulk", "Toplu Fiyat", DollarSign], ["contract", "Sözleşme İçeriği", FileText], ["saved", "Sözleşme Arşivi", FileText]].map(([k, l, I]) => (
           <button key={k} data-testid={`cat-tab-${k}`} onClick={() => setTab(k)}
             className={`relative px-4 h-9 rounded-lg text-sm font-medium flex items-center gap-1.5 ${tab === k ? "bg-white shadow text-slate-900" : "text-slate-500"}`}>
             <I size={15} /> {l}
@@ -47,6 +47,7 @@ export default function AdminApptCatalog() {
       </div>
       {tab === "services" && <ServicesTab />}
       {tab === "products" && <ProductsTab />}
+      {tab === "bulk" && <BulkPriceTab />}
       {tab === "contract" && <ContractTab />}
       {tab === "saved" && <ContractsTab />}
     </div>
@@ -249,6 +250,7 @@ function ContractTab() {
                 <SelectContent><SelectItem value="left">Sola</SelectItem><SelectItem value="center">Ortala</SelectItem></SelectContent></Select>
             </div>
             <label className="flex items-center justify-between text-sm rounded-lg border border-slate-200 px-3 h-10"><span>Amblem göster</span><Switch data-testid="ct-emblem" checked={d.show_emblem !== false} onCheckedChange={(v) => setD("show_emblem", v)} /></label>
+            <label className="flex items-center justify-between text-sm rounded-lg border border-slate-200 px-3 h-10"><span>İmza zorunlu (müşteri onayında)</span><Switch data-testid="ct-require-sig" checked={s.require_signature !== false} onCheckedChange={(v) => setS({ ...s, require_signature: v })} /></label>
           </div>
           {d.show_emblem !== false && !s.logo_url && (
             <div className="grid sm:grid-cols-3 gap-4">
@@ -285,16 +287,122 @@ function ContractTab() {
   );
 }
 
-// ── Kaydedilen sözleşmeler ────────────────────────────────────────────────
+// ── Toplu Fiyat düzenleme ─────────────────────────────────────────────────
+function BulkPriceTab() {
+  const [services, setServices] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const load = () => {
+    api.get("/appt-pro/services").then(({ data }) => setServices(data.services || [])).catch(() => {});
+    api.get("/appt-pro/products").then(({ data }) => setProducts(data.products || [])).catch(() => {});
+  };
+  useEffect(() => { load(); }, []);
+
+  const setSvcPrice = (sid, val) => setServices((rows) => rows.map((s) => s.id === sid ? { ...s, base_price: val, _dirty: true } : s));
+  const setOptPrice = (sid, oid, val) => setServices((rows) => rows.map((s) => s.id === sid ? { ...s, _dirty: true, options: s.options.map((o) => o.id === oid ? { ...o, price: val } : o) } : s));
+  const setProdPrice = (pid, val) => setProducts((rows) => rows.map((p) => p.id === pid ? { ...p, price: val, _dirty: true } : p));
+
+  const saveAll = async () => {
+    setSaving(true);
+    try {
+      const svcOps = services.filter((s) => s._dirty).map((s) => api.patch(`/appt-pro/services/${s.id}`, {
+        name: s.name, active: s.active, sort: s.sort, base_price: Number(s.base_price) || 0, venue_enabled: s.venue_enabled,
+        options: (s.options || []).map((o) => ({ id: o.id, label: o.label, price: Number(o.price) || 0 })),
+      }));
+      const prodOps = products.filter((p) => p._dirty).map((p) => api.patch(`/appt-pro/products/${p.id}`, {
+        category: p.category, name: p.name, variant: p.variant, size: p.size, price: Number(p.price) || 0, active: p.active, sort: p.sort,
+      }));
+      await Promise.all([...svcOps, ...prodOps]);
+      toast.success(`${svcOps.length + prodOps.length} kalem güncellendi`); load();
+    } catch (e) { toast.error(formatApiError(e)); }
+    finally { setSaving(false); }
+  };
+
+  const dirty = services.some((s) => s._dirty) || products.some((p) => p._dirty);
+  const byCat = useMemo(() => { const m = {}; products.forEach((p) => (m[p.category] = m[p.category] || []).push(p)); return m; }, [products]);
+
+  return (
+    <div className="space-y-4" data-testid="bulk-price-tab">
+      <div className="flex items-center justify-between sticky top-0 bg-slate-50 py-2 z-10">
+        <p className="text-sm text-slate-500">Tüm hizmet ve ürün fiyatlarını tek ekrandan girin.</p>
+        <Button onClick={saveAll} disabled={!dirty || saving} className="bg-slate-900 hover:bg-slate-800 gap-2" data-testid="bulk-save"><Save size={16} /> {saving ? "Kaydediliyor…" : "Tümünü Kaydet"}</Button>
+      </div>
+      <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-base">Hizmet & Alt Seçenek Fiyatları</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          {services.map((s) => (
+            <div key={s.id} className="rounded-lg border border-slate-200 p-3">
+              <div className="flex items-center gap-2">
+                <span className="font-medium flex-1">{s.name}</span>
+                <span className="text-xs text-slate-500">Temel</span>
+                <Input type="number" className="w-28 h-8" data-testid={`bulk-svc-${s.id}`} value={s.base_price} onChange={(e) => setSvcPrice(s.id, e.target.value)} />
+              </div>
+              {(s.options || []).length > 0 && (
+                <div className="mt-2 ml-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {s.options.map((o) => (
+                    <div key={o.id} className="flex items-center gap-2 text-sm">
+                      <span className="flex-1">{o.label}</span>
+                      <Input type="number" className="w-24 h-8" data-testid={`bulk-opt-${o.id}`} value={o.price} onChange={(e) => setOptPrice(s.id, o.id, e.target.value)} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+      <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-base">Ürün Fiyatları</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          {Object.entries(byCat).map(([cat, list]) => (
+            <div key={cat}>
+              <div className="text-xs font-semibold text-slate-500 mb-1.5">{CAT_LABELS[cat] || cat}</div>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {list.map((p) => (
+                  <div key={p.id} className="flex items-center gap-2 rounded-lg border border-slate-200 p-2 text-sm">
+                    <span className="flex-1">{p.name}{p.variant ? ` · ${p.variant}` : ""} <span className="text-slate-400">{p.size}</span></span>
+                    <Input type="number" className="w-24 h-8" data-testid={`bulk-prod-${p.id}`} value={p.price} onChange={(e) => setProdPrice(p.id, e.target.value)} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ── Sözleşme Arşivi (filtreli) ─────────────────────────────────────────────
 function ContractsTab() {
   const [rows, setRows] = useState([]);
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   useEffect(() => { api.get("/appt-pro/contracts").then(({ data }) => setRows(data.contracts || [])).catch((e) => toast.error(formatApiError(e))); }, []);
+
+  const filtered = useMemo(() => rows.filter((c) => {
+    if (status !== "all" && (c.approval_status || "pending") !== status) return false;
+    const name = `${c.bride_name || ""} ${c.groom_name || ""} ${c.party_name || ""}`.toLowerCase();
+    if (q && !name.includes(q.toLowerCase())) return false;
+    const d = (c.event_date || c.created_at || "").slice(0, 10);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  }), [rows, q, status, from, to]);
+
   return (
     <Card className="border-slate-200" data-testid="contracts-list">
-      <CardHeader><CardTitle className="text-base">Kaydedilen Sözleşmeler ({rows.length})</CardTitle></CardHeader>
-      <CardContent className="space-y-2">
-        {rows.length === 0 && <p className="text-sm text-slate-400 py-4 text-center">Henüz sözleşme yok.</p>}
-        {rows.map((c) => (
+      <CardHeader><CardTitle className="text-base">Sözleşme Arşivi ({filtered.length}/{rows.length})</CardTitle></CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid sm:grid-cols-4 gap-2">
+          <div className="relative"><Search size={15} className="absolute left-2.5 top-2.5 text-slate-400" /><Input className="pl-8" placeholder="Çift / kişi ara" data-testid="arch-search" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <Select value={status} onValueChange={setStatus}><SelectTrigger data-testid="arch-status"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="all">Tümü</SelectItem><SelectItem value="approved">Onaylı</SelectItem><SelectItem value="pending">Onay Bekliyor</SelectItem></SelectContent></Select>
+          <Input type="date" data-testid="arch-from" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <Input type="date" data-testid="arch-to" value={to} onChange={(e) => setTo(e.target.value)} />
+        </div>
+        {filtered.length === 0 && <p className="text-sm text-slate-400 py-4 text-center">Kayıt yok.</p>}
+        {filtered.map((c) => (
           <div key={c.id} data-testid={`contract-item-${c.id}`} className="rounded-xl border border-slate-200 p-3 flex items-center gap-3">
             <div className="flex-1">
               <div className="font-medium">{`${c.bride_name || ""}${c.bride_name && c.groom_name ? " & " : ""}${c.groom_name || ""}`.trim() || c.party_name || "—"}</div>
@@ -310,4 +418,5 @@ function ContractsTab() {
     </Card>
   );
 }
+
 
