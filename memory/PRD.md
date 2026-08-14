@@ -915,3 +915,7 @@ Kapsam: SADECE admin/personel fiziki (walk-in) randevu alanı. Anasayfa müşter
 - Backend routers/partner.py (/api/media): media_partners + media_files. Admin CRUD (require_admin): firma ekle/düzenle/sil, şifre belirle, aktif/pasif, yetkiler {download,upload,backup}. Partner JWT auth (partner_token cookie/Bearer, build_get_current_partner). Partner: login/logout/me, PUT company + POST logo, dosya listele/yükle/indir/sil — hepsi yetkiye göre (upload yoksa 403, download yoksa 403, backup=sil yetkisi). Object storage: media/{pid}/... Curl doğrulandı (upload 200, download 200, delete 403 backup kapalıyken, admin dosyaları görür).
 - Frontend: /medya (MediaPortal.jsx, PUBLIC firma girişi + dashboard: logo+firma bilgisi, yetkiye göre dosya alanı). /admin/medya (AdminMedia.jsx, AdminGuard, sidebar Building2) firma yönetimi. Fotuber Photography koyu tema.
 - BEKLEYEN: WD MyCloud NAS WebDAV bağlantısı — kullanıcı WebDAV URL+kullanıcı+şifre verecek; şu an object storage kullanılıyor. FAZ 2 (Türkçe AI içerik+hashtag) ve FAZ 3 (özel gün takvimi + logolu görsel, Emergent Universal Key onaylandı) sonraki turlarda.
+
+## Session BK — NAS durumu + firma-adı klasör
+- WD My Cloud HOME (OS5, auth0.accounts.westerndigital.com) doğrudan WebDAV VERMEZ → sunucudan doğrudan bağlantı mümkün değil. Dahili object storage kullanılmaya devam; NAS için ileride WD masaüstü senkron→bulut (Drive/S3) yolu önerildi.
+- Her firma için firma-adı bazlı klasör: partner.folder = slug(ad)-id6; dosya/logo yolları media/{folder}/... (Türkçe slug, benzersiz, karışmaz). Curl doğrulandı.

@@ -49,7 +49,15 @@ def get_router(db, deps):
         return {"id": p["id"], "name": p.get("name"), "email": p.get("email"),
                 "active": p.get("active", True), "perms": p.get("perms", {}),
                 "company": p.get("company", {}), "logo_url": p.get("logo_url", ""),
-                "created_at": p.get("created_at")}
+                "folder": p.get("folder", p["id"]), "created_at": p.get("created_at")}
+
+    def _slug(s: str) -> str:
+        tr = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+        s = (s or "").translate(tr)
+        out = "".join(ch if ch.isalnum() else "-" for ch in s).strip("-").lower()
+        while "--" in out:
+            out = out.replace("--", "-")
+        return out[:40] or "firma"
 
     # ── ADMIN — firma hesap yönetimi ─────────────────────────────────────
     class PartnerIn(BaseModel):
@@ -77,6 +85,7 @@ def get_router(db, deps):
                "password_hash": hash_password(payload.password), "active": payload.active,
                "perms": {"download": payload.can_download, "upload": payload.can_upload, "backup": payload.can_backup},
                "company": {}, "logo_url": "", "created_at": now_iso()}
+        doc["folder"] = f"{_slug(payload.name)}-{doc['id'][:6]}"
         await db.media_partners.insert_one(doc)
         return {"partner": _out(doc)}
 
@@ -146,7 +155,7 @@ def get_router(db, deps):
         if not data:
             raise HTTPException(status_code=400, detail="Boş dosya")
         ext = (image.filename.rsplit(".", 1)[-1] if "." in image.filename else "png").lower()
-        key = f"media/{p['id']}/logo.{ext}"
+        key = f"media/{p.get('folder', p['id'])}/logo.{ext}"
         put_object(key, data, image.content_type or "image/png")
         url = f"/api/media/partner/logo/{p['id']}.{ext}"
         await db.media_partners.update_one({"id": p["id"]}, {"$set": {"logo_url": url, "logo_key": key}})
@@ -176,7 +185,7 @@ def get_router(db, deps):
             raise HTTPException(status_code=400, detail="Boş dosya")
         fid = new_id()
         ext = (file.filename.rsplit(".", 1)[-1] if "." in file.filename else "bin").lower()
-        key = f"media/{p['id']}/files/{fid}.{ext}"
+        key = f"media/{p.get('folder', p['id'])}/files/{fid}.{ext}"
         put_object(key, data, file.content_type or "application/octet-stream")
         doc = {"id": fid, "partner_id": p["id"], "name": file.filename, "path": key,
                "size": len(data), "content_type": file.content_type, "created_at": now_iso()}
