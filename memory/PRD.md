@@ -910,3 +910,8 @@ Kapsam: SADECE admin/personel fiziki (walk-in) randevu alanı. Anasayfa müşter
 
 ## Session BI (Jun 2026) — Sözleşme Arşivi Excel/CSV Dışa Aktarım
 - ContractsTab (Sözleşme Arşivi) başlığına "Excel/CSV İndir" (arch-export). İstemci-taraflı CSV: UTF-8 BOM (Excel Türkçe uyumu), ";" ayraç, filtrelenmiş satırları dışa aktarır. Sütunlar: Çift, Sözleşme Sahibi, Rol, TC, Telefon, E-posta, Etkinlik Tarihi, Mekan, Ara Toplam, İndirim %, İndirim Tutar, Net, Cayma, Kalan, Ödeme, Durum, Onaylayan, Oluşturma. Playwright ile indirme doğrulandı (sozlesme-arsivi-YYYY-MM-DD.csv).
+
+## Session BJ (Jun 2026) — Fotuber Medya B2B Firma Paneli FAZ 1 (tested)
+- Backend routers/partner.py (/api/media): media_partners + media_files. Admin CRUD (require_admin): firma ekle/düzenle/sil, şifre belirle, aktif/pasif, yetkiler {download,upload,backup}. Partner JWT auth (partner_token cookie/Bearer, build_get_current_partner). Partner: login/logout/me, PUT company + POST logo, dosya listele/yükle/indir/sil — hepsi yetkiye göre (upload yoksa 403, download yoksa 403, backup=sil yetkisi). Object storage: media/{pid}/... Curl doğrulandı (upload 200, download 200, delete 403 backup kapalıyken, admin dosyaları görür).
+- Frontend: /medya (MediaPortal.jsx, PUBLIC firma girişi + dashboard: logo+firma bilgisi, yetkiye göre dosya alanı). /admin/medya (AdminMedia.jsx, AdminGuard, sidebar Building2) firma yönetimi. Fotuber Photography koyu tema.
+- BEKLEYEN: WD MyCloud NAS WebDAV bağlantısı — kullanıcı WebDAV URL+kullanıcı+şifre verecek; şu an object storage kullanılıyor. FAZ 2 (Türkçe AI içerik+hashtag) ve FAZ 3 (özel gün takvimi + logolu görsel, Emergent Universal Key onaylandı) sonraki turlarda.

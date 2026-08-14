@@ -47,6 +47,7 @@ const items = [
   { to: "/admin/gmail", label: "Gmail Kutusu", icon: Inbox, ownerOnly: true },
   { to: "/admin/reklamlar", label: "Reklam Alanları", icon: Megaphone },
   { to: "/admin/photobooth", label: "Photobooth Kiosk (Taslak)", icon: Aperture, ownerOnly: true },
+  { to: "/admin/medya", label: "Fotuber Medya (Firmalar)", icon: Building2, ownerOnly: true },
   { to: "/admin/masaustu", label: "Masaüstü Uygulaması", icon: Monitor },
 ];
 

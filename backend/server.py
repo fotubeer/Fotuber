@@ -7310,6 +7310,7 @@ from routers import gallery as _gallery
 from routers import venue as _venue
 from routers import photobooth as _photobooth
 from routers import appt_pro as _appt_pro
+from routers import partner as _partner
 
 _module_deps = {
     "hash_password": hash_password,
@@ -7338,6 +7339,7 @@ app.include_router(_gallery.get_router(db, _module_deps))
 app.include_router(_venue.get_router(db, _module_deps))
 app.include_router(_photobooth.get_router(db, _module_deps))
 app.include_router(_appt_pro.get_router(db, _module_deps))
+app.include_router(_partner.get_router(db, _module_deps))
 
 
 # CORS - allow credentials with reflected origin
