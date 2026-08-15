@@ -87,6 +87,31 @@ async function composePhoto({ shots, template, slogan, logoUrl, filterCss, hasht
     }
   };
 
+  const wCm = Number(template?.width_cm) || 0, hCm = Number(template?.height_cm) || 0;
+  if (wCm > 0 && hCm > 0) {
+    // Baskı boyutuna (cm) göre canvas — dışarıdan yüklenen çerçeve tam oturur
+    const copies = Number(template?.copies_per_sheet) === 2 ? 2 : 1;
+    const DPI = 300; let cw = Math.round(wCm / 2.54 * DPI), ch = Math.round(hCm / 2.54 * DPI);
+    const cap = 1800, mx = Math.max(cw, ch);
+    if (mx > cap) { const s = cap / mx; cw = Math.round(cw * s); ch = Math.round(ch * s); }
+    canvas.width = cw * copies; canvas.height = ch;
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const meta = [hashtag, showDate ? new Date().toLocaleDateString("tr-TR") : ""].filter(Boolean).join("  ·  ");
+    for (let c = 0; c < copies; c++) {
+      const ox = c * cw;
+      if (layout === "strip4") { const ph = ch / 4; imgs.forEach((im, i) => drawCover(im, ox, i * ph, cw, ph)); }
+      else if (layout === "grid4") { const pw = cw / 2, ph = ch / 2; imgs.forEach((im, i) => drawCover(im, ox + (i % 2) * pw, Math.floor(i / 2) * ph, pw, ph)); }
+      else { drawCover(imgs[0], ox, 0, cw, ch); }
+      if (frameImg) { ctx.filter = "none"; try { ctx.drawImage(frameImg, ox, 0, cw, ch); } catch { /* ignore */ } }
+      if (meta && !frameImg) {
+        ctx.filter = "none"; ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.textAlign = "center";
+        ctx.font = `600 ${Math.round(ch * 0.03)}px Manrope, sans-serif`;
+        ctx.fillText(meta, ox + cw / 2, ch - Math.round(ch * 0.02));
+      }
+    }
+    return new Promise((res) => canvas.toBlob((b) => res(b), "image/png", 0.95));
+  }
+
   if (layout === "strip4") {
     const pw = 520, ph = 390, gap = 12;
     canvas.width = pw + pad * 2;
@@ -156,12 +181,24 @@ export default function PhotoboothKiosk() {
   const streamRef = useRef(null);
   const shotsRef = useRef([]);
 
+  const boothToken = typeof window !== "undefined" ? localStorage.getItem("booth_token") : null;
+
   useEffect(() => {
-    api.get("/photobooth/config")
-      .then(({ data }) => setConfig(data))
-      .catch((e) => { if (e?.response?.status === 401) navigate("/personel-girisi"); });
+    const load = async () => {
+      try {
+        if (boothToken) {
+          const r = await fetch(`${API_BASE}/photobooth/operator/config`, { headers: { Authorization: `Bearer ${boothToken}` } });
+          if (r.status === 401) { navigate("/photobooth-panel"); return; }
+          setConfig(await r.json());
+        } else {
+          const { data } = await api.get("/photobooth/config");
+          setConfig(data);
+        }
+      } catch (e) { if (e?.response?.status === 401) navigate("/personel-girisi"); }
+    };
+    load();
     return () => { if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop()); };
-  }, [navigate]);
+  }, [navigate, boothToken]);
 
   const enterFullscreen = () => {
     try { document.documentElement.requestFullscreen?.(); } catch { /* ignore */ }
@@ -227,18 +264,26 @@ export default function PhotoboothKiosk() {
       fd.append("package_id", pkg?.id || "");
       fd.append("payment_method", method || "free");
       fd.append("staff_pin", staffPin || "");
-      const { data } = await api.post("/photobooth/capture", fd);
+      let data;
+      if (boothToken) {
+        const r = await fetch(`${API_BASE}/photobooth/operator/capture`, { method: "POST", headers: { Authorization: `Bearer ${boothToken}` }, body: fd });
+        if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.detail || "Hata"); }
+        data = await r.json();
+      } else {
+        const res = await api.post("/photobooth/capture", fd);
+        data = res.data;
+      }
       setResult({ token: data.qr_token, path: data.gallery_path, url: window.location.origin + data.gallery_path, prints: pkg?.prints || 0 });
       setStage("done");
     } catch (e) {
-      toast.error(formatApiError(e, "Bir hata oluştu"));
-      setStage(config?.settings?.payment_required ? "payment" : "package");
+      toast.error(e?.message || formatApiError(e, "Bir hata oluştu"));
+      setStage(config?.settings?.payment_required && !config?.admin_free ? "payment" : "package");
     }
   };
 
   const choosePackage = (p) => {
     setSelPkg(p);
-    if (!config?.settings?.payment_required || !(p.price > 0)) {
+    if (config?.admin_free || !config?.settings?.payment_required || !(p.price > 0)) {
       finish(p, "free", "");
       return;
     }
@@ -258,16 +303,8 @@ export default function PhotoboothKiosk() {
 
   const printPhoto = () => {
     if (!result) return;
-    const src = `${API_BASE}/photobooth/photo/${result.token}`;
-    const w = window.open("", "_blank");
-    if (!w) { toast.error("Yazdırma penceresi açılamadı"); return; }
-    w.document.write(`<!doctype html><html><head><title>Fotuber Baskı</title><style>
-      @page{margin:0} html,body{margin:0;padding:0;background:#fff}
-      .wrap{display:flex;align-items:center;justify-content:center;min-height:100vh}
-      img{max-width:100%;max-height:100vh;display:block}
-      @media print{.wrap{min-height:auto}}
-    </style></head><body><div class="wrap"><img src="${src}" onload="window.focus();window.print();" /></div></body></html>`);
-    w.document.close();
+    // Chrome --kiosk-printing ile bu çağrı diyalog GÖSTERMEDEN varsayılan yazıcıya gönderir.
+    window.print();
   };
 
   const reset = () => {
@@ -295,6 +332,20 @@ export default function PhotoboothKiosk() {
     <div data-testid="photobooth-kiosk" onContextMenu={(e) => e.preventDefault()}
       className="fixed inset-0 z-[9999] overflow-hidden text-white select-none"
       style={{ background: "radial-gradient(1200px 700px at 50% -10%, #1a1030 0%, #0a0713 55%, #05040a 100%)" }}>
+
+      {/* Doğrudan yazıcı baskısı — Chrome --kiosk-printing ile diyalogsuz basar */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #pb-print-root, #pb-print-root * { visibility: visible !important; }
+          #pb-print-root { display: flex !important; position: fixed; inset: 0; align-items: center; justify-content: center; background: #fff; }
+          #pb-print-root img { width: 100%; height: 100%; object-fit: contain; }
+        }
+        @page { size: ${(Number(tpl?.width_cm) || 10) * (Number(tpl?.copies_per_sheet) === 2 ? 2 : 1)}cm ${Number(tpl?.height_cm) || 15}cm; margin: 0; }
+      `}</style>
+      <div id="pb-print-root" style={{ display: "none" }}>
+        {result && <img src={`${API_BASE}/photobooth/photo/${result.token}`} alt="baskı" crossOrigin="anonymous" />}
+      </div>
 
       {/* Gizli admin çıkış (sol üst köşe, düşük opaklık) */}
       <button data-testid="pb-exit-btn" onClick={() => setPinOpen(true)}

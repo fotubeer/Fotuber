@@ -152,6 +152,9 @@ export const PublicLayout = ({ children }) => {
                 <DropdownMenuItem onClick={() => navigate("/medya")} data-testid="menu-media" className="gap-2 cursor-pointer">
                   <Camera className="w-4 h-4 text-sky-500" /> Fotuber Medya (Firma)
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/photobooth-panel")} data-testid="menu-booth" className="gap-2 cursor-pointer">
+                  <Camera className="w-4 h-4 text-fuchsia-500" /> Photobooth Paneli (Firma)
+                </DropdownMenuItem>
                 {(!user || user.role === "member") && (
                   <DropdownMenuItem onClick={() => navigate("/personel-girisi")} data-testid="menu-staff-login" className="gap-2 cursor-pointer">
                     <ShieldCheck className="w-4 h-4 text-[#d4af37]" /> Personel Girişi
@@ -243,6 +246,11 @@ export const PublicLayout = ({ children }) => {
               <Link to="/medya" onClick={() => setOpen(false)}>
                 <Button data-testid="m-cta-media" variant="outline" className="w-full rounded-full border-sky-400/40 bg-transparent text-sky-300 hover:bg-sky-500/10 font-semibold gap-1.5">
                   <Camera className="w-4 h-4" /> Fotuber Medya (Firma)
+                </Button>
+              </Link>
+              <Link to="/photobooth-panel" onClick={() => setOpen(false)}>
+                <Button data-testid="m-cta-booth" variant="outline" className="w-full rounded-full border-fuchsia-400/40 bg-transparent text-fuchsia-300 hover:bg-fuchsia-500/10 font-semibold gap-1.5">
+                  <Camera className="w-4 h-4" /> Photobooth Paneli (Firma)
                 </Button>
               </Link>
               {user && user.role === "admin" && (

@@ -140,6 +140,16 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
 - **Kiosk akışı**: idle→countdown→çekim→filtre→çerçeve→paket→**ödeme (Nakit/Kart-POS + PIN)**→işleme→baskı & QR. Kiosk hatasız yükleniyor ✅; admin kontrolleri render ✅.
 - NOT: Ödeme/baskı UI'ı gerçek kamera gerektirdiği için on-device test kullanıcıya kaldı; backend + admin + derleme doğrulandı. Canlıya için **Yeniden Yayınla** gerekir.
 
+## Session Z5 (Jun 2026) — Photobooth ÇOK FİRMALI (multi-tenant) + doğrudan yazıcı
+- **Firmalar (tenant)** `photobooth_tenants`: ayrı operatör girişi (JWT, role booth_operator; `/photobooth/operator/login|me`). Site admini firma + operatör hesabı açar (`/photobooth/admin/tenants` CRUD) ve **tek tek yetki** verir (event_info/frames/texts/print_toggle). Operatör yalnızca sınırlı panelde (`/photobooth-panel`) çalışır; **fiyat göremez/değiştiremez**.
+- **Firma-bazlı fiyat**: paketlere `tenant_id`; admin her firma için ayrı paket tanımlar. Ücretsiz paket yok (fiyat>0).
+- **Kiosk kapsamı**: operatör kioska kendi hesabıyla girer (`booth_token`) → `/operator/config` + `/operator/capture` (kendi firma ayar/çerçeve/paketleri). **Site admini kiosku çalıştırınca `admin_free:true` → ödeme atlanır, her şey ücretsiz** (test için).
+- **Ödeme**: paket→ödeme adımı (Nakit / Kart-POS), personel PIN onayı (istismar önleme). **Nakit'i site admini firmaya göre `cash_enabled` ile aç/kapat.** Fiziki POS modeli (online link yok).
+- **Global PNG çerçeveler**: admin PNG yükler (`/admin/frames/upload`, `is_global`), **tüm firma kiosklarına otomatik** yansır (`/frame/{id}` servis; operator_config global+tenant birleştirir). Toplu güncelleme.
+- **Çerçeve cm boyutu**: `width_cm`/`height_cm` — `composePhoto` canvas'ı bu orana (300dpi) kurar, dış çerçeve tekli/çoklu düzende **tam oturur**.
+- **Doğrudan yazıcı**: "Yazdır" artık diyalog açmaz; sayfa içi gizli `#pb-print-root` + `@page size: WxH cm` + `window.print()`. **Chrome `--kiosk-printing` bayrağı + varsayılan yazıcı** ile diyalogsuz otomatik basar (operasyonel kurulum kullanıcıda).
+- Doğrulama: curl — tenant/operatör/ayar/çerçeve/config/capture(403↔200)/global-frame(cm)/admin_free ✅; screenshot — operatör paneli + admin firma yönetimi + cm'li çerçeveler ✅. Kiosk kamera gerektirdiği için on-device test kullanıcıda (yarın).
+
 ## Admin
 - admin@fotuber.com.tr / FTB.2024
 

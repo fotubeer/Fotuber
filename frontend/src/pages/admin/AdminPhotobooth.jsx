@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Aperture, Plus, Trash2, ExternalLink, Info } from "lucide-react";
+import { Aperture, Plus, Trash2, ExternalLink, Info, Upload, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
+import { API_BASE } from "@/lib/api";
 
 const LAYOUT_LABELS = { strip4: "4'lü Şerit", grid4: "2x2 Izgara", postcard: "Kartpostal", polaroid: "Polaroid", single: "Tek Kare" };
 
@@ -19,6 +20,58 @@ export default function AdminPhotobooth() {
   const [tx, setTx] = useState({ transactions: [], count: 0, revenue: 0 });
   const [tplForm, setTplForm] = useState({ name: "", layout: "strip4", accent: "#111827", frame_url: "", border_color: "", border_width: 0 });
   const [pkgForm, setPkgForm] = useState({ name: "", price: "", prints: 0 });
+  const [frames, setFrames] = useState([]);
+  const [frName, setFrName] = useState("");
+  const [frLayout, setFrLayout] = useState("postcard");
+  const [frFile, setFrFile] = useState(null);
+  const [frW, setFrW] = useState(10);
+  const [frH, setFrH] = useState(15);
+  const [frCopies, setFrCopies] = useState("1");
+  const [frBusy, setFrBusy] = useState(false);
+  const [tenants, setTenants] = useState([]);
+  const [tnForm, setTnForm] = useState({ name: "", operator_email: "", password: "", perms: { event_info: true, frames: true, texts: true, print_toggle: true } });
+  const [tnPkg, setTnPkg] = useState({});
+
+  const loadTenants = async () => {
+    try { const { data } = await api.get("/photobooth/admin/tenants"); setTenants(data.tenants || []); } catch { /* */ }
+  };
+  const createTenant = async () => {
+    if (!tnForm.name || !tnForm.operator_email || !tnForm.password) { toast.error("Ad, e-posta ve şifre gerekli"); return; }
+    try { await api.post("/photobooth/admin/tenants", tnForm); toast.success("Firma eklendi"); setTnForm({ name: "", operator_email: "", password: "", perms: { event_info: true, frames: true, texts: true, print_toggle: true } }); loadTenants(); }
+    catch (e) { toast.error(formatApiError(e)); }
+  };
+  const toggleTenantPerm = async (t, key) => {
+    const perms = { ...t.perms, [key]: !t.perms[key] };
+    try { await api.patch(`/photobooth/admin/tenants/${t.id}`, { name: t.name, operator_email: t.operator_email, active: t.active, perms }); loadTenants(); }
+    catch (e) { toast.error(formatApiError(e)); }
+  };
+  const delTenant = async (id) => { if (!window.confirm("Firma ve tüm çerçeve/paketleri silinsin mi?")) return; await api.delete(`/photobooth/admin/tenants/${id}`); loadTenants(); };
+  const addTenantPackage = async (tid) => {
+    const f = tnPkg[tid] || {};
+    if (!f.name || !(Number(f.price) > 0)) { toast.error("Paket adı ve 0'dan büyük fiyat girin"); return; }
+    try { await api.post("/photobooth/admin/packages", { name: f.name, price: Number(f.price), prints: Number(f.prints) || 0, tenant_id: tid }); toast.success("Firma paketi eklendi"); setTnPkg({ ...tnPkg, [tid]: {} }); }
+    catch (e) { toast.error(formatApiError(e)); }
+  };
+
+  const loadFrames = async () => {
+    try { const { data } = await api.get("/photobooth/admin/frames"); setFrames(data.frames || []); } catch { /* */ }
+  };
+  const uploadFrame = async () => {
+    if (!frFile) { toast.error("PNG dosyası seçin"); return; }
+    setFrBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("image", frFile); fd.append("name", frName || "Çerçeve"); fd.append("layout", frLayout);
+      fd.append("width_cm", frW || 10); fd.append("height_cm", frH || 15);
+      fd.append("copies_per_sheet", frCopies);
+      await api.post("/photobooth/admin/frames/upload", fd);
+      toast.success("Çerçeve yüklendi — tüm kiosklara yansıyacak");
+      setFrFile(null); setFrName(""); loadFrames();
+    } catch (e) { toast.error(formatApiError(e)); } finally { setFrBusy(false); }
+  };
+  const delFrame = async (id) => {
+    try { await api.delete(`/photobooth/admin/frames/${id}`); setFrames((r) => r.filter((f) => f.id !== id)); } catch (e) { toast.error(formatApiError(e)); }
+  };
 
   const loadAll = async () => {
     try {
@@ -34,7 +87,7 @@ export default function AdminPhotobooth() {
       setTx(x.data);
     } catch (e) { toast.error(formatApiError(e)); }
   };
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); loadFrames(); loadTenants(); }, []);
 
   const saveSettings = async () => {
     try { await api.put("/photobooth/admin/settings", settings); toast.success("Ayarlar kaydedildi"); loadAll(); }
@@ -114,6 +167,96 @@ export default function AdminPhotobooth() {
             ))}
           </div>
           <div className="sm:col-span-2"><Button data-testid="pb-save-settings" onClick={saveSettings} className="bg-slate-900 hover:bg-slate-800">Ayarları Kaydet</Button></div>
+        </CardContent>
+      </Card>
+
+      {/* Firmalar — operatör hesapları + yetkiler + firma bazlı fiyat */}
+      <Card className="border-emerald-200 bg-emerald-50/30">
+        <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Aperture size={18} className="text-emerald-600" /> Firmalar (Operatör Hesapları)</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-slate-500">Etkinlik alanındaki firma operatörü için hesap açın. Operatör yalnızca kendi sınırlı panelini görür; fiyatları göremez/değiştiremez.</p>
+          <div className="grid sm:grid-cols-4 gap-2 items-end">
+            <div><Label>Firma Adı</Label><Input data-testid="pb-tn-name" value={tnForm.name} onChange={(e) => setTnForm({ ...tnForm, name: e.target.value })} /></div>
+            <div><Label>Operatör E-posta</Label><Input data-testid="pb-tn-email" value={tnForm.operator_email} onChange={(e) => setTnForm({ ...tnForm, operator_email: e.target.value })} /></div>
+            <div><Label>Şifre</Label><Input data-testid="pb-tn-pw" value={tnForm.password} onChange={(e) => setTnForm({ ...tnForm, password: e.target.value })} /></div>
+            <Button data-testid="pb-tn-add" onClick={createTenant} className="bg-emerald-600 hover:bg-emerald-500 gap-1"><Plus size={16} /> Firma Ekle</Button>
+          </div>
+          <div className="space-y-3">
+            {tenants.length === 0 && <p className="text-slate-400 text-sm">Henüz firma yok.</p>}
+            {tenants.map((t) => (
+              <div key={t.id} data-testid={`pb-tenant-${t.id}`} className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1"><div className="font-medium">{t.name}</div><div className="text-xs text-slate-500">{t.operator_email}</div></div>
+                  <Link to="/photobooth-panel" target="_blank" className="text-xs text-emerald-700 flex items-center gap-1">Panel <ExternalLink size={12} /></Link>
+                  <button data-testid={`pb-tenant-del-${t.id}`} onClick={() => delTenant(t.id)} className="text-red-500 hover:text-red-600"><Trash2 size={16} /></button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[["event_info", "Etkinlik Bilgisi"], ["frames", "Çerçeve"], ["texts", "Yazı/Logo"], ["print_toggle", "Baskı Aç/Kapat"]].map(([k, l]) => (
+                    <label key={k} className="flex items-center gap-1.5 text-xs rounded-full border border-slate-200 px-2.5 py-1">
+                      <input data-testid={`pb-tenant-perm-${t.id}-${k}`} type="checkbox" checked={!!t.perms?.[k]} onChange={() => toggleTenantPerm(t, k)} /> {l}
+                    </label>
+                  ))}
+                </div>
+                <div className="grid grid-cols-4 gap-2 items-end border-t border-slate-100 pt-2">
+                  <div className="col-span-1"><Label className="text-xs">Paket Adı</Label><Input data-testid={`pb-tnpkg-name-${t.id}`} value={(tnPkg[t.id]?.name) || ""} onChange={(e) => setTnPkg({ ...tnPkg, [t.id]: { ...tnPkg[t.id], name: e.target.value } })} className="h-9" /></div>
+                  <div><Label className="text-xs">Fiyat ₺</Label><Input data-testid={`pb-tnpkg-price-${t.id}`} type="number" value={(tnPkg[t.id]?.price) || ""} onChange={(e) => setTnPkg({ ...tnPkg, [t.id]: { ...tnPkg[t.id], price: e.target.value } })} className="h-9" /></div>
+                  <div><Label className="text-xs">Baskı</Label><Input data-testid={`pb-tnpkg-prints-${t.id}`} type="number" value={(tnPkg[t.id]?.prints) || ""} onChange={(e) => setTnPkg({ ...tnPkg, [t.id]: { ...tnPkg[t.id], prints: e.target.value } })} className="h-9" /></div>
+                  <Button data-testid={`pb-tnpkg-add-${t.id}`} onClick={() => addTenantPackage(t.id)} variant="outline" className="h-9 gap-1"><Plus size={14} /> Paket</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Global PNG Çerçeveler — tüm kiosklara otomatik yansır */}
+      <Card className="border-fuchsia-200 bg-fuchsia-50/40">
+        <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Upload size={18} className="text-fuchsia-600" /> Global PNG Çerçeveler</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-slate-500">Buraya yüklediğiniz şeffaf PNG çerçeveler <b>tüm firma kiosklarında otomatik</b> görünür — böylece toplu güncelleme yapabilirsiniz. Baskı boyutunu (cm) girin ki tekli/çoklu düzenlerde çerçeve tam otursun.</p>
+          <div className="grid sm:grid-cols-6 gap-2 items-end">
+            <div className="sm:col-span-2"><Label>Çerçeve Adı</Label><Input data-testid="pb-frame-name" value={frName} onChange={(e) => setFrName(e.target.value)} placeholder="Ör. Altın Kenar" /></div>
+            <div><Label>Düzen</Label>
+              <Select value={frLayout} onValueChange={setFrLayout}>
+                <SelectTrigger data-testid="pb-frame-layout"><SelectValue /></SelectTrigger>
+                <SelectContent>{Object.entries(LAYOUT_LABELS).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div><Label>En (cm)</Label><Input data-testid="pb-frame-w" type="number" min="1" step="0.1" value={frW} onChange={(e) => setFrW(e.target.value)} /></div>
+            <div><Label>Boy (cm)</Label><Input data-testid="pb-frame-h" type="number" min="1" step="0.1" value={frH} onChange={(e) => setFrH(e.target.value)} /></div>
+            <div className="sm:col-span-6 grid sm:grid-cols-2 gap-2 items-end">
+              <div><Label>Sayfa başına kopya (yazıcı ortadan keser)</Label>
+                <Select value={frCopies} onValueChange={setFrCopies}>
+                  <SelectTrigger data-testid="pb-frame-copies"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 (tek baskı)</SelectItem>
+                    <SelectItem value="2">2 (yan yana — HiTi vb. ortadan kes → 2 şerit)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-2 items-end">
+                <div><Label>PNG (şeffaf)</Label><Input data-testid="pb-frame-file" type="file" accept="image/png" onChange={(e) => setFrFile(e.target.files?.[0] || null)} className="h-10" /></div>
+                <Button data-testid="pb-frame-upload" onClick={uploadFrame} disabled={frBusy} className="bg-fuchsia-600 hover:bg-fuchsia-500 gap-1"><Upload size={16} /> {frBusy ? "Yükleniyor…" : "Yükle"}</Button>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+            {frames.length === 0 && <p className="text-slate-400 text-sm col-span-full">Henüz global çerçeve yok.</p>}
+            {frames.map((f) => (
+              <div key={f.id} data-testid={`pb-frame-${f.id}`} className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+                <div className="aspect-square bg-[repeating-conic-gradient(#eee_0%_25%,#fff_0%_50%)] bg-[length:16px_16px] flex items-center justify-center">
+                  <img src={`${API_BASE}/photobooth/frame/${f.id}`} alt={f.name} className="w-full h-full object-contain" />
+                </div>
+                <div className="p-2">
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs truncate flex-1 font-medium">{f.name}</span>
+                    <button data-testid={`pb-frame-del-${f.id}`} onClick={() => delFrame(f.id)} className="text-red-500 hover:text-red-600"><Trash2 size={14} /></button>
+                  </div>
+                  <div className="text-[10px] text-slate-400">{LAYOUT_LABELS[f.layout] || f.layout}{f.width_cm ? ` · ${f.width_cm}×${f.height_cm} cm` : ""}{f.copies_per_sheet === 2 ? " · 2 şerit (kes)" : ""}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </CardContent>
       </Card>
 

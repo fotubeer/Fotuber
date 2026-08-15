@@ -34,6 +34,7 @@ import FloorPlanBuilder from "@/pages/FloorPlanBuilder";
 import StaffKiosk from "@/pages/StaffKiosk";
 import GallerySelect from "@/pages/GallerySelect";
 import PhotoboothKiosk from "@/pages/PhotoboothKiosk";
+import PhotoboothPanel from "@/pages/PhotoboothPanel";
 import PhotoboothMemory from "@/pages/PhotoboothMemory";
 import PublicContract from "@/pages/PublicContract";
 import MediaPortal from "@/pages/MediaPortal";
@@ -159,7 +160,8 @@ function App() {
               <Route path="/anilarim/:token" element={<PhotoboothMemory />} />
               <Route path="/sozlesme/:token" element={<PublicContract />} />
               <Route path="/medya" element={<MediaPortal />} />
-              <Route path="/photobooth-kiosk" element={<ProtectedRoute requireRole="admin"><PhotoboothKiosk /></ProtectedRoute>} />
+              <Route path="/photobooth-panel" element={<PhotoboothPanel />} />
+              <Route path="/photobooth-kiosk" element={<PhotoboothKiosk />} />
 
               <Route
                 path="/randevularim"
