@@ -16,6 +16,10 @@ Koleksiyonlar:
   photobooth_transactions — her çekim kaydı (foto anahtarı + QR token)
 """
 import secrets
+import os
+import hmac
+import base64
+import hashlib
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Response
@@ -46,6 +50,10 @@ DEFAULT_SETTINGS = {
     "ai_bg_removal": False,     # yeşil-perdesiz AI arka plan (taslak)
     "live_wall": False,         # Anı Duvarı canlı yükleme (taslak)
     "countdown_seconds": 3,
+    "payment_required": True,   # paket seçilince ödeme adımı zorunlu
+    "cash_enabled": True,        # Nakit ödeme seçeneği (site admini firma için aç/kapat)
+    "event_hashtag": "",        # baskıya eklenecek etkinlik etiketi (ör. #AyseMehmet)
+    "show_date": True,          # baskıya tarih damgası ekle
 }
 
 
@@ -86,8 +94,14 @@ def get_router(db, deps):
     def _tpl_out(t: dict) -> dict:
         return {"id": t["id"], "name": t.get("name"), "layout": t.get("layout", "single"),
                 "category": t.get("category", "single"), "accent": t.get("accent", "#111827"),
+                "frame_url": t.get("frame_url", ""), "border_color": t.get("border_color", ""),
+                "border_width": t.get("border_width", 0),
                 "branding_locked": t.get("branding_locked", True), "active": t.get("active", True),
                 "sort": t.get("sort", 0)}
+
+    def _paytr_configured() -> bool:
+        return bool(os.environ.get("PAYTR_MERCHANT_ID") and os.environ.get("PAYTR_MERCHANT_KEY")
+                    and os.environ.get("PAYTR_MERCHANT_SALT"))
 
     def _pkg_out(p: dict) -> dict:
         return {"id": p["id"], "name": p.get("name"), "price": p.get("price", 0),
@@ -109,6 +123,7 @@ def get_router(db, deps):
         pkgs = await db.photobooth_packages.find({"active": True}, {"_id": 0}).sort("sort", 1).to_list(200)
         # admin_exit_pin kiosk config'te SIZDIRILMAZ (yalnızca doğrulama ucu ile kontrol edilir)
         public_settings = {k: v for k, v in settings.items() if k != "admin_exit_pin"}
+        public_settings["paytr_configured"] = _paytr_configured()
         return {"settings": public_settings,
                 "templates": [_tpl_out(t) for t in tpls],
                 "packages": [_pkg_out(p) for p in pkgs]}
@@ -129,26 +144,74 @@ def get_router(db, deps):
         template_id: str = Form(""),
         package_id: str = Form(""),
         device_id: str = Form(""),
+        payment_method: str = Form("cash"),   # cash | card | free
+        staff_pin: str = Form(""),
     ):
         data = await image.read()
         if not data:
             raise HTTPException(status_code=400, detail="Boş görsel")
+        settings = await _get_settings()
+        pkg = await db.photobooth_packages.find_one({"id": package_id}, {"_id": 0}) if package_id else None
+        amount = (pkg or {}).get("price", 0)
+        method = payment_method if payment_method in ("cash", "pos", "card", "free") else "cash"
+        # Ödeme zorunluysa ve ücretsiz değilse personel PIN'i ile onay şart (istismar önleme)
+        if settings.get("payment_required", True) and method != "free" and amount > 0:
+            if (staff_pin or "").strip() != str(settings.get("admin_exit_pin", "")):
+                raise HTTPException(status_code=403, detail="Ödeme onayı için personel PIN'i gerekli")
+        status = "captured" if method == "free" else "paid"
         token = secrets.token_urlsafe(10)
         key = f"photobooth/{token}.png"
         put_object(key, data, image.content_type or "image/png")
-        pkg = await db.photobooth_packages.find_one({"id": package_id}, {"_id": 0}) if package_id else None
         doc = {
             "id": new_id(), "device_id": device_id or None,
             "template_id": template_id or None, "package_id": package_id or None,
             "photo_key": key, "qr_token": token,
-            "amount": (pkg or {}).get("price", 0),
+            "amount": amount if method != "free" else 0,
             "prints": (pkg or {}).get("prints", 0),
-            "status": "captured",  # taslak: ödeme atlandı
+            "payment_method": method, "status": status,
             "created_at": now_iso(),
         }
         await db.photobooth_transactions.insert_one(doc)
         return {"qr_token": token, "gallery_path": f"/anilarim/{token}",
                 "photo_url": f"/api/photobooth/photo/{token}"}
+
+    class PaytrLinkIn(BaseModel):
+        package_id: str
+        origin_url: str = ""
+
+    @router.post("/paytr-link")
+    async def paytr_link(payload: PaytrLinkIn, admin: dict = Depends(require_admin)):
+        """Kiosk kart ödemesi için PayTR ödeme linki üretir (müşteri telefonundan öder)."""
+        import httpx as _httpx
+        mid = os.environ.get("PAYTR_MERCHANT_ID", "")
+        mkey = os.environ.get("PAYTR_MERCHANT_KEY", "")
+        msalt = os.environ.get("PAYTR_MERCHANT_SALT", "")
+        if not (mid and mkey and msalt):
+            raise HTTPException(status_code=400, detail="PayTR yapılandırılmamış — nakit tahsil edin")
+        pkg = await db.photobooth_packages.find_one({"id": payload.package_id}, {"_id": 0})
+        if not pkg or pkg.get("price", 0) <= 0:
+            raise HTTPException(status_code=400, detail="Geçersiz paket")
+        title = f"Fotuber Photobooth - {pkg.get('name', 'Paket')}"
+        price_kurus = str(int(round(float(pkg["price"]) * 100)))
+        currency, max_installment, link_type, lang, min_count = "TL", "1", "product", "tr", "1"
+        required = title + price_kurus + currency + max_installment + link_type + lang + min_count
+        digest = hmac.new(mkey.encode(), (required + msalt).encode(), hashlib.sha256).digest()
+        token = base64.b64encode(digest).decode()
+        post_data = {
+            "merchant_id": mid, "name": title, "price": price_kurus, "currency": currency,
+            "max_installment": max_installment, "link_type": link_type, "lang": lang,
+            "min_count": min_count, "max_count": "1", "get_qr": "1", "debug_on": "1",
+            "paytr_token": token,
+        }
+        try:
+            async with _httpx.AsyncClient(timeout=25) as http:
+                r = await http.post("https://www.paytr.com/odeme/api/link/create", data=post_data)
+                res = r.json()
+        except Exception:
+            raise HTTPException(status_code=502, detail="PayTR bağlantısı başarısız")
+        if res.get("status") != "success":
+            raise HTTPException(status_code=502, detail=res.get("reason") or "PayTR link hatası")
+        return {"link": res.get("link"), "amount": pkg["price"]}
 
     @router.get("/photo/{token}")
     async def get_photo(token: str):
@@ -173,6 +236,10 @@ def get_router(db, deps):
         ai_bg_removal: bool | None = None
         live_wall: bool | None = None
         countdown_seconds: int | None = None
+        payment_required: bool | None = None
+        cash_enabled: bool | None = None
+        event_hashtag: str | None = None
+        show_date: bool | None = None
 
     @router.get("/admin/settings")
     async def admin_get_settings(admin: dict = Depends(require_admin)):
@@ -227,6 +294,9 @@ def get_router(db, deps):
         layout: str = "single"
         category: str = "single"
         accent: str = "#111827"
+        frame_url: str = ""
+        border_color: str = ""
+        border_width: int = 0
         branding_locked: bool = True
         active: bool = True
         sort: int = 0
@@ -242,6 +312,8 @@ def get_router(db, deps):
         layout = payload.layout if payload.layout in LAYOUTS else "single"
         doc = {"id": new_id(), "name": payload.name.strip(), "layout": layout,
                "category": payload.category.strip() or layout, "accent": payload.accent,
+               "frame_url": payload.frame_url.strip(), "border_color": payload.border_color.strip(),
+               "border_width": max(0, min(60, int(payload.border_width or 0))),
                "branding_locked": payload.branding_locked, "active": payload.active,
                "sort": payload.sort, "created_at": now_iso()}
         await db.photobooth_templates.insert_one(doc)
@@ -252,8 +324,9 @@ def get_router(db, deps):
         layout = payload.layout if payload.layout in LAYOUTS else "single"
         await db.photobooth_templates.update_one({"id": tid}, {"$set": {
             "name": payload.name.strip(), "layout": layout, "category": payload.category.strip() or layout,
-            "accent": payload.accent, "branding_locked": payload.branding_locked,
-            "active": payload.active, "sort": payload.sort}})
+            "accent": payload.accent, "frame_url": payload.frame_url.strip(),
+            "border_color": payload.border_color.strip(), "border_width": max(0, min(60, int(payload.border_width or 0))),
+            "branding_locked": payload.branding_locked, "active": payload.active, "sort": payload.sort}})
         return {"ok": True}
 
     @router.delete("/admin/templates/{tid}")

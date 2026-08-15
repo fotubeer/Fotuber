@@ -133,6 +133,13 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
 - NOT: Tüm bunlar önizlemede; canlıya (fotuber.com.tr) yansıması için kullanıcı **Yeniden Yayınla** yapmalı.
 - BEKLEYEN: Photobooth "tamamla" kapsamı kullanıcıdan netleştiriliyor (yazıcı / ödeme / anı sayfası / admin / salon-firma bağlama).
 
+## Session Z4 (Jun 2026) — Photobooth: Yazıcı + Ödeme (Nakit/Kart-POS) + Çerçeve/Logo eklentileri
+- **Ödeme adımı** (`photobooth.py` capture): `payment_method` (cash|pos|card|free) + `staff_pin`. `payment_required` açıkken ve ücretli pakette **personel PIN'i (admin_exit_pin) ile onay şart** (istismar önleme) → status "paid". Fiziki POS modeli (online link yok). `cash_enabled` ayarı: site admini **Nakit'i firmaya göre aç/kapat**. Curl: PIN'siz 403, PIN'li 200 ✅.
+- **Yazdırma** (`PhotoboothKiosk.jsx`): "Yazdır" gerçek tarayıcı yazdırma penceresi açar (print-ready, `@page margin:0`), paket baskı adedini gösterir.
+- **Çerçeve/logo eklentileri**: template'e `frame_url` (şeffaf PNG overlay), `border_color`, `border_width`; `composePhoto` kenarlık çizer + çerçeveyi tuvale bindirir + footer'a logo + slogan + `event_hashtag` + tarih damgası ekler. Admin formunda tüm alanlar. Curl kayıt ✅.
+- **Kiosk akışı**: idle→countdown→çekim→filtre→çerçeve→paket→**ödeme (Nakit/Kart-POS + PIN)**→işleme→baskı & QR. Kiosk hatasız yükleniyor ✅; admin kontrolleri render ✅.
+- NOT: Ödeme/baskı UI'ı gerçek kamera gerektirdiği için on-device test kullanıcıya kaldı; backend + admin + derleme doğrulandı. Canlıya için **Yeniden Yayınla** gerekir.
+
 ## Admin
 - admin@fotuber.com.tr / FTB.2024
 

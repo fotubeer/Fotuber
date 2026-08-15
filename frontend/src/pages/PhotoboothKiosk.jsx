@@ -27,15 +27,20 @@ const loadImg = (src) => new Promise((res, rej) => {
 // Layout başına kaç kare kullanılır.
 const shotsForLayout = (layout) => (layout === "strip4" || layout === "grid4" ? 4 : 1);
 
-async function composePhoto({ shots, template, slogan, logoUrl, filterCss }) {
+async function composePhoto({ shots, template, slogan, logoUrl, filterCss, hashtag, showDate }) {
   const layout = template?.layout || "single";
   const accent = template?.accent || "#111827";
+  const borderC = template?.border_color || "";
+  const borderW = Math.max(0, Number(template?.border_width) || 0);
+  const frameUrl = template?.frame_url || "";
   const need = shotsForLayout(layout);
   const use = [];
   for (let i = 0; i < need; i++) use.push(shots[i % shots.length]);
   const imgs = await Promise.all(use.map(loadImg));
   let logoImg = null;
   if (logoUrl) { try { logoImg = await loadImg(logoUrl); } catch { /* ignore */ } }
+  let frameImg = null;
+  if (frameUrl) { try { frameImg = await loadImg(frameUrl); } catch { /* ignore */ } }
 
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
@@ -50,24 +55,35 @@ async function composePhoto({ shots, template, slogan, logoUrl, filterCss }) {
     ctx.filter = filterCss || "none";
     ctx.drawImage(im, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
     ctx.restore();
+    if (borderW > 0 && borderC) {
+      ctx.filter = "none";
+      ctx.strokeStyle = borderC;
+      ctx.lineWidth = borderW;
+      ctx.strokeRect(x + borderW / 2, y + borderW / 2, w - borderW, h - borderW);
+    }
   };
 
   const drawFooter = (w, y, h) => {
     ctx.filter = "none";
     ctx.fillStyle = accent;
     ctx.fillRect(0, y, w, h);
+    ctx.textAlign = "center";
     if (logoImg) {
-      const lh = h * 0.5, lw = lh * (logoImg.width / logoImg.height);
-      ctx.drawImage(logoImg, w / 2 - lw / 2, y + h * 0.16, lw, lh);
-      ctx.fillStyle = "rgba(255,255,255,0.85)";
-      ctx.font = `600 ${Math.round(h * 0.18)}px Manrope, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.fillText(slogan || "Fotuber Photobooth", w / 2, y + h * 0.82);
+      const lh = h * 0.44, lw = lh * (logoImg.width / logoImg.height);
+      ctx.drawImage(logoImg, w / 2 - lw / 2, y + h * 0.12, lw, lh);
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.font = `600 ${Math.round(h * 0.16)}px Manrope, sans-serif`;
+      ctx.fillText(slogan || "Fotuber Photobooth", w / 2, y + h * 0.72);
     } else {
       ctx.fillStyle = "#ffffff";
-      ctx.font = `800 ${Math.round(h * 0.34)}px Manrope, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.fillText(slogan || "Fotuber Photobooth", w / 2, y + h * 0.62);
+      ctx.font = `800 ${Math.round(h * 0.3)}px Manrope, sans-serif`;
+      ctx.fillText(slogan || "Fotuber Photobooth", w / 2, y + h * 0.5);
+    }
+    const meta = [hashtag, showDate ? new Date().toLocaleDateString("tr-TR") : ""].filter(Boolean).join("   ·   ");
+    if (meta) {
+      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      ctx.font = `500 ${Math.round(h * 0.13)}px Manrope, sans-serif`;
+      ctx.fillText(meta, w / 2, y + h * 0.93);
     }
   };
 
@@ -99,7 +115,9 @@ async function composePhoto({ shots, template, slogan, logoUrl, filterCss }) {
     ctx.fillStyle = accent;
     ctx.font = "700 44px 'Great Vibes', cursive";
     ctx.textAlign = "center";
-    ctx.fillText(slogan || "Fotuber", canvas.width / 2, canvas.height - 55);
+    ctx.fillText(slogan || "Fotuber", canvas.width / 2, canvas.height - 90);
+    const meta = [hashtag, showDate ? new Date().toLocaleDateString("tr-TR") : ""].filter(Boolean).join("  ·  ");
+    if (meta) { ctx.fillStyle = "#6b7280"; ctx.font = "500 26px Manrope, sans-serif"; ctx.fillText(meta, canvas.width / 2, canvas.height - 45); }
   } else {
     // postcard / single
     const pw = 900, ph = 600;
@@ -110,13 +128,19 @@ async function composePhoto({ shots, template, slogan, logoUrl, filterCss }) {
     drawFooter(canvas.width, canvas.height - footer, footer);
   }
 
+  // Dekoratif çerçeve (şeffaf PNG) tüm tuvale bindirilir
+  if (frameImg) {
+    ctx.filter = "none";
+    try { ctx.drawImage(frameImg, 0, 0, canvas.width, canvas.height); } catch { /* ignore */ }
+  }
+
   return new Promise((res) => canvas.toBlob((b) => res(b), "image/png", 0.95));
 }
 
 export default function PhotoboothKiosk() {
   const navigate = useNavigate();
   const [config, setConfig] = useState(null);
-  const [stage, setStage] = useState("idle"); // idle|countdown|filter|frame|package|processing|done
+  const [stage, setStage] = useState("idle"); // idle|countdown|filter|frame|package|payment|processing|done
   const [count, setCount] = useState(0);
   const [shots, setShots] = useState([]);
   const [filter, setFilter] = useState(FILTERS[0]);
@@ -124,6 +148,10 @@ export default function PhotoboothKiosk() {
   const [result, setResult] = useState(null);
   const [pinOpen, setPinOpen] = useState(false);
   const [pin, setPin] = useState("");
+  const [selPkg, setSelPkg] = useState(null);
+  const [payPin, setPayPin] = useState("");
+  const [payMethod, setPayMethod] = useState("cash");
+  const [payBusy, setPayBusy] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const shotsRef = useRef([]);
@@ -184,29 +212,67 @@ export default function PhotoboothKiosk() {
     setStage("filter");
   };
 
-  const finish = async (pkg) => {
+  const finish = async (pkg, method, staffPin) => {
     setStage("processing");
     try {
       const blob = await composePhoto({
         shots: shotsRef.current, template: tpl,
         slogan: config?.settings?.brand_slogan, logoUrl: config?.settings?.brand_logo_url,
-        filterCss: filter.css,
+        filterCss: filter.css, hashtag: config?.settings?.event_hashtag,
+        showDate: config?.settings?.show_date,
       });
       const fd = new FormData();
       fd.append("image", blob, "photo.png");
       fd.append("template_id", tpl?.id || "");
       fd.append("package_id", pkg?.id || "");
+      fd.append("payment_method", method || "free");
+      fd.append("staff_pin", staffPin || "");
       const { data } = await api.post("/photobooth/capture", fd);
-      setResult({ token: data.qr_token, path: data.gallery_path, url: window.location.origin + data.gallery_path });
+      setResult({ token: data.qr_token, path: data.gallery_path, url: window.location.origin + data.gallery_path, prints: pkg?.prints || 0 });
       setStage("done");
     } catch (e) {
       toast.error(formatApiError(e, "Bir hata oluştu"));
-      setStage("package");
+      setStage(config?.settings?.payment_required ? "payment" : "package");
     }
   };
 
+  const choosePackage = (p) => {
+    setSelPkg(p);
+    if (!config?.settings?.payment_required || !(p.price > 0)) {
+      finish(p, "free", "");
+      return;
+    }
+    setPayMethod(config?.settings?.cash_enabled ? "cash" : "pos");
+    setPayPin("");
+    setStage("payment");
+  };
+
+  const confirmPayment = async () => {
+    if (!selPkg) return;
+    if (!payPin.trim()) { toast.error("Personel PIN'i girin"); return; }
+    setPayBusy(true);
+    await finish(selPkg, payMethod, payPin);
+    setPayBusy(false);
+    setPayPin("");
+  };
+
+  const printPhoto = () => {
+    if (!result) return;
+    const src = `${API_BASE}/photobooth/photo/${result.token}`;
+    const w = window.open("", "_blank");
+    if (!w) { toast.error("Yazdırma penceresi açılamadı"); return; }
+    w.document.write(`<!doctype html><html><head><title>Fotuber Baskı</title><style>
+      @page{margin:0} html,body{margin:0;padding:0;background:#fff}
+      .wrap{display:flex;align-items:center;justify-content:center;min-height:100vh}
+      img{max-width:100%;max-height:100vh;display:block}
+      @media print{.wrap{min-height:auto}}
+    </style></head><body><div class="wrap"><img src="${src}" onload="window.focus();window.print();" /></div></body></html>`);
+    w.document.close();
+  };
+
   const reset = () => {
-    shotsRef.current = []; setShots([]); setResult(null); setTpl(null); setFilter(FILTERS[0]); setStage("idle");
+    shotsRef.current = []; setShots([]); setResult(null); setTpl(null); setFilter(FILTERS[0]);
+    setSelPkg(null); setPayPin(""); setStage("idle");
   };
 
   const tryExit = async () => {
@@ -331,7 +397,7 @@ export default function PhotoboothKiosk() {
             <h2 className="text-3xl font-bold">Paket Seç</h2>
             <div className="grid sm:grid-cols-3 gap-5 max-w-3xl w-full">
               {packages.map((p) => (
-                <button key={p.id} data-testid={`pb-pkg-${p.id}`} onClick={() => finish(p)}
+                <button key={p.id} data-testid={`pb-pkg-${p.id}`} onClick={() => choosePackage(p)}
                   className="rounded-3xl p-7 border-2 border-white/15 hover:border-fuchsia-400 hover:scale-105 transition text-center"
                   style={{ background: "rgba(255,255,255,0.05)" }}>
                   <div className="text-lg font-semibold mb-2">{p.name}</div>
@@ -342,7 +408,41 @@ export default function PhotoboothKiosk() {
                 </button>
               ))}
             </div>
-            <p className="text-white/40 text-sm">Taslak: ödeme adımı şimdilik atlandı (PayTR POS entegrasyonu sonra).</p>
+            <p className="text-white/40 text-sm">Paketi seçince ödeme adımına geçilir.</p>
+          </motion.div>
+        )}
+
+        {stage === "payment" && selPkg && (
+          <motion.div key="pay" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="absolute inset-0 flex flex-col items-center justify-center gap-6 p-8" data-testid="pb-payment">
+            <h2 className="text-3xl font-bold">Ödeme</h2>
+            <div className="text-center">
+              <div className="text-white/60">{selPkg.name}</div>
+              <div className="text-5xl font-black text-fuchsia-300 mt-1">{selPkg.price}₺</div>
+            </div>
+            <div className="flex gap-4">
+              {config?.settings?.cash_enabled && (
+                <button data-testid="pb-pay-cash" onClick={() => setPayMethod("cash")}
+                  className={`px-8 py-4 rounded-2xl border-2 text-lg font-semibold transition ${payMethod === "cash" ? "border-fuchsia-400 bg-fuchsia-500/20" : "border-white/15"}`}>💵 Nakit</button>
+              )}
+              <button data-testid="pb-pay-pos" onClick={() => setPayMethod("pos")}
+                className={`px-8 py-4 rounded-2xl border-2 text-lg font-semibold transition ${payMethod === "pos" ? "border-fuchsia-400 bg-fuchsia-500/20" : "border-white/15"}`}>💳 Kart (POS)</button>
+            </div>
+            <p className="text-white/50 text-sm text-center max-w-md">
+              Ödemeyi {payMethod === "cash" ? "nakit olarak" : "fiziki POS cihazından karta"} tahsil edin, ardından personel PIN'i ile onaylayın.
+            </p>
+            <input data-testid="pb-pay-pin" type="password" inputMode="numeric" value={payPin} autoFocus
+              onChange={(e) => setPayPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              onKeyDown={(e) => e.key === "Enter" && confirmPayment()}
+              placeholder="Personel PIN" className="w-56 h-12 text-center text-2xl tracking-widest rounded-xl bg-white/5 border border-white/15 outline-none" />
+            <div className="flex gap-3">
+              <button data-testid="pb-pay-back" onClick={() => setStage("package")}
+                className="px-6 py-3 rounded-full bg-white/10 hover:bg-white/20 font-semibold">← Geri</button>
+              <button data-testid="pb-pay-confirm" onClick={confirmPayment} disabled={payBusy}
+                className="px-10 py-3 rounded-full bg-emerald-500 hover:bg-emerald-400 text-lg font-bold disabled:opacity-50">
+                {payBusy ? "Onaylanıyor…" : "Ödemeyi Onayla & Çek"}
+              </button>
+            </div>
           </motion.div>
         )}
 
@@ -370,8 +470,8 @@ export default function PhotoboothKiosk() {
               </div>
             </div>
             <div className="flex gap-3">
-              <button data-testid="pb-print-btn" onClick={() => toast.info("Yazıcı entegrasyonu taslak aşamasında (sonra)")}
-                className="px-8 py-4 rounded-full bg-white/10 hover:bg-white/20 text-lg font-semibold flex items-center gap-2"><Printer size={18} /> Yazdır</button>
+              <button data-testid="pb-print-btn" onClick={printPhoto}
+                className="px-8 py-4 rounded-full bg-white/10 hover:bg-white/20 text-lg font-semibold flex items-center gap-2"><Printer size={18} /> Yazdır{result.prints > 0 ? ` (${result.prints})` : ""}</button>
               <button data-testid="pb-again-btn" onClick={reset}
                 className="px-8 py-4 rounded-full bg-fuchsia-500 hover:bg-fuchsia-400 text-lg font-bold flex items-center gap-2"><RotateCcw size={18} /> Yeni Çekim</button>
             </div>
