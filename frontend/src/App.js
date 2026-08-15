@@ -213,6 +213,7 @@ function App() {
               <Route path="/admin/medya" element={<AdminGuard><AdminMedia /></AdminGuard>} />
               <Route path="/admin/randevu-katalogu" element={<AdminGuard><AdminApptCatalog /></AdminGuard>} />
               <Route path="/admin/randevu-olustur" element={<ProtectedRoute requireRoles={["admin", "staff"]}><ApptBuilder /></ProtectedRoute>} />
+              <Route path="/admin/randevu-duzenle/:contractId" element={<ProtectedRoute requireRoles={["admin", "staff"]}><ApptBuilder /></ProtectedRoute>} />
               <Route path="/admin/sozlesme/:id" element={<ProtectedRoute requireRoles={["admin", "staff"]}><ContractView /></ProtectedRoute>} />
 
               <Route path="*" element={<Navigate to="/" replace />} />

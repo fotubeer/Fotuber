@@ -83,7 +83,7 @@ export default function PublicContract() {
   const isApproved = c.approval_status === "approved";
 
   return (
-    <div className="min-h-screen bg-neutral-100 py-6" data-testid="public-contract">
+    <div className="min-h-screen bg-neutral-100 py-6 text-neutral-900" data-testid="public-contract">
       <div className="max-w-[860px] mx-auto mb-4 px-4">
         {isApproved ? (
           <div className="rounded-2xl bg-emerald-600 text-white p-4 flex items-center gap-3" data-testid="pc-approved-banner">
@@ -105,7 +105,7 @@ export default function PublicContract() {
             <div>
               <label className="text-sm font-medium text-neutral-700">Ad Soyad</label>
               <input data-testid="pc-name" value={name} onChange={(e) => setName(e.target.value)}
-                className="mt-1 w-full h-11 rounded-lg border border-neutral-300 px-3 outline-none focus:border-neutral-900" />
+                className="mt-1 w-full h-11 rounded-lg border border-neutral-300 px-3 text-neutral-900 bg-white outline-none focus:border-neutral-900" />
             </div>
             <label className="flex items-start gap-2 text-sm cursor-pointer">
               <input type="checkbox" data-testid="pc-accept" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="mt-1" />

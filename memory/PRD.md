@@ -124,6 +124,15 @@ Fotuber Studio full-stack web app for photography/videography business. Live at 
 - P2: Slideshow view for couple download page
 - P2: Refactor `server.py` (>3200 lines) into `/routes` modules
 
+## Session Z3 (Jun 2026) — Sözleşme UI/mobil düzeltmeleri + Sözleşme düzenleme + Fotuber Medya girişi + Header overflow (self-tested)
+- **Beyaz-üzeri-beyaz butonlar**: `ContractView.jsx` — kök `text-neutral-900`, "Linki Kopyala/QR/PDF İndir" butonlarına `text-neutral-900` (global `body{color:#fafafa}` kaynaklı görünmezlik giderildi). Screenshot ✅.
+- **Mobil/iç içe girme**: `ContractSheet.jsx` — çift sütunlar `grid-cols-1 sm:grid-cols-2`, dolgu `p-4 sm:p-[46px]`, header `flex-wrap`; `PublicContract.jsx` kök + input `text-neutral-900`. 380px'de doğrulandı (sheet 361px, tek sütun, çakışma yok) ✅.
+- **Sözleşme Düzenle/Yeniden Al**: `ApptBuilder.jsx` düzenleme modu — route `/admin/randevu-duzenle/:contractId`, var olan sözleşmeyi yükleyip alanları + hizmet/ürün seçimlerini `line_items` etiketlerinden yeniden kurar; kaydet → `PUT /appt-pro/contracts/{id}` (aynı public_token/PDF güncellenir). `ContractView`'e "Düzenle" butonu. Curl PUT + prefill screenshot ✅.
+- **Fotuber Medya girişi**: `PublicLayout.jsx` — "Paneller" dropdown + mobil menü + footer'a `/medya` girişi (firma giriş noktası). Screenshot ✅.
+- **Header "İletişim" overflow (giriş yapınca sıkışma)**: `PublicLayout.jsx` — kullanıcı adı `hidden 2xl:inline` + Çıkış laptopta ikon-only; 3 promosyon linki (Altın Saat/Tasarım Stüdyosu/İndirim Kodu) tek **"Fırsatlar"** dropdown'ında toplandı; CTA boşlukları daraltıldı. 1280/1366/1440'ta İletişim görünür + tıklanabilir ✅.
+- NOT: Tüm bunlar önizlemede; canlıya (fotuber.com.tr) yansıması için kullanıcı **Yeniden Yayınla** yapmalı.
+- BEKLEYEN: Photobooth "tamamla" kapsamı kullanıcıdan netleştiriliyor (yazıcı / ödeme / anı sayfası / admin / salon-firma bağlama).
+
 ## Admin
 - admin@fotuber.com.tr / FTB.2024
 

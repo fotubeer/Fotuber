@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
 import { api, formatApiError } from "@/lib/api";
-import { Printer, ArrowLeft, Copy, Check, MessageCircle, QrCode, Download } from "lucide-react";
+import { Printer, ArrowLeft, Copy, Check, MessageCircle, QrCode, Download, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import ContractSheet from "@/components/ContractSheet";
 
@@ -39,7 +39,7 @@ export default function ContractView() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-100 py-6">
+    <div className="min-h-screen bg-neutral-100 py-6 text-neutral-900">
       <style>{`
         @media print { .no-print { display: none !important; } body { background: #fff !important; }
           .sheet { box-shadow: none !important; margin: 0 !important; width: 100% !important; } @page { size: A4; margin: 12mm; } }
@@ -54,10 +54,11 @@ export default function ContractView() {
           : <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5" data-testid="contract-status">Onay Bekliyor</span>}
         <a href={waUrl} target="_blank" rel="noreferrer" data-testid="contract-whatsapp"
           className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold px-4 py-2.5 hover:bg-emerald-500"><MessageCircle size={16} /> WhatsApp ile Gönder</a>
-        <button onClick={copyLink} data-testid="contract-copy" className="inline-flex items-center gap-2 rounded-lg bg-white border border-neutral-300 text-sm font-semibold px-4 py-2.5 hover:bg-neutral-50">
+        <button onClick={copyLink} data-testid="contract-copy" className="inline-flex items-center gap-2 rounded-lg bg-white border border-neutral-300 text-neutral-900 text-sm font-semibold px-4 py-2.5 hover:bg-neutral-50">
           {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />} Linki Kopyala</button>
-        <button onClick={() => setShowQr((v) => !v)} data-testid="contract-qr-toggle" className="inline-flex items-center gap-2 rounded-lg bg-white border border-neutral-300 text-sm font-semibold px-4 py-2.5 hover:bg-neutral-50"><QrCode size={16} /> QR</button>
-        <button onClick={downloadPdf} data-testid="contract-pdf" className="inline-flex items-center gap-2 rounded-lg bg-white border border-neutral-300 text-sm font-semibold px-4 py-2.5 hover:bg-neutral-50"><Download size={16} /> PDF İndir</button>
+        <button onClick={() => navigate(`/admin/randevu-duzenle/${c.id}`)} data-testid="contract-edit" className="inline-flex items-center gap-2 rounded-lg bg-white border border-neutral-300 text-neutral-900 text-sm font-semibold px-4 py-2.5 hover:bg-neutral-50"><Pencil size={16} /> Düzenle</button>
+        <button onClick={() => setShowQr((v) => !v)} data-testid="contract-qr-toggle" className="inline-flex items-center gap-2 rounded-lg bg-white border border-neutral-300 text-neutral-900 text-sm font-semibold px-4 py-2.5 hover:bg-neutral-50"><QrCode size={16} /> QR</button>
+        <button onClick={downloadPdf} data-testid="contract-pdf" className="inline-flex items-center gap-2 rounded-lg bg-white border border-neutral-300 text-neutral-900 text-sm font-semibold px-4 py-2.5 hover:bg-neutral-50"><Download size={16} /> PDF İndir</button>
         <button onClick={() => window.print()} data-testid="contract-print" className="inline-flex items-center gap-2 rounded-lg bg-neutral-900 text-white text-sm font-semibold px-5 py-2.5 hover:bg-neutral-800"><Printer size={16} /> Yazdır</button>
       </div>
 

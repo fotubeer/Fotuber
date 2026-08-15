@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Menu, X, Camera, Phone, LogOut, User, Instagram, Youtube, Facebook, Music2, ShieldCheck, LayoutDashboard, Heart, IdCard, ChevronDown, BarChart3, Landmark } from "lucide-react";
+import { Menu, X, Camera, Phone, LogOut, User, Instagram, Youtube, Facebook, Music2, ShieldCheck, LayoutDashboard, Heart, IdCard, ChevronDown, BarChart3, Landmark, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
@@ -16,12 +16,15 @@ const navItems = [
   { to: "/hizmetler", label: "Hizmetler" },
   { to: "/fotuber-medya", label: "Fotuber Medya" },
   { to: "/galeri", label: "Galeri" },
-  { to: "/altin-saat", label: "Altın Saat", accent: true },
-  { to: "/tasarim-studyosu", label: "Davetiye Tasarım Stüdyosu", accent: true },
-  { to: "/indirim-kodu", label: "İndirim Kodu", accent: true },
+  { to: "/altin-saat", label: "Altın Saat", accent: true, promo: true },
+  { to: "/tasarim-studyosu", label: "Tasarım Stüdyosu", accent: true, promo: true },
+  { to: "/indirim-kodu", label: "İndirim Kodu", accent: true, promo: true },
   { to: "/hakkimizda", label: "Hakkımızda" },
   { to: "/iletisim", label: "İletişim" },
 ];
+const preItems = navItems.filter((n) => !n.promo && ["/", "/hizmetler", "/fotuber-medya", "/galeri"].includes(n.to));
+const promoItems = navItems.filter((n) => n.promo);
+const postItems = navItems.filter((n) => !n.promo && ["/hakkimizda", "/iletisim"].includes(n.to));
 
 const formatPhone = (raw) => {
   if (!raw) return "";
@@ -59,17 +62,43 @@ export const PublicLayout = ({ children }) => {
             </div>
           </Link>
 
-          <nav className="hidden lg:flex items-center justify-center flex-1 mx-2 min-w-0 lg:gap-2 xl:gap-4 2xl:gap-6">
-            {navItems.map((n) => (
+          <nav className="hidden lg:flex items-center justify-center flex-1 mx-2 min-w-0 lg:gap-2 xl:gap-3 2xl:gap-5">
+            {preItems.map((n) => (
               <NavLink
                 key={n.to}
                 to={n.to}
                 data-testid={`nav-${n.to.replace('/', '') || 'home'}`}
                 className={({ isActive }) =>
                   `relative whitespace-nowrap shrink-0 text-[11.5px] xl:text-[13px] 2xl:text-[14px] font-medium tracking-tight lg:tracking-normal transition-colors after:content-[''] after:absolute after:w-full after:scale-x-0 after:h-[1px] after:-bottom-1.5 after:left-0 after:bg-[#d4af37] after:origin-center hover:after:scale-x-100 after:transition-transform after:duration-300 after:ease-out ${
-                    isActive
-                      ? "text-[#d4af37] after:scale-x-100"
-                      : (n.accent ? "text-[#d4af37] hover:text-[#e8ca58] drop-shadow-[0_0_8px_rgba(212,175,55,0.3)]" : "text-neutral-300 hover:text-white")
+                    isActive ? "text-[#d4af37] after:scale-x-100" : "text-neutral-300 hover:text-white"
+                  }`
+                }
+              >
+                {n.label}
+              </NavLink>
+            ))}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button data-testid="nav-firsatlar" type="button" className="relative whitespace-nowrap shrink-0 flex items-center gap-1 text-[11.5px] xl:text-[13px] 2xl:text-[14px] font-medium text-[#d4af37] hover:text-[#e8ca58] drop-shadow-[0_0_8px_rgba(212,175,55,0.3)] cursor-pointer">
+                  Fırsatlar <ChevronDown className="w-3 h-3 opacity-80" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" className="w-52">
+                {promoItems.map((p) => (
+                  <DropdownMenuItem key={p.to} onClick={() => navigate(p.to)} data-testid={`nav-promo-${p.to.replace('/', '')}`} className="gap-2 cursor-pointer text-[#8a6d0f] font-medium">
+                    <Sparkles className="w-4 h-4 text-[#d4af37]" /> {p.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {postItems.map((n) => (
+              <NavLink
+                key={n.to}
+                to={n.to}
+                data-testid={`nav-${n.to.replace('/', '') || 'home'}`}
+                className={({ isActive }) =>
+                  `relative whitespace-nowrap shrink-0 text-[11.5px] xl:text-[13px] 2xl:text-[14px] font-medium tracking-tight lg:tracking-normal transition-colors after:content-[''] after:absolute after:w-full after:scale-x-0 after:h-[1px] after:-bottom-1.5 after:left-0 after:bg-[#d4af37] after:origin-center hover:after:scale-x-100 after:transition-transform after:duration-300 after:ease-out ${
+                    isActive ? "text-[#d4af37] after:scale-x-100" : "text-neutral-300 hover:text-white"
                   }`
                 }
               >
@@ -78,13 +107,13 @@ export const PublicLayout = ({ children }) => {
             ))}
           </nav>
 
-          <div className="hidden lg:flex items-center gap-2 xl:gap-2.5 shrink-0 min-w-max">
+          <div className="hidden lg:flex items-center gap-1.5 xl:gap-2 shrink-0 min-w-max">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <motion.button
                   data-testid="cta-davetiye"
                   type="button"
-                  className="rounded-full bg-gradient-to-r from-rose-500 to-pink-500 text-white font-semibold px-4 xl:px-5 h-9 xl:h-10 flex items-center gap-1.5 text-xs xl:text-sm shadow-[0_0_18px_rgba(244,63,94,0.4)] cursor-pointer whitespace-nowrap"
+                  className="rounded-full bg-gradient-to-r from-rose-500 to-pink-500 text-white font-semibold px-3 xl:px-4 h-9 xl:h-10 flex items-center gap-1.5 text-xs xl:text-sm shadow-[0_0_18px_rgba(244,63,94,0.4)] cursor-pointer whitespace-nowrap"
                   whileHover={{ scale: 1.06 }}
                   whileTap={{ scale: 0.95 }}
                 >
@@ -101,7 +130,7 @@ export const PublicLayout = ({ children }) => {
               </DropdownMenuContent>
             </DropdownMenu>
             <Link to="/randevu">
-              <Button data-testid="cta-book-appointment" className="rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 xl:px-5 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] transition-shadow duration-300 whitespace-nowrap">
+              <Button data-testid="cta-book-appointment" className="rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 xl:px-4 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] transition-shadow duration-300 whitespace-nowrap">
                 Randevu Al
               </Button>
             </Link>
@@ -120,6 +149,9 @@ export const PublicLayout = ({ children }) => {
                 <DropdownMenuItem onClick={() => navigate("/salon")} data-testid="menu-salon" className="gap-2 cursor-pointer">
                   <Landmark className="w-4 h-4 text-rose-500" /> Salon Girişi
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/medya")} data-testid="menu-media" className="gap-2 cursor-pointer">
+                  <Camera className="w-4 h-4 text-sky-500" /> Fotuber Medya (Firma)
+                </DropdownMenuItem>
                 {(!user || user.role === "member") && (
                   <DropdownMenuItem onClick={() => navigate("/personel-girisi")} data-testid="menu-staff-login" className="gap-2 cursor-pointer">
                     <ShieldCheck className="w-4 h-4 text-[#d4af37]" /> Personel Girişi
@@ -134,7 +166,7 @@ export const PublicLayout = ({ children }) => {
             </DropdownMenu>
             {user ? (
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-neutral-400 whitespace-nowrap hidden xl:inline" data-testid="navbar-user-name">
+                <span className="text-xs text-neutral-400 whitespace-nowrap hidden 2xl:inline max-w-[140px] truncate align-bottom" data-testid="navbar-user-name">
                   <User className="w-3.5 h-3.5 inline mr-1" strokeWidth={1.5} />
                   {user.name}{user.role === "member" ? " (Üye)" : ""}
                 </span>
@@ -142,10 +174,10 @@ export const PublicLayout = ({ children }) => {
                   data-testid="navbar-logout-btn"
                   variant="ghost"
                   onClick={async () => { await logout(); navigate("/"); }}
-                  className="text-neutral-300 hover:text-white h-9 px-3 gap-1.5 whitespace-nowrap"
-                  title="Çıkış Yap"
+                  className="text-neutral-300 hover:text-white h-9 px-2 2xl:px-3 gap-1.5 whitespace-nowrap"
+                  title={`Çıkış Yap${user.name ? " — " + user.name : ""}`}
                 >
-                  <LogOut className="w-4 h-4" /> Çıkış
+                  <LogOut className="w-4 h-4" /> <span className="hidden 2xl:inline">Çıkış</span>
                 </Button>
               </div>
             ) : null}
@@ -208,6 +240,11 @@ export const PublicLayout = ({ children }) => {
                   <Landmark className="w-4 h-4" /> Salon Girişi
                 </Button>
               </Link>
+              <Link to="/medya" onClick={() => setOpen(false)}>
+                <Button data-testid="m-cta-media" variant="outline" className="w-full rounded-full border-sky-400/40 bg-transparent text-sky-300 hover:bg-sky-500/10 font-semibold gap-1.5">
+                  <Camera className="w-4 h-4" /> Fotuber Medya (Firma)
+                </Button>
+              </Link>
               {user && user.role === "admin" && (
                 <Link to="/admin/dashboard" onClick={() => setOpen(false)}>
                   <Button className="w-full rounded-full bg-slate-900 hover:bg-slate-800 text-white gap-2">
@@ -251,6 +288,7 @@ export const PublicLayout = ({ children }) => {
               ))}
               <li><Link to="/studyo" className="text-blue-400 hover:text-blue-300">Stüdyo Paneli</Link></li>
               <li><Link to="/salon" className="text-rose-300 hover:text-rose-200" data-testid="footer-salon-login">Salon Girişi</Link></li>
+              <li><Link to="/medya" className="text-sky-300 hover:text-sky-200" data-testid="footer-media-login">Fotuber Medya (Firma)</Link></li>
               <li><Link to="/davetiye-olustur" className="text-rose-400 hover:text-rose-300">Davetiye Oluştur</Link></li>
               <li><Link to="/altin-saat" className="text-[#e6a24a] hover:text-[#f0b45f]">Altın Saat Hesaplayıcı</Link></li>
             </ul>

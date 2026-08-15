@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,9 @@ const CAT_LABELS = { album: "Albüm", canvas: "Kanvas Tablo", fine: "Fine Tablo"
 
 export default function ApptBuilder() {
   const navigate = useNavigate();
+  const { contractId } = useParams();
+  const editing = !!contractId;
+  const [ready, setReady] = useState(false);
   const [services, setServices] = useState([]);
   const [products, setProducts] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -40,9 +43,50 @@ export default function ApptBuilder() {
   const [consentMarketing, setConsentMarketing] = useState(false);
 
   useEffect(() => {
-    api.get("/appt-pro/services?active_only=true").then(({ data }) => setServices(data.services || [])).catch((e) => toast.error(formatApiError(e)));
-    api.get("/appt-pro/products?active_only=true").then(({ data }) => setProducts(data.products || [])).catch(() => {});
+    Promise.all([
+      api.get("/appt-pro/services?active_only=true").then(({ data }) => setServices(data.services || [])),
+      api.get("/appt-pro/products?active_only=true").then(({ data }) => setProducts(data.products || [])),
+    ]).catch((e) => toast.error(formatApiError(e))).finally(() => setReady(true));
   }, []);
+
+  // Düzenleme modu: var olan sözleşmeyi yükle ve seçimleri yeniden kur
+  useEffect(() => {
+    if (!ready || !contractId) return;
+    api.get(`/appt-pro/contracts/${contractId}`).then(({ data }) => {
+      const c = data.contract || {};
+      setBride({ name: c.bride_name || "", phone: c.bride_phone || "" });
+      setGroom({ name: c.groom_name || "", phone: c.groom_phone || "" });
+      setEv({ date: c.event_date || "", time: c.event_time || "", venue: c.venue || "" });
+      setParty({ role: c.party_role || "gelin", name: c.party_name || "", tc: c.party_tc || "",
+        email: c.party_email || "", address: c.party_address || "", phone: c.party_phone || "" });
+      setDiscount(c.discount_percent || 0);
+      setDeposit(c.deposit_amount || 0);
+      setPaid(c.deposit_amount || 0);
+      setManualTotal(c.total != null ? String(c.total) : "");
+      setPaymentMethod(c.payment_method || "cash");
+      setConsentSocial(!!c.consent_social);
+      setConsentMarketing(!!c.consent_marketing);
+      const nextSvc = {}, nextProd = {};
+      (c.line_items || []).forEach((it) => {
+        if (it.type === "service") {
+          const parts = (it.label || "").split(" · ");
+          const svc = services.find((s) => s.name === parts[0]);
+          if (svc) {
+            const optLabels = parts.slice(1).join(" · ").split(", ").filter(Boolean);
+            const optIds = (svc.options || []).filter((o) => optLabels.includes(o.label)).map((o) => o.id);
+            nextSvc[svc.id] = { selected: true, options: optIds };
+          }
+        } else if (it.type === "product") {
+          const m = (it.label || "").match(/×(\d+)\s*$/);
+          const qty = m ? Number(m[1]) : 1;
+          const prod = products.find((p) => (it.label || "").startsWith(`${CAT_LABELS[p.category] || p.category} · ${p.name}`));
+          if (prod) nextProd[prod.id] = qty;
+        }
+      });
+      setSvcSel(nextSvc);
+      setProdQty(nextProd);
+    }).catch((e) => toast.error(formatApiError(e)));
+  }, [ready, contractId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Taraf otomatik doldurma
   useEffect(() => {
@@ -115,6 +159,12 @@ export default function ApptBuilder() {
         remaining_amount: remaining, consent_social: consentSocial, consent_marketing: consentMarketing,
         brand_variant: brandVariant, payment_method: paymentMethod,
       };
+      if (editing) {
+        await api.put(`/appt-pro/contracts/${contractId}`, contract);
+        toast.success("Sözleşme güncellendi");
+        navigate(`/admin/sozlesme/${contractId}`);
+        return;
+      }
       const payload = {
         customer_name: `${bride.name}${bride.name && groom.name ? " & " : ""}${groom.name}`.trim(),
         customer_phone: bride.phone || groom.phone || "",
@@ -138,7 +188,7 @@ export default function ApptBuilder() {
           <button onClick={() => navigate("/admin/randevular")} className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900" data-testid="builder-back">
             <ArrowLeft size={16} /> Randevular
           </button>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2"><FileText className="text-slate-700" /> Fiziki Randevu & Sözleşme</h1>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2"><FileText className="text-slate-700" /> {editing ? "Sözleşmeyi Düzenle" : "Fiziki Randevu & Sözleşme"}</h1>
           <div className="w-24" />
         </div>
 
@@ -274,7 +324,7 @@ export default function ApptBuilder() {
 
         <div className="flex justify-end pb-10">
           <Button data-testid="builder-save" onClick={save} disabled={saving} className="bg-slate-900 hover:bg-slate-800 h-12 px-8 text-base">
-            {saving ? "Oluşturuluyor…" : "Sözleşmeyi Oluştur & Önizle"}
+            {saving ? "Kaydediliyor…" : (editing ? "Sözleşmeyi Güncelle" : "Sözleşmeyi Oluştur & Önizle")}
           </Button>
         </div>
       </div>

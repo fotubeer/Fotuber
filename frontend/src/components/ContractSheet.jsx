@@ -57,10 +57,10 @@ export default function ContractSheet({ contract: c, settings: s }) {
   };
 
   return (
-    <div className="sheet bg-white mx-auto shadow-xl" data-testid="contract-sheet"
-      style={{ width: "820px", maxWidth: "95%", padding: "40px 46px", fontFamily: bodyFont, color: textColor }}>
+    <div className="sheet bg-white mx-auto shadow-xl p-4 sm:p-[46px]" data-testid="contract-sheet"
+      style={{ width: "820px", maxWidth: "95%", fontFamily: bodyFont, color: textColor }}>
       {/* Header */}
-      <div className="flex items-start justify-between pb-4" style={{ borderBottom: `2px solid ${accent}` }}>
+      <div className="flex items-start justify-between gap-2 flex-wrap pb-4" style={{ borderBottom: `2px solid ${accent}` }}>
         <div className={`flex items-center gap-4 ${align === "center" ? "mx-auto text-center flex-col" : ""}`}>
           <Emblem />
           <div className={align === "center" ? "text-center" : ""}>
@@ -75,7 +75,7 @@ export default function ContractSheet({ contract: c, settings: s }) {
       </div>
 
       {/* Parties + finance */}
-      <div className="grid grid-cols-2 gap-5 mt-5 text-[13px]">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 mt-5 text-[13px]">
         <div className="rounded-xl border p-4" style={{ borderColor: "#e5e7eb" }}>
           <div className="text-[10px] font-bold tracking-widest mb-2" style={{ opacity: 0.45 }}>MÜŞTERİ BİLGİLERİ</div>
           <Line k="Çiftin İsmi" v={coupleName} />
@@ -105,7 +105,7 @@ export default function ContractSheet({ contract: c, settings: s }) {
       {/* Hizmet seçimi */}
       <div className="mt-5">
         <div className="text-center text-sm font-bold tracking-widest py-1.5 rounded text-white" style={{ background: accent }}>HİZMET SEÇİMİ</div>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-3 text-[13px]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-3 text-[13px]">
           {(c.line_items || []).map((it, i) => (
             <div key={i} className="flex items-center gap-2">
               <span className="inline-flex items-center justify-center w-4 h-4 rounded-sm text-white" style={{ background: accent }}><Check size={12} /></span>
@@ -152,7 +152,7 @@ export default function ContractSheet({ contract: c, settings: s }) {
       )}
 
       {/* İmza */}
-      <div className="mt-8 grid grid-cols-2 gap-10 text-center text-sm">
+      <div className="mt-8 grid grid-cols-2 gap-6 sm:gap-10 text-center text-sm">
         <div><div className="border-t pt-2 font-semibold" style={{ borderColor: "#9ca3af" }}>HİZMET VEREN</div></div>
         <div>
           {c.signature && <img src={c.signature} alt="imza" className="h-16 mx-auto object-contain" data-testid="contract-signature" />}
