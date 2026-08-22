@@ -129,7 +129,7 @@ export const PublicLayout = ({ children }) => {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Link to="/randevu">
+            <Link to="/randevu-al">
               <Button data-testid="cta-book-appointment" className="rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-3 xl:px-4 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] transition-shadow duration-300 whitespace-nowrap">
                 Randevu Al
               </Button>
@@ -220,7 +220,7 @@ export const PublicLayout = ({ children }) => {
                   {n.label}
                 </NavLink>
               ))}
-              <Link to="/randevu" onClick={() => setOpen(false)}>
+              <Link to="/randevu-al" onClick={() => setOpen(false)}>
                 <Button className="w-full rounded-full bg-emerald-500 hover:bg-emerald-600 text-black font-semibold">Randevu Al</Button>
               </Link>
               <Link to="/davetiye-olustur" onClick={() => setOpen(false)}>
@@ -338,7 +338,7 @@ export const PublicLayout = ({ children }) => {
           </div>
           <div>
             <div className="text-xs uppercase tracking-[0.2em] text-neutral-500 mb-4">Randevu</div>
-            <Link to="/randevu">
+            <Link to="/randevu-al">
               <Button className="rounded-full bg-[#d4af37] text-black hover:bg-[#b5952f] w-full">Şimdi Rezerve Et</Button>
             </Link>
           </div>

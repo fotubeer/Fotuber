@@ -12,19 +12,23 @@ from pydantic import BaseModel, Field
 
 
 # ── Varsayılan tohum verileri (contract örneğinden) ─────────────────────────
+# kind: "event" (mekanlı organizasyon) | "service" (çekim hizmeti)
 DEFAULT_SERVICES = [
-    {"name": "İsteme / Nişan", "venue_enabled": True,
+    # ── Etkinlikler (Nişan Evi / mekanlı) ──
+    {"name": "İsteme / Nişan", "kind": "event", "venue_enabled": True,
      "options": ["İkramlı", "İkramsız", "Fotoğraflı", "Klipli"]},
-    {"name": "Doğum Günü", "venue_enabled": True,
+    {"name": "Doğum Günü", "kind": "event", "venue_enabled": True,
      "options": ["İkramlı", "İkramsız", "Fotoğraflı", "Klipli"]},
-    {"name": "Bride", "venue_enabled": True,
+    {"name": "Bride", "kind": "event", "venue_enabled": True,
      "options": ["İkramlı", "İkramsız", "Fotoğraflı", "Klipli"]},
-    {"name": "Davet / Toplantı", "venue_enabled": True,
+    {"name": "Davet / Toplantı", "kind": "event", "venue_enabled": True,
      "options": ["İkramlı", "İkramsız", "Fotoğraflı", "Klipli"]},
-    {"name": "Dış Çekim", "venue_enabled": False, "options": []},
-    {"name": "Reels Çekimi", "venue_enabled": False, "options": []},
-    {"name": "Klip Çekimi", "venue_enabled": False, "options": []},
-    {"name": "Drone", "venue_enabled": False, "options": []},
+    # ── Hizmetler (fotoğrafçılık / çekim) ──
+    {"name": "Dış Çekim", "kind": "service", "venue_enabled": False, "options": []},
+    {"name": "Reels Çekimi", "kind": "service", "venue_enabled": False, "options": []},
+    {"name": "Klip Çekimi", "kind": "service", "venue_enabled": False, "options": []},
+    {"name": "Drone", "kind": "service", "venue_enabled": False, "options": []},
+    {"name": "Aktüel Kamera", "kind": "service", "venue_enabled": False, "options": []},
 ]
 
 DEFAULT_PRODUCTS = [
@@ -67,6 +71,31 @@ DEFAULT_CLAUSES = [
 
 DEFAULT_ACCEPTANCE = "Müşteri, işbu sözleşmenin yukarıda belirtilen tüm maddelerini okumuş, anlamış ve tüm şartları kabul ederek imzalamıştır."
 
+# Fotoğrafçılık (çekim) sözleşmesi — mekan/organizasyon maddeleri olmadan.
+DEFAULT_CLAUSES_PHOTO = [
+    {"title": "MADDE 1 - SÖZLEŞMENİN KAPSAMI",
+     "body": "İşbu sözleşme, seçilen fotoğraf/video çekim hizmetinin öncesi, esnası ve sonrasında tarafların hak ve yükümlülüklerinin belirlenmesi amacıyla hazırlanmıştır."},
+    {"title": "MADDE 2 - İŞLETMENİN YÜKÜMLÜLÜKLERİ",
+     "body": "İşletme, sözleşmede belirlenen çekim hizmetini kararlaştırılan tarih ve saatte, mesleki özen ve profesyonellik ile yerine getirmeyi taahhüt eder. Teslim edilecek fotoğraf/video sayısı ve formatı hizmet içeriğinde belirtildiği gibidir."},
+    {"title": "MADDE 3 - MÜŞTERİNİN YÜKÜMLÜLÜKLERİ",
+     "body": "Müşteri, sözleşmede belirlenen hizmet bedelini ödemekle ve çekim için kararlaştırılan tarih/saatte hazır bulunmakla yükümlüdür."},
+    {"title": "MADDE 4 - ÜCRET VE ÖDEME ŞEKLİ",
+     "body": "1 - Hizmet bedeli KDV dahil {{toplam}} TL'dir.\n2 - {{cayma}} TL kapora sözleşmenin imzalandığı gün peşin olarak ödenecek, kalan {{kalan}} TL ise çekim/teslim günü ödenecektir. Kapora, çekim tarihinin müşteri için rezerve edilmesi karşılığı alınmakta olup müşterinin cayması hâlinde iade edilmez."},
+    {"title": "MADDE 5 - ÖZEL ŞARTLAR",
+     "body": "1. Çekim tarihinin müşteri tarafından değiştirilmesi talebi, en az 7 gün önceden bildirilmek kaydıyla işletmenin uygunluğuna göre değerlendirilir.\n2. Ham (işlenmemiş) görseller teslim edilmez; teslimat, işletmenin düzenlediği son hâlleriyle yapılır.\n3. Hava koşulları veya mücbir sebeplerle dış çekimin ertelenmesi hâlinde yeni tarih ortak belirlenir.\n4. Teslim süresi, çekim tarihinden itibaren işletmece belirtilen süredir."},
+    {"title": "MADDE 6 - ESER VE KULLANIM HAKLARI",
+     "body": "Çekilen görsellerin telif/eser hakları işletmeye aittir. Müşterinin görsel kullanım (sosyal medya / tanıtım) tercihleri sözleşmede belirtilen izinler doğrultusunda uygulanır."},
+]
+
+# Standart KVKK aydınlatma + iletişim/ticari ileti onay metni (public randevu formu).
+DEFAULT_KVKK = ("6698 sayılı Kişisel Verilerin Korunması Kanunu (KVKK) kapsamında; ad, soyad, "
+    "telefon ve e-posta bilgilerimin randevu talebimin değerlendirilmesi ve tarafımla iletişime "
+    "geçilmesi amacıyla işlenmesini kabul ediyorum. Ayrıca tarafıma telefonla arama, SMS/mesaj, "
+    "e-posta yoluyla bilgilendirme yapılmasına; kampanya, indirim ve reklam içerikli ticari elektronik "
+    "iletiler gönderilmesine açık rıza veriyorum.")
+
+DEFAULT_WORKING_HOURS = {"start": "09:00", "end": "22:00"}
+
 # Sözleşme görsel tasarımı — tamamı admin tarafından yönetilebilir.
 DEFAULT_DESIGN = {
     "accent_color": "#111827",
@@ -81,7 +110,7 @@ DEFAULT_DESIGN = {
     "subtitle": "HİZMET SÖZLEŞMESİ",
     "title_size": 30,
 }
-DEFAULT_BRAND_VENUE = "FOTUBER Photography & Davet Evi"
+DEFAULT_BRAND_VENUE = "FOTUBER Davet Evi"
 DEFAULT_BRAND_PHOTO = "FOTUBER Photography"
 
 
@@ -105,18 +134,21 @@ def _build_contract_pdf(c: dict, s: dict) -> bytes:
 
     d = s.get("design") or {}
     accent = colors.HexColor(d.get("accent_color") or "#111827")
-    brand = (s.get("brand_name_photo") if c.get("brand_variant") == "photo" else s.get("brand_name_venue")) or s.get("company_name") or "Fotuber"
+    is_photo = c.get("brand_variant") == "photo"
+    brand = (s.get("brand_name_photo") if is_photo else s.get("brand_name_venue")) or s.get("company_name") or "Fotuber"
+    # Sözleşme türüne göre madde seti seç (fotoğrafçılık vs nişan evi)
+    clauses = (s.get("clauses_photo") if is_photo else s.get("clauses")) or s.get("clauses") or []
     couple = f"{c.get('bride_name','')}{' & ' if c.get('bride_name') and c.get('groom_name') else ''}{c.get('groom_name','')}".strip() or c.get("customer_name") or "—"
     role = {"gelin": "Gelin", "damat": "Damat", "diger": "Diğer"}.get(c.get("party_role"), "—")
 
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=16*mm, rightMargin=16*mm, topMargin=14*mm, bottomMargin=14*mm)
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=14*mm, rightMargin=14*mm, topMargin=10*mm, bottomMargin=8*mm)
     styles = getSampleStyleSheet()
-    h_title = ParagraphStyle("t", parent=styles["Title"], fontSize=20, textColor=accent, spaceAfter=2)
-    sub = ParagraphStyle("s", parent=styles["Normal"], fontSize=9, textColor=colors.grey, spaceAfter=8)
-    body = ParagraphStyle("b", parent=styles["Normal"], fontSize=8.5, leading=12)
-    clause_t = ParagraphStyle("ct", parent=styles["Normal"], fontSize=9, textColor=accent, spaceBefore=6, spaceAfter=1, fontName="Helvetica-Bold")
-    sec = ParagraphStyle("sec", parent=styles["Normal"], fontSize=10, textColor=colors.white, alignment=1, spaceBefore=4, spaceAfter=4)
+    h_title = ParagraphStyle("t", parent=styles["Title"], fontSize=17, textColor=accent, spaceAfter=1)
+    sub = ParagraphStyle("s", parent=styles["Normal"], fontSize=8, textColor=colors.grey, spaceAfter=5)
+    body = ParagraphStyle("b", parent=styles["Normal"], fontSize=7, leading=8.6)
+    clause_t = ParagraphStyle("ct", parent=styles["Normal"], fontSize=7.3, textColor=accent, spaceBefore=3, spaceAfter=0.5, fontName="Helvetica-Bold")
+    sec = ParagraphStyle("sec", parent=styles["Normal"], fontSize=8.5, textColor=colors.white, alignment=1, spaceBefore=2, spaceAfter=2)
 
     el = []
     el.append(Paragraph(brand, h_title))
@@ -133,30 +165,30 @@ def _build_contract_pdf(c: dict, s: dict) -> bytes:
         ["Ödeme Şekli", ("Kart" if c.get("payment_method") == "card" else "Nakit"), "", ""],
     ]
     t = Table([[Paragraph(f"<b>{a}</b>", body), Paragraph(str(b), body), Paragraph(f"<b>{cc}</b>", body), Paragraph(str(dd), body)] for a, b, cc, dd in info],
-              colWidths=[32*mm, 58*mm, 34*mm, 54*mm])
-    t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#e5e7eb")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+              colWidths=[30*mm, 60*mm, 34*mm, 58*mm])
+    t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#e5e7eb")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]))
     el.append(t)
-    el.append(Spacer(1, 6))
+    el.append(Spacer(1, 3))
 
     # Hizmet seçimi
-    bar = Table([[Paragraph("HİZMET SEÇİMİ", sec)]], colWidths=[178*mm]); bar.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), accent)]))
+    bar = Table([[Paragraph("HİZMET SEÇİMİ", sec)]], colWidths=[182*mm]); bar.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), accent)]))
     el.append(bar)
     for it in (c.get("line_items") or []):
         el.append(Paragraph(f"☑ {it.get('label','')} &nbsp;&nbsp; <font color='#888'>{money(it.get('price')) if it.get('price') else ''}</font>", body))
-    el.append(Spacer(1, 4))
+    el.append(Spacer(1, 2))
     el.append(Paragraph(f"Görsel İzni — Sosyal medya: <b>{'EVET' if c.get('consent_social') else 'HAYIR'}</b> &nbsp;·&nbsp; Ürün/Kampanya: <b>{'EVET' if c.get('consent_marketing') else 'HAYIR'}</b>", body))
-    el.append(Spacer(1, 6))
+    el.append(Spacer(1, 3))
 
-    bar2 = Table([[Paragraph("SÖZLEŞME MADDELERİ VE ÖDEME PLANI", sec)]], colWidths=[178*mm]); bar2.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), accent)]))
+    bar2 = Table([[Paragraph("SÖZLEŞME MADDELERİ VE ÖDEME PLANI", sec)]], colWidths=[182*mm]); bar2.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), accent)]))
     el.append(bar2)
-    for cl in (s.get("clauses") or []):
+    for cl in clauses:
         el.append(Paragraph(cl.get("title", ""), clause_t))
         el.append(Paragraph(fill(cl.get("body", "")).replace("\n", "<br/>"), body))
     if s.get("acceptance_text"):
-        el.append(Spacer(1, 4)); el.append(Paragraph(f"<b>{s['acceptance_text']}</b>", body))
+        el.append(Spacer(1, 2)); el.append(Paragraph(f"<b>{s['acceptance_text']}</b>", body))
     if c.get("approval_status") == "approved":
-        el.append(Spacer(1, 4)); el.append(Paragraph(f"<font color='#059669'><b>✔ Dijital olarak onaylandı — {c.get('approver_name','')} ({(c.get('approved_at') or '')[:10]})</b></font>", body))
-    el.append(Spacer(1, 14))
+        el.append(Spacer(1, 2)); el.append(Paragraph(f"<font color='#059669'><b>✔ Dijital olarak onaylandı — {c.get('approver_name','')} ({(c.get('approved_at') or '')[:10]})</b></font>", body))
+    el.append(Spacer(1, 6))
     # İmza görseli (varsa) — HİZMET ALAN üstüne
     sig_img = None
     sig_data = c.get("signature") or ""
@@ -165,15 +197,15 @@ def _build_contract_pdf(c: dict, s: dict) -> bytes:
             import base64 as _b64
             from reportlab.platypus import Image as _Image
             raw = _b64.b64decode(sig_data.split(",", 1)[1])
-            sig_img = _Image(io.BytesIO(raw), width=55*mm, height=22*mm, kind="proportional")
+            sig_img = _Image(io.BytesIO(raw), width=48*mm, height=18*mm, kind="proportional")
         except Exception:
             sig_img = None
     right_cell = sig_img if sig_img else ""
-    sig = Table([[ "", right_cell ], ["HİZMET VEREN", "HİZMET ALAN"]], colWidths=[89*mm, 89*mm])
+    sig = Table([[ "", right_cell ], ["HİZMET VEREN", "HİZMET ALAN"]], colWidths=[91*mm, 91*mm])
     sig.setStyle(TableStyle([
         ("LINEABOVE", (0, 1), (-1, 1), 0.6, colors.grey),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("VALIGN", (0, 0), (-1, 0), "BOTTOM"),
-        ("FONTSIZE", (0, 1), (-1, 1), 9), ("TOPPADDING", (0, 1), (-1, 1), 4),
+        ("FONTSIZE", (0, 1), (-1, 1), 8), ("TOPPADDING", (0, 1), (-1, 1), 2),
     ]))
     el.append(sig)
 
@@ -195,8 +227,20 @@ def get_router(db, deps):
             for i, s in enumerate(DEFAULT_SERVICES):
                 await db.appt_services.insert_one({
                     "id": new_id(), "name": s["name"], "active": True, "sort": i,
-                    "base_price": 0, "venue_enabled": s["venue_enabled"],
+                    "base_price": 0, "kind": s.get("kind", "service"), "venue_enabled": s["venue_enabled"],
                     "options": [{"id": new_id(), "label": o, "price": 0} for o in s["options"]],
+                    "created_at": now_iso(),
+                })
+        else:
+            # Backfill: eski kayıtlara kind ekle (venue_enabled → event, aksi → service)
+            async for s in db.appt_services.find({"kind": {"$exists": False}}, {"_id": 0, "id": 1, "venue_enabled": 1}):
+                await db.appt_services.update_one({"id": s["id"]}, {"$set": {"kind": "event" if s.get("venue_enabled") else "service"}})
+            # "Aktüel Kamera" yoksa ekle
+            if not await db.appt_services.find_one({"name": "Aktüel Kamera"}):
+                cnt = await db.appt_services.count_documents({})
+                await db.appt_services.insert_one({
+                    "id": new_id(), "name": "Aktüel Kamera", "active": True, "sort": cnt,
+                    "base_price": 0, "kind": "service", "venue_enabled": False, "options": [],
                     "created_at": now_iso(),
                 })
         if await db.appt_products.count_documents({}) == 0:
@@ -209,7 +253,9 @@ def get_router(db, deps):
             await db.appt_contract_settings.insert_one({
                 "id": "global", "company_name": DEFAULT_BRAND_VENUE,
                 "brand_name_venue": DEFAULT_BRAND_VENUE, "brand_name_photo": DEFAULT_BRAND_PHOTO,
-                "logo_url": "", "clauses": DEFAULT_CLAUSES, "acceptance_text": DEFAULT_ACCEPTANCE,
+                "logo_url": "", "clauses": DEFAULT_CLAUSES, "clauses_photo": DEFAULT_CLAUSES_PHOTO,
+                "acceptance_text": DEFAULT_ACCEPTANCE, "kvkk_text": DEFAULT_KVKK,
+                "working_hours": DEFAULT_WORKING_HOURS,
                 "design": DEFAULT_DESIGN, "require_signature": True, "created_at": now_iso(),
             })
         else:
@@ -223,12 +269,16 @@ def get_router(db, deps):
             if "brand_name_venue" not in doc: patch["brand_name_venue"] = doc.get("company_name") or DEFAULT_BRAND_VENUE
             if "brand_name_photo" not in doc: patch["brand_name_photo"] = DEFAULT_BRAND_PHOTO
             if "require_signature" not in doc: patch["require_signature"] = True
+            if "clauses_photo" not in doc: patch["clauses_photo"] = DEFAULT_CLAUSES_PHOTO
+            if "kvkk_text" not in doc: patch["kvkk_text"] = DEFAULT_KVKK
+            if "working_hours" not in doc: patch["working_hours"] = DEFAULT_WORKING_HOURS
             if patch:
                 await db.appt_contract_settings.update_one({"id": "global"}, {"$set": patch})
 
     def _svc_out(s):
         return {"id": s["id"], "name": s.get("name"), "active": s.get("active", True),
                 "sort": s.get("sort", 0), "base_price": s.get("base_price", 0),
+                "kind": s.get("kind", "service"),
                 "venue_enabled": s.get("venue_enabled", False), "options": s.get("options", [])}
 
     def _prod_out(p):
@@ -249,13 +299,16 @@ def get_router(db, deps):
         active: bool = True
         sort: int = 0
         base_price: float = 0
+        kind: str = "service"          # service | event
         venue_enabled: bool = False
         options: List[OptionIn] = []
 
     @router.get("/services")
-    async def list_services(active_only: bool = False, acc: dict = Depends(staff)):
+    async def list_services(active_only: bool = False, kind: Optional[str] = None, acc: dict = Depends(staff)):
         await _seed()
-        q = {"active": True} if active_only else {}
+        q = {}
+        if active_only: q["active"] = True
+        if kind in ("service", "event"): q["kind"] = kind
         rows = await db.appt_services.find(q, {"_id": 0}).sort("sort", 1).to_list(500)
         return {"services": [_svc_out(s) for s in rows]}
 
@@ -263,6 +316,7 @@ def get_router(db, deps):
     async def create_service(payload: ServiceIn, admin: dict = Depends(require_admin)):
         doc = {"id": new_id(), "name": payload.name.strip(), "active": payload.active,
                "sort": payload.sort, "base_price": payload.base_price,
+               "kind": payload.kind if payload.kind in ("service", "event") else "service",
                "venue_enabled": payload.venue_enabled,
                "options": [{"id": o.id or new_id(), "label": o.label.strip(), "price": o.price} for o in payload.options],
                "created_at": now_iso()}
@@ -273,6 +327,7 @@ def get_router(db, deps):
     async def update_service(sid: str, payload: ServiceIn, admin: dict = Depends(require_admin)):
         upd = {"name": payload.name.strip(), "active": payload.active, "sort": payload.sort,
                "base_price": payload.base_price, "venue_enabled": payload.venue_enabled,
+               "kind": payload.kind if payload.kind in ("service", "event") else "service",
                "options": [{"id": o.id or new_id(), "label": o.label.strip(), "price": o.price} for o in payload.options]}
         r = await db.appt_services.update_one({"id": sid}, {"$set": upd})
         if r.matched_count == 0:
@@ -342,7 +397,10 @@ def get_router(db, deps):
         brand_name_photo: Optional[str] = None
         logo_url: Optional[str] = None
         clauses: Optional[List[ClauseIn]] = None
+        clauses_photo: Optional[List[ClauseIn]] = None
         acceptance_text: Optional[str] = None
+        kvkk_text: Optional[str] = None
+        working_hours: Optional[dict] = None
         design: Optional[dict] = None
         require_signature: Optional[bool] = None
 
@@ -360,7 +418,10 @@ def get_router(db, deps):
         if payload.brand_name_photo is not None: upd["brand_name_photo"] = payload.brand_name_photo
         if payload.logo_url is not None: upd["logo_url"] = payload.logo_url
         if payload.acceptance_text is not None: upd["acceptance_text"] = payload.acceptance_text
+        if payload.kvkk_text is not None: upd["kvkk_text"] = payload.kvkk_text
+        if payload.working_hours is not None: upd["working_hours"] = payload.working_hours
         if payload.clauses is not None: upd["clauses"] = [{"title": c.title, "body": c.body} for c in payload.clauses]
+        if payload.clauses_photo is not None: upd["clauses_photo"] = [{"title": c.title, "body": c.body} for c in payload.clauses_photo]
         if payload.design is not None: upd["design"] = {**DEFAULT_DESIGN, **payload.design}
         if payload.require_signature is not None: upd["require_signature"] = payload.require_signature
         await db.appt_contract_settings.update_one({"id": "global"}, {"$set": upd}, upsert=True)
@@ -611,5 +672,126 @@ def get_router(db, deps):
             })
         appt.pop("_id", None)
         return {"appointment_id": appt_id, "contract_id": c["id"]}
+
+    # =====================================================================
+    # TAKVİM & TATİL KAPATMA — admin belirli gün/saatleri kapatır
+    # =====================================================================
+    class BlockIn(BaseModel):
+        date: str                       # YYYY-MM-DD
+        all_day: bool = True
+        start: str = ""                 # HH:MM (all_day=False ise)
+        end: str = ""
+        note: str = ""
+
+    def _block_out(b):
+        return {k: v for k, v in b.items() if k != "_id"}
+
+    @router.get("/blocks")
+    async def list_blocks(acc: dict = Depends(staff)):
+        rows = await db.appt_blocks.find({}, {"_id": 0}).sort("date", 1).to_list(2000)
+        return {"blocks": rows}
+
+    @router.post("/blocks")
+    async def create_block(payload: BlockIn, admin: dict = Depends(require_admin)):
+        if not payload.date:
+            raise HTTPException(status_code=400, detail="Tarih zorunludur")
+        doc = {"id": new_id(), "date": payload.date, "all_day": payload.all_day,
+               "start": payload.start, "end": payload.end, "note": payload.note,
+               "created_at": now_iso()}
+        await db.appt_blocks.insert_one(doc)
+        return {"block": _block_out(doc)}
+
+    @router.delete("/blocks/{bid}")
+    async def delete_block(bid: str, admin: dict = Depends(require_admin)):
+        await db.appt_blocks.delete_one({"id": bid})
+        return {"ok": True}
+
+    # =====================================================================
+    # PUBLIC — müşteri randevu TALEBİ (admin dönüş yapar) + KVKK
+    # =====================================================================
+    @router.get("/public/day-status")
+    async def public_day_status(date: str):
+        """Müşteriye bir günün kapalı olup olmadığını ve çalışma saatlerini döner."""
+        await _seed()
+        s = await db.appt_contract_settings.find_one({"id": "global"}, {"_id": 0}) or {}
+        wh = s.get("working_hours") or DEFAULT_WORKING_HOURS
+        blocks = await db.appt_blocks.find({"date": date}, {"_id": 0}).to_list(200)
+        full_closed = any(b.get("all_day") for b in blocks)
+        ranges = [{"start": b.get("start"), "end": b.get("end")} for b in blocks if not b.get("all_day") and b.get("start")]
+        return {"date": date, "closed": full_closed, "blocked_ranges": ranges, "working_hours": wh}
+
+    @router.get("/public/settings")
+    async def public_settings():
+        await _seed()
+        s = await db.appt_contract_settings.find_one({"id": "global"}, {"_id": 0}) or {}
+        events = await db.appt_services.find({"active": True, "kind": "event"}, {"_id": 0, "name": 1}).sort("sort", 1).to_list(100)
+        svcs = await db.appt_services.find({"active": True, "kind": "service"}, {"_id": 0, "name": 1}).sort("sort", 1).to_list(100)
+        return {"kvkk_text": s.get("kvkk_text") or DEFAULT_KVKK,
+                "working_hours": s.get("working_hours") or DEFAULT_WORKING_HOURS,
+                "event_types": [e["name"] for e in events] + [v["name"] for v in svcs]}
+
+    class RequestIn(BaseModel):
+        name: str = Field(min_length=2, max_length=120)
+        phone: str = Field(min_length=5, max_length=30)
+        email: str = ""
+        event_type: str = ""
+        date: str = ""
+        time: str = ""
+        note: str = ""
+        kvkk_accepted: bool = False
+        comms_consent: bool = False    # arama/SMS/e-posta/kampanya izni
+
+    @router.post("/public/requests")
+    async def create_request(payload: RequestIn):
+        if not payload.kvkk_accepted:
+            raise HTTPException(status_code=400, detail="Devam etmek için KVKK ve iletişim iznini onaylamalısınız")
+        # Kapalı gün kontrolü
+        if payload.date:
+            blocks = await db.appt_blocks.find({"date": payload.date}, {"_id": 0}).to_list(200)
+            if any(b.get("all_day") for b in blocks):
+                raise HTTPException(status_code=400, detail="Seçtiğiniz tarih müsait değildir. Lütfen başka bir gün seçin.")
+            if payload.time:
+                for b in blocks:
+                    if not b.get("all_day") and b.get("start") and b.get("end") and b["start"] <= payload.time < b["end"]:
+                        raise HTTPException(status_code=400, detail="Seçtiğiniz saat aralığı müsait değildir.")
+        doc = {"id": new_id(), "name": payload.name.strip(), "phone": payload.phone.strip(),
+               "email": payload.email.strip(), "event_type": payload.event_type.strip(),
+               "date": payload.date, "time": payload.time, "note": payload.note.strip(),
+               "kvkk_accepted": True, "comms_consent": bool(payload.comms_consent),
+               "status": "new", "admin_note": "", "created_at": now_iso()}
+        await db.appt_requests.insert_one(doc)
+        await db.notifications.insert_one({
+            "id": new_id(), "type": "appt_request", "title": "Yeni Randevu Talebi",
+            "message": f"{doc['name']} ({doc['phone']}) — {doc['event_type'] or 'Randevu'} · {doc['date'] or ''} {doc['time'] or ''}".strip(),
+            "read": False, "created_at": now_iso(),
+        })
+        return {"ok": True, "id": doc["id"]}
+
+    class RequestUpdateIn(BaseModel):
+        status: Optional[str] = None    # new | contacted | converted | rejected
+        admin_note: Optional[str] = None
+
+    @router.get("/requests")
+    async def list_requests(acc: dict = Depends(staff)):
+        rows = await db.appt_requests.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+        unseen = await db.appt_requests.count_documents({"status": "new"})
+        return {"requests": rows, "unseen": unseen}
+
+    @router.patch("/requests/{rid}")
+    async def update_request(rid: str, payload: RequestUpdateIn, acc: dict = Depends(staff)):
+        upd = {}
+        if payload.status is not None: upd["status"] = payload.status
+        if payload.admin_note is not None: upd["admin_note"] = payload.admin_note
+        if not upd:
+            return {"ok": True}
+        r = await db.appt_requests.update_one({"id": rid}, {"$set": upd})
+        if r.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Talep bulunamadı")
+        return {"ok": True}
+
+    @router.delete("/requests/{rid}")
+    async def delete_request(rid: str, admin: dict = Depends(require_admin)):
+        await db.appt_requests.delete_one({"id": rid})
+        return {"ok": True}
 
     return router

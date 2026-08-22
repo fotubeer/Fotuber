@@ -64,6 +64,7 @@ export default function ApptBuilder() {
       setPaid(c.deposit_amount || 0);
       setManualTotal(c.total != null ? String(c.total) : "");
       setPaymentMethod(c.payment_method || "cash");
+      setBrandVariant(c.brand_variant || "venue");
       setConsentSocial(!!c.consent_social);
       setConsentMarketing(!!c.consent_marketing);
       const nextSvc = {}, nextProd = {};
@@ -131,11 +132,11 @@ export default function ApptBuilder() {
   const total = useMemo(() => (manualTotal !== "" && !isNaN(Number(manualTotal)) ? Number(manualTotal) : autoTotal), [manualTotal, autoTotal]);
   const remaining = useMemo(() => Math.max(0, total - (Number(deposit) || 0)), [total, deposit]);
 
-  // Marka: seçili hizmetlerden herhangi biri "mekan/davet" ise Davet Evi, yoksa sadece çekim → Photography
-  const brandVariant = useMemo(() => {
-    const anyVenue = services.some((s) => svcSel[s.id]?.selected && s.venue_enabled);
-    return anyVenue ? "venue" : "photo";
-  }, [services, svcSel]);
+  // Marka / Sözleşme türü: ADMIN MANUEL seçer (fotoğrafçılık vs nişan evi)
+  const [brandVariant, setBrandVariant] = useState("venue"); // venue (Nişan Evi) | photo (Fotoğrafçılık)
+
+  const eventList = useMemo(() => services.filter((s) => (s.kind || "service") === "event"), [services]);
+  const serviceList = useMemo(() => services.filter((s) => (s.kind || "service") === "service"), [services]);
 
   const productsByCat = useMemo(() => {
     const m = {};
@@ -211,38 +212,37 @@ export default function ApptBuilder() {
           </CardContent>
         </Card>
 
-        {/* Hizmetler */}
-        <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Camera size={17} /> Hizmet & Etkinlik Türü</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            {services.length === 0 && <p className="text-sm text-slate-400">Katalogda aktif hizmet yok. Admin panelinden ekleyin.</p>}
-            {services.map((s) => {
-              const sel = svcSel[s.id];
-              return (
-                <div key={s.id} data-testid={`svc-${s.id}`} className={`rounded-xl border p-3 ${sel?.selected ? "border-slate-900 bg-slate-50" : "border-slate-200"}`}>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox checked={!!sel?.selected} onCheckedChange={() => toggleSvc(s)} data-testid={`svc-check-${s.id}`} />
-                    <span className="font-medium">{s.name}</span>
-                    {Number(s.base_price) > 0 && <span className="text-xs text-slate-500">temel {tl(s.base_price)}</span>}
-                    {s.venue_enabled && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">mekan</span>}
-                  </label>
-                  {sel?.selected && (s.options || []).length > 0 && (
-                    <div className="mt-2 ml-6 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {s.options.map((o) => (
-                        <label key={o.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                          <Checkbox checked={(sel.options || []).includes(o.id)} onCheckedChange={() => toggleOpt(s.id, o.id)} data-testid={`opt-${o.id}`} />
-                          {o.label}{Number(o.price) > 0 && <span className="text-xs text-slate-400">+{tl(o.price)}</span>}
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+        {/* Sözleşme Türü — MANUEL seçim */}
+        <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><FileText size={17} /> Sözleşme Türü</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-xs text-slate-500 mb-2">Sözleşme metni ve marka adı bu seçime göre belirlenir. Otomatik atanmaz — siz seçin.</p>
+            <div className="flex flex-wrap gap-2">
+              {[["venue", "Davet Evi / Organizasyon"], ["photo", "Fotoğrafçılık (Çekim)"]].map(([k, l]) => (
+                <button key={k} type="button" data-testid={`brand-${k}`} onClick={() => setBrandVariant(k)}
+                  className={`px-4 py-2 rounded-full text-sm font-medium border ${brandVariant === k ? "bg-slate-900 text-white border-slate-900" : "border-slate-300 text-slate-600"}`}>{l}</button>
+              ))}
+            </div>
           </CardContent>
         </Card>
 
-        {/* Ürünler */}
-        <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Package size={17} /> Ürünler</CardTitle></CardHeader>
+        {/* Etkinlikler */}
+        <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><CalendarDays size={17} /> Etkinlikler</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {eventList.length === 0 && <p className="text-sm text-slate-400">Katalogda aktif etkinlik yok.</p>}
+            {eventList.map((s) => <SvcRow key={s.id} s={s} sel={svcSel[s.id]} toggleSvc={toggleSvc} toggleOpt={toggleOpt} />)}
+          </CardContent>
+        </Card>
+
+        {/* Hizmetler */}
+        <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Camera size={17} /> Hizmetler</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {serviceList.length === 0 && <p className="text-sm text-slate-400">Katalogda aktif hizmet yok.</p>}
+            {serviceList.map((s) => <SvcRow key={s.id} s={s} sel={svcSel[s.id]} toggleSvc={toggleSvc} toggleOpt={toggleOpt} />)}
+          </CardContent>
+        </Card>
+
+        {/* Ek Hizmetler (ürünler) */}
+        <Card className="border-slate-200"><CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Package size={17} /> Ek Hizmetler</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             {Object.entries(productsByCat).map(([cat, list]) => (
               <div key={cat}>
@@ -328,6 +328,30 @@ export default function ApptBuilder() {
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Hizmet/Etkinlik satırı (seçenekleriyle)
+function SvcRow({ s, sel, toggleSvc, toggleOpt }) {
+  return (
+    <div data-testid={`svc-${s.id}`} className={`rounded-xl border p-3 ${sel?.selected ? "border-slate-900 bg-slate-50" : "border-slate-200"}`}>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <Checkbox checked={!!sel?.selected} onCheckedChange={() => toggleSvc(s)} data-testid={`svc-check-${s.id}`} />
+        <span className="font-medium">{s.name}</span>
+        {Number(s.base_price) > 0 && <span className="text-xs text-slate-500">temel {tl(s.base_price)}</span>}
+        {s.venue_enabled && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">mekan</span>}
+      </label>
+      {sel?.selected && (s.options || []).length > 0 && (
+        <div className="mt-2 ml-6 grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {s.options.map((o) => (
+            <label key={o.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
+              <Checkbox checked={(sel.options || []).includes(o.id)} onCheckedChange={() => toggleOpt(s.id, o.id)} data-testid={`opt-${o.id}`} />
+              {o.label}{Number(o.price) > 0 && <span className="text-xs text-slate-400">+{tl(o.price)}</span>}
+            </label>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

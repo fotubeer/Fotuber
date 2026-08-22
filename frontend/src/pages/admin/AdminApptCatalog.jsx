@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Trash2, Pencil, Camera, Package, FileText, ExternalLink, Save, X, DollarSign, Search, Download } from "lucide-react";
+import { Plus, Trash2, Pencil, Camera, Package, FileText, ExternalLink, Save, X, DollarSign, Search, Download, Inbox, CalendarDays, Phone, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 const CAT_LABELS = { album: "Albüm", canvas: "Kanvas Tablo", fine: "Fine Tablo", poster: "Poster", print: "Baskı", magazine: "Dergi" };
@@ -20,8 +20,12 @@ export default function AdminApptCatalog() {
   const initialTab = new URLSearchParams(location.search).get("tab") || "services";
   const [tab, setTab] = useState(initialTab);
   const [unseen, setUnseen] = useState(0);
+  const [reqUnseen, setReqUnseen] = useState(0);
 
-  const loadUnseen = () => api.get("/appt-pro/approvals").then(({ data }) => setUnseen(data.unseen || 0)).catch(() => {});
+  const loadUnseen = () => {
+    api.get("/appt-pro/approvals").then(({ data }) => setUnseen(data.unseen || 0)).catch(() => {});
+    api.get("/appt-pro/requests").then(({ data }) => setReqUnseen(data.unseen || 0)).catch(() => {});
+  };
   useEffect(() => { loadUnseen(); const t = setInterval(loadUnseen, 30000); return () => clearInterval(t); }, []);
   useEffect(() => {
     if (tab === "saved" && unseen > 0) { api.post("/appt-pro/approvals/seen").then(() => setUnseen(0)).catch(() => {}); }
@@ -32,21 +36,25 @@ export default function AdminApptCatalog() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight flex items-center gap-2"><FileText className="text-slate-700" /> Randevu Kataloğu</h1>
-          <p className="text-sm text-slate-500 mt-1">Fiziki randevu ekranındaki hizmetler, alt seçenekler, ürünler ve sözleşme içeriğini yönetin.</p>
+          <p className="text-sm text-slate-500 mt-1">Hizmetler, etkinlikler, ek hizmetler, müşteri randevu talepleri, takvim/tatil ve sözleşme içeriğini yönetin.</p>
         </div>
         <Link to="/admin/randevu-olustur"><Button className="bg-slate-900 hover:bg-slate-800 gap-2" data-testid="go-builder"><ExternalLink size={16} /> Randevu Oluştur</Button></Link>
       </div>
-      <div className="flex gap-1 p-1 rounded-xl bg-slate-100 w-fit">
-        {[["services", "Hizmet & Etkinlik", Camera], ["products", "Ürünler", Package], ["bulk", "Toplu Fiyat", DollarSign], ["contract", "Sözleşme İçeriği", FileText], ["saved", "Sözleşme Arşivi", FileText]].map(([k, l, I]) => (
+      <div className="flex gap-1 p-1 rounded-xl bg-slate-100 w-fit flex-wrap">
+        {[["services", "Hizmetler", Camera], ["events", "Etkinlikler", CalendarDays], ["products", "Ek Hizmetler", Package], ["requests", "Randevu Talepleri", Inbox], ["blocks", "Takvim & Tatil", CalendarDays], ["bulk", "Toplu Fiyat", DollarSign], ["contract", "Sözleşme İçeriği", FileText], ["saved", "Sözleşme Arşivi", FileText]].map(([k, l, I]) => (
           <button key={k} data-testid={`cat-tab-${k}`} onClick={() => setTab(k)}
             className={`relative px-4 h-9 rounded-lg text-sm font-medium flex items-center gap-1.5 ${tab === k ? "bg-white shadow text-slate-900" : "text-slate-500"}`}>
             <I size={15} /> {l}
             {k === "saved" && unseen > 0 && <span data-testid="approvals-badge" className="ml-1 min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center">{unseen}</span>}
+            {k === "requests" && reqUnseen > 0 && <span data-testid="requests-badge" className="ml-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">{reqUnseen}</span>}
           </button>
         ))}
       </div>
-      {tab === "services" && <ServicesTab />}
+      {tab === "services" && <ServicesTab kind="service" title="Hizmetler (Çekim)" />}
+      {tab === "events" && <ServicesTab kind="event" title="Etkinlikler (Organizasyon)" />}
       {tab === "products" && <ProductsTab />}
+      {tab === "requests" && <RequestsTab onChange={loadUnseen} />}
+      {tab === "blocks" && <BlocksTab />}
       {tab === "bulk" && <BulkPriceTab />}
       {tab === "contract" && <ContractTab />}
       {tab === "saved" && <ContractsTab />}
@@ -54,16 +62,16 @@ export default function AdminApptCatalog() {
   );
 }
 
-// ── Hizmetler ───────────────────────────────────────────────────────────────
-function ServicesTab() {
+// ── Hizmetler / Etkinlikler (kind ile) ───────────────────────────────────────
+function ServicesTab({ kind = "service", title = "Hizmetler" }) {
   const [rows, setRows] = useState([]);
   const [editing, setEditing] = useState(null);
-  const load = () => api.get("/appt-pro/services").then(({ data }) => setRows(data.services || [])).catch((e) => toast.error(formatApiError(e)));
-  useEffect(() => { load(); }, []);
+  const load = () => api.get(`/appt-pro/services?kind=${kind}`).then(({ data }) => setRows(data.services || [])).catch((e) => toast.error(formatApiError(e)));
+  useEffect(() => { load(); }, [kind]);
 
   const save = async () => {
     try {
-      const payload = { ...editing, base_price: Number(editing.base_price) || 0, sort: Number(editing.sort) || 0,
+      const payload = { ...editing, kind, base_price: Number(editing.base_price) || 0, sort: Number(editing.sort) || 0,
         options: (editing.options || []).map((o) => ({ id: o.id, label: o.label, price: Number(o.price) || 0 })) };
       if (editing.id) await api.patch(`/appt-pro/services/${editing.id}`, payload);
       else await api.post("/appt-pro/services", payload);
@@ -71,11 +79,12 @@ function ServicesTab() {
     } catch (e) { toast.error(formatApiError(e)); }
   };
   const remove = async (id) => { if (!window.confirm("Silinsin mi?")) return; await api.delete(`/appt-pro/services/${id}`); load(); };
+  const isEvent = kind === "event";
 
   return (
     <Card className="border-slate-200">
-      <CardHeader className="flex-row items-center justify-between"><CardTitle className="text-base">Hizmet & Etkinlik Türleri ({rows.length})</CardTitle>
-        <Button size="sm" onClick={() => setEditing({ name: "", active: true, sort: rows.length, base_price: 0, venue_enabled: false, options: [] })} className="bg-slate-900 hover:bg-slate-800 gap-1" data-testid="svc-new"><Plus size={15} /> Yeni</Button>
+      <CardHeader className="flex-row items-center justify-between"><CardTitle className="text-base">{title} ({rows.length})</CardTitle>
+        <Button size="sm" onClick={() => setEditing({ name: "", active: true, sort: rows.length, base_price: 0, kind, venue_enabled: isEvent, options: [] })} className="bg-slate-900 hover:bg-slate-800 gap-1" data-testid="svc-new"><Plus size={15} /> Yeni</Button>
       </CardHeader>
       <CardContent className="space-y-2">
         {rows.map((s) => (
@@ -211,6 +220,7 @@ const FONT_OPTIONS = [
 
 function ContractTab() {
   const [s, setS] = useState(null);
+  const [clauseKey, setClauseKey] = useState("clauses"); // clauses (Nişan Evi) | clauses_photo (Fotoğrafçılık)
   useEffect(() => { api.get("/appt-pro/contract-settings").then(({ data }) => setS(data.settings)).catch((e) => toast.error(formatApiError(e))); }, []);
   const setD = (k, v) => setS((p) => ({ ...p, design: { ...(p.design || {}), [k]: v } }));
   const save = async () => {
@@ -226,7 +236,7 @@ function ContractTab() {
         <CardHeader><CardTitle className="text-base">Sözleşme Tasarımı & Marka</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="grid sm:grid-cols-2 gap-4">
-            <div><Label>Marka — Nişan Evi / Davet seçiliyken</Label><Input data-testid="ct-brand-venue" value={s.brand_name_venue || ""} onChange={(e) => setS({ ...s, brand_name_venue: e.target.value })} placeholder="FOTUBER Photography & Davet Evi" /></div>
+            <div><Label>Marka — Davet Evi / Organizasyon seçiliyken</Label><Input data-testid="ct-brand-venue" value={s.brand_name_venue || ""} onChange={(e) => setS({ ...s, brand_name_venue: e.target.value })} placeholder="FOTUBER Davet Evi" /></div>
             <div><Label>Marka — Sadece Çekim seçiliyken</Label><Input data-testid="ct-brand-photo" value={s.brand_name_photo || ""} onChange={(e) => setS({ ...s, brand_name_photo: e.target.value })} placeholder="FOTUBER Photography" /></div>
             <div><Label>Logo URL (opsiyonel — girilirse amblem yerine kullanılır)</Label><Input data-testid="ct-logo" value={s.logo_url || ""} onChange={(e) => setS({ ...s, logo_url: e.target.value })} /></div>
             <div><Label>Alt Başlık</Label><Input data-testid="ct-subtitle" value={d.subtitle || ""} onChange={(e) => setD("subtitle", e.target.value)} placeholder="HİZMET SÖZLEŞMESİ" /></div>
@@ -264,23 +274,45 @@ function ContractTab() {
 
       {/* Maddeler */}
       <Card className="border-slate-200">
-        <CardHeader><CardTitle className="text-base">Sözleşme Maddeleri</CardTitle></CardHeader>
+        <CardHeader className="flex-row items-center justify-between flex-wrap gap-2">
+          <CardTitle className="text-base">Sözleşme Maddeleri</CardTitle>
+          <div className="flex gap-1 p-1 rounded-lg bg-slate-100">
+            {[["clauses", "Davet Evi / Organizasyon"], ["clauses_photo", "Fotoğrafçılık (Çekim)"]].map(([k, l]) => (
+              <button key={k} data-testid={`ct-clauseset-${k}`} onClick={() => setClauseKey(k)}
+                className={`px-3 h-8 rounded-md text-xs font-medium ${clauseKey === k ? "bg-white shadow text-slate-900" : "text-slate-500"}`}>{l}</button>
+            ))}
+          </div>
+        </CardHeader>
         <CardContent className="space-y-4">
-          <div className="rounded-lg bg-slate-50 border border-slate-200 p-2 text-xs text-slate-500">Madde içinde <code>{"{{toplam}}"}</code>, <code>{"{{cayma}}"}</code>, <code>{"{{kalan}}"}</code> yazarsanız sözleşmede otomatik tutarlarla dolar.</div>
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-2 text-xs text-slate-500">Şu an <b>{clauseKey === "clauses" ? "Davet Evi / Organizasyon" : "Fotoğrafçılık"}</b> sözleşme metnini düzenliyorsunuz. Madde içinde <code>{"{{toplam}}"}</code>, <code>{"{{cayma}}"}</code>, <code>{"{{kalan}}"}</code> yazarsanız otomatik tutarlarla dolar.</div>
           <div className="space-y-3">
-            {(s.clauses || []).map((c, i) => (
+            {((s[clauseKey]) || []).map((c, i) => (
               <div key={i} className="rounded-xl border border-slate-200 p-3 space-y-2">
                 <div className="flex items-center gap-2">
-                  <Input className="font-semibold" data-testid={`ct-title-${i}`} value={c.title} onChange={(e) => { const cl = [...s.clauses]; cl[i] = { ...c, title: e.target.value }; setS({ ...s, clauses: cl }); }} />
-                  <button onClick={() => setS({ ...s, clauses: s.clauses.filter((_, j) => j !== i) })} className="text-red-500" data-testid={`ct-del-${i}`}><Trash2 size={16} /></button>
+                  <Input className="font-semibold" data-testid={`ct-title-${i}`} value={c.title} onChange={(e) => { const cl = [...s[clauseKey]]; cl[i] = { ...c, title: e.target.value }; setS({ ...s, [clauseKey]: cl }); }} />
+                  <button onClick={() => setS({ ...s, [clauseKey]: s[clauseKey].filter((_, j) => j !== i) })} className="text-red-500" data-testid={`ct-del-${i}`}><Trash2 size={16} /></button>
                 </div>
-                <Textarea rows={4} data-testid={`ct-body-${i}`} value={c.body} onChange={(e) => { const cl = [...s.clauses]; cl[i] = { ...c, body: e.target.value }; setS({ ...s, clauses: cl }); }} />
+                <Textarea rows={4} data-testid={`ct-body-${i}`} value={c.body} onChange={(e) => { const cl = [...s[clauseKey]]; cl[i] = { ...c, body: e.target.value }; setS({ ...s, [clauseKey]: cl }); }} />
               </div>
             ))}
-            <Button variant="outline" onClick={() => setS({ ...s, clauses: [...(s.clauses || []), { title: "YENİ MADDE", body: "" }] })} data-testid="ct-add" className="gap-1"><Plus size={15} /> Madde Ekle</Button>
+            <Button variant="outline" onClick={() => setS({ ...s, [clauseKey]: [...(s[clauseKey] || []), { title: "YENİ MADDE", body: "" }] })} data-testid="ct-add" className="gap-1"><Plus size={15} /> Madde Ekle</Button>
           </div>
           <div><Label>Kabul Metni (en sona eklenir)</Label><Textarea rows={2} data-testid="ct-acceptance" value={s.acceptance_text || ""} onChange={(e) => setS({ ...s, acceptance_text: e.target.value })} /></div>
           <Button onClick={save} className="bg-slate-900 hover:bg-slate-800 gap-2" data-testid="ct-save"><Save size={16} /> Tümünü Kaydet</Button>
+        </CardContent>
+      </Card>
+
+      {/* Public randevu ayarları — KVKK + çalışma saatleri */}
+      <Card className="border-slate-200">
+        <CardHeader><CardTitle className="text-base">Müşteri Randevu Formu (Public) Ayarları</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div><Label>Çalışma Saati — Açılış</Label><Input type="time" data-testid="ct-wh-start" value={(s.working_hours || {}).start || "09:00"} onChange={(e) => setS({ ...s, working_hours: { ...(s.working_hours || {}), start: e.target.value } })} /></div>
+            <div><Label>Çalışma Saati — Kapanış</Label><Input type="time" data-testid="ct-wh-end" value={(s.working_hours || {}).end || "22:00"} onChange={(e) => setS({ ...s, working_hours: { ...(s.working_hours || {}), end: e.target.value } })} /></div>
+          </div>
+          <div><Label>KVKK & İletişim İzni Metni (onay kutusu yanında görünür)</Label>
+            <Textarea rows={5} data-testid="ct-kvkk" value={s.kvkk_text || ""} onChange={(e) => setS({ ...s, kvkk_text: e.target.value })} /></div>
+          <Button onClick={save} className="bg-slate-900 hover:bg-slate-800 gap-2" data-testid="ct-save-2"><Save size={16} /> Kaydet</Button>
         </CardContent>
       </Card>
     </div>
@@ -444,5 +476,114 @@ function ContractsTab() {
     </Card>
   );
 }
+
+// ── Randevu Talepleri (public formdan gelen) ──────────────────────────────
+const REQ_STATUS = { new: ["Yeni", "bg-rose-50 text-rose-600 border-rose-200"], contacted: ["Arandı", "bg-blue-50 text-blue-600 border-blue-200"], converted: ["Randevuya Dönüştü", "bg-emerald-50 text-emerald-600 border-emerald-200"], rejected: ["İptal", "bg-slate-100 text-slate-500 border-slate-200"] };
+function RequestsTab({ onChange }) {
+  const [rows, setRows] = useState([]);
+  const load = () => api.get("/appt-pro/requests").then(({ data }) => setRows(data.requests || [])).catch((e) => toast.error(formatApiError(e)));
+  useEffect(() => { load(); }, []);
+  const setStatus = async (id, status) => { await api.patch(`/appt-pro/requests/${id}`, { status }); load(); onChange && onChange(); };
+  const remove = async (id) => { if (!window.confirm("Talep silinsin mi?")) return; await api.delete(`/appt-pro/requests/${id}`); load(); onChange && onChange(); };
+
+  return (
+    <Card className="border-slate-200" data-testid="requests-list">
+      <CardHeader className="flex-row items-center justify-between"><CardTitle className="text-base">Müşteri Randevu Talepleri ({rows.length})</CardTitle>
+        <Link to="/randevu-al" target="_blank"><Button size="sm" variant="outline" className="gap-1.5"><ExternalLink size={14} /> Public Formu Aç</Button></Link>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {rows.length === 0 && <p className="text-sm text-slate-400 py-4 text-center">Henüz talep yok.</p>}
+        {rows.map((r) => {
+          const st = REQ_STATUS[r.status] || REQ_STATUS.new;
+          return (
+            <div key={r.id} data-testid={`req-${r.id}`} className="rounded-xl border border-slate-200 p-3">
+              <div className="flex items-start gap-3 flex-wrap">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="font-medium flex items-center gap-2">{r.name}
+                    <span className={`text-[11px] font-semibold rounded-full px-2 py-0.5 border ${st[1]}`}>{st[0]}</span>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                    <span className="inline-flex items-center gap-1"><Phone size={12} /> {r.phone}</span>
+                    {r.email && <span>{r.email}</span>}
+                    {r.event_type && <span>· {r.event_type}</span>}
+                    {(r.date || r.time) && <span className="inline-flex items-center gap-1"><CalendarDays size={12} /> {r.date} {r.time}</span>}
+                    <span className="text-slate-400">{(r.created_at || "").slice(0, 16).replace("T", " ")}</span>
+                  </div>
+                  {r.note && <div className="text-sm text-slate-600 mt-1.5 bg-slate-50 rounded-lg p-2">{r.note}</div>}
+                  <div className="text-[11px] text-slate-400 mt-1">İletişim izni: {r.comms_consent ? "EVET" : "HAYIR"}</div>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex gap-1.5">
+                    <a href={`tel:${r.phone}`}><Button size="sm" variant="outline" className="gap-1 h-8" data-testid={`req-call-${r.id}`}><Phone size={13} /> Ara</Button></a>
+                    <a href={`https://wa.me/${(r.phone || "").replace(/\D/g, "").replace(/^0/, "90")}`} target="_blank" rel="noreferrer"><Button size="sm" className="gap-1 h-8 bg-emerald-600 hover:bg-emerald-700" data-testid={`req-wa-${r.id}`}>WhatsApp</Button></a>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <Select value={r.status} onValueChange={(v) => setStatus(r.id, v)}>
+                      <SelectTrigger className="h-8 w-[150px]" data-testid={`req-status-${r.id}`}><SelectValue /></SelectTrigger>
+                      <SelectContent>{Object.entries(REQ_STATUS).map(([k, v]) => <SelectItem key={k} value={k}>{v[0]}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <Button size="sm" variant="destructive" className="h-8" onClick={() => remove(r.id)} data-testid={`req-del-${r.id}`}><Trash2 size={13} /></Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Takvim & Tatil kapatma ────────────────────────────────────────────────
+function BlocksTab() {
+  const [rows, setRows] = useState([]);
+  const [form, setForm] = useState({ date: "", all_day: true, start: "09:00", end: "12:00", note: "" });
+  const load = () => api.get("/appt-pro/blocks").then(({ data }) => setRows(data.blocks || [])).catch((e) => toast.error(formatApiError(e)));
+  useEffect(() => { load(); }, []);
+  const add = async () => {
+    if (!form.date) { toast.error("Tarih seçin"); return; }
+    try { await api.post("/appt-pro/blocks", { ...form, start: form.all_day ? "" : form.start, end: form.all_day ? "" : form.end }); toast.success("Kapatma eklendi"); setForm({ date: "", all_day: true, start: "09:00", end: "12:00", note: "" }); load(); }
+    catch (e) { toast.error(formatApiError(e)); }
+  };
+  const remove = async (id) => { await api.delete(`/appt-pro/blocks/${id}`); load(); };
+
+  return (
+    <div className="space-y-4" data-testid="blocks-tab">
+      <Card className="border-slate-200">
+        <CardHeader><CardTitle className="text-base flex items-center gap-2"><CalendarDays size={17} /> Yeni Kapatma (Tatil / Dolu Gün)</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-slate-500">Kapattığınız günü/saati müşteriler randevu formunda seçemez.</p>
+          <div className="grid sm:grid-cols-4 gap-3 items-end">
+            <div><Label>Tarih</Label><Input type="date" data-testid="block-date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
+            <label className="flex items-center justify-between text-sm rounded-lg border border-slate-200 px-3 h-10"><span>Tüm gün</span><Switch data-testid="block-allday" checked={form.all_day} onCheckedChange={(v) => setForm({ ...form, all_day: v })} /></label>
+            {!form.all_day && <div><Label>Başlangıç</Label><Input type="time" data-testid="block-start" value={form.start} onChange={(e) => setForm({ ...form, start: e.target.value })} /></div>}
+            {!form.all_day && <div><Label>Bitiş</Label><Input type="time" data-testid="block-end" value={form.end} onChange={(e) => setForm({ ...form, end: e.target.value })} /></div>}
+          </div>
+          <div><Label>Not (opsiyonel)</Label><Input data-testid="block-note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Ör: Resmî tatil / Bayram" /></div>
+          <Button onClick={add} className="bg-slate-900 hover:bg-slate-800 gap-2" data-testid="block-add"><Plus size={16} /> Kapatma Ekle</Button>
+        </CardContent>
+      </Card>
+      <Card className="border-slate-200">
+        <CardHeader><CardTitle className="text-base">Kapalı Günler ({rows.length})</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          {rows.length === 0 && <p className="text-sm text-slate-400 py-4 text-center">Kapalı gün yok.</p>}
+          {rows.map((b) => (
+            <div key={b.id} data-testid={`block-${b.id}`} className="rounded-xl border border-slate-200 p-3 flex items-center gap-3">
+              <div className="flex-1">
+                <div className="font-medium flex items-center gap-2"><CalendarDays size={15} className="text-slate-400" /> {b.date}
+                  {b.all_day ? <span className="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">Tüm gün kapalı</span>
+                    : <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 inline-flex items-center gap-1"><Clock size={11} /> {b.start}–{b.end}</span>}
+                </div>
+                {b.note && <div className="text-xs text-slate-500 mt-0.5">{b.note}</div>}
+              </div>
+              <Button size="sm" variant="destructive" onClick={() => remove(b.id)} data-testid={`block-del-${b.id}`}><Trash2 size={13} /></Button>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 
 

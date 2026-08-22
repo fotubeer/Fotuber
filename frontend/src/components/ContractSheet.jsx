@@ -39,6 +39,9 @@ export default function ContractSheet({ contract: c, settings: s }) {
   const brand = c.brand_variant === "photo"
     ? (s.brand_name_photo || s.company_name)
     : (s.brand_name_venue || s.company_name);
+  const clauses = c.brand_variant === "photo"
+    ? (s.clauses_photo && s.clauses_photo.length ? s.clauses_photo : s.clauses)
+    : s.clauses;
 
   const coupleName = `${c.bride_name || ""}${c.bride_name && c.groom_name ? " & " : ""}${c.groom_name || ""}`.trim() || c.customer_name || "—";
   const today = (c.created_at || new Date().toISOString()).slice(0, 10).split("-").reverse().join(".");
@@ -130,7 +133,7 @@ export default function ContractSheet({ contract: c, settings: s }) {
       <div className="mt-5">
         <div className="text-center text-sm font-bold tracking-widest py-1.5 rounded text-white" style={{ background: accent }}>SÖZLEŞME MADDELERİ VE ÖDEME PLANI</div>
         <div className="mt-3 space-y-3 text-[11.5px] leading-relaxed">
-          {(s.clauses || []).map((cl, i) => (
+          {(clauses || []).map((cl, i) => (
             <div key={i}>
               <div className="font-bold italic" style={{ color: accent }}>{cl.title}</div>
               <div className="whitespace-pre-line">{fillTokens(cl.body, c)}</div>

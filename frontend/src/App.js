@@ -45,6 +45,7 @@ import Services from "@/pages/Services";
 import About from "@/pages/About";
 import Contact from "@/pages/Contact";
 import Booking from "@/pages/Booking";
+import PublicBooking from "@/pages/PublicBooking";
 import Gallery from "@/pages/Gallery";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
@@ -121,6 +122,7 @@ function App() {
               <Route path="/iletisim" element={<P><Contact /></P>} />
               <Route path="/galeri" element={<P><Gallery /></P>} />
               <Route path="/randevu" element={<P><Booking /></P>} />
+              <Route path="/randevu-al" element={<PublicBooking />} />
               <Route path="/indirim-kodu" element={<P><DiscountCode /></P>} />
               <Route path="/fotuber-medya" element={<P><FotuberMedya /></P>} />
               <Route path="/altin-saat" element={<P><GoldenHour /></P>} />
