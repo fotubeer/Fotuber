@@ -257,3 +257,25 @@ def special_day_reminder(company_name: str, day_name: str, day_label: str, days:
     text = (f"{day_name} {when}\n\nMerhaba {company_name}, bu özel gün için logolu görsellerinizi üretin.\n"
             f"Portal: {portal_url}")
     return subject, _wrap(inner, f"{day_name} için görselinizi hazırlayın"), text
+
+
+
+def appt_request_admin(name: str, phone: str, email: str, event_type: str, date: str, time: str, note: str, admin_url: str):
+    n, p, e, et, nt, au = map(escape, [name or "-", phone or "-", email or "-", event_type or "-", note or "-", admin_url])
+    when = " ".join([x for x in [date, time] if x]) or "-"
+    subject = f"Yeni randevu talebi · {name}"
+    inner = f"""
+      <h2 style="margin:0 0 12px;font-size:18px;">Yeni randevu talebi 📅</h2>
+      <p style="margin:0 0 12px;"><b>{n}</b> web sitesinden randevu talebi gönderdi. En kısa sürede geri dönün.</p>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;margin:12px 0;">
+        <tr><td style="padding:8px 0;color:#64748b;">Ad Soyad</td><td style="text-align:right;font-weight:600;">{n}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;">Telefon</td><td style="text-align:right;font-weight:600;">{p}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;">E-posta</td><td style="text-align:right;">{e}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;">Hizmet / Etkinlik</td><td style="text-align:right;">{et}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;">Tercih Edilen Zaman</td><td style="text-align:right;">{escape(when)}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b;">Not</td><td style="text-align:right;">{nt}</td></tr>
+      </table>
+      <a href="{au}" style="display:inline-block;background:{BRAND_COLOR};color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:600;">Talebi Görüntüle</a>"""
+    text = (f"Yeni randevu talebi\n\nAd: {name}\nTelefon: {phone}\nE-posta: {email or '-'}\n"
+            f"Hizmet: {event_type or '-'}\nZaman: {when}\nNot: {note or '-'}\n\nYönet: {admin_url}")
+    return subject, _wrap(inner, "Yeni randevu talebi"), text

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,10 @@ const CAT_LABELS = { album: "Albüm", canvas: "Kanvas Tablo", fine: "Fine Tablo"
 
 export default function ApptBuilder() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { contractId } = useParams();
   const editing = !!contractId;
+  const [requestId, setRequestId] = useState(null);
   const [ready, setReady] = useState(false);
   const [services, setServices] = useState([]);
   const [products, setProducts] = useState([]);
@@ -88,6 +90,26 @@ export default function ApptBuilder() {
       setProdQty(nextProd);
     }).catch((e) => toast.error(formatApiError(e)));
   }, [ready, contractId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Talep → Sözleşme: public randevu talebinden gelen bilgileri doldur
+  useEffect(() => {
+    if (!ready || editing) return;
+    const pf = location.state?.prefill;
+    if (!pf) return;
+    setRequestId(location.state?.requestId || null);
+    setBride({ name: pf.name || "", phone: pf.phone || "" });
+    setEv((e) => ({ ...e, date: pf.date || "", time: pf.time || "" }));
+    setAdminNotes(pf.note || "");
+    setParty((p) => ({ ...p, email: pf.email || "" }));
+    if (pf.event_type) {
+      const svc = services.find((s) => s.name === pf.event_type);
+      if (svc) {
+        setSvcSel((prev) => ({ ...prev, [svc.id]: { selected: true, options: [] } }));
+        setBrandVariant((svc.kind || "service") === "event" ? "venue" : "photo");
+      }
+    }
+    toast.success("Talep bilgileri dolduruldu — sözleşmeyi tamamlayın");
+  }, [ready, editing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Taraf otomatik doldurma
   useEffect(() => {
@@ -176,6 +198,7 @@ export default function ApptBuilder() {
         paid_amount: Number(paid) || Number(deposit) || 0, payment_method: paymentMethod, contract,
       };
       const { data } = await api.post("/appt-pro/appointments", payload);
+      if (requestId) { try { await api.patch(`/appt-pro/requests/${requestId}`, { status: "converted" }); } catch (e) { /* ignore */ } }
       toast.success("Randevu ve sözleşme oluşturuldu");
       navigate(`/admin/sozlesme/${data.contract_id}`);
     } catch (e) { toast.error(formatApiError(e)); }

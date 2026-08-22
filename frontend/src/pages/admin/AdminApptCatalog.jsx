@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, formatApiError } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -481,10 +481,12 @@ function ContractsTab() {
 const REQ_STATUS = { new: ["Yeni", "bg-rose-50 text-rose-600 border-rose-200"], contacted: ["Arandı", "bg-blue-50 text-blue-600 border-blue-200"], converted: ["Randevuya Dönüştü", "bg-emerald-50 text-emerald-600 border-emerald-200"], rejected: ["İptal", "bg-slate-100 text-slate-500 border-slate-200"] };
 function RequestsTab({ onChange }) {
   const [rows, setRows] = useState([]);
+  const navigate = useNavigate();
   const load = () => api.get("/appt-pro/requests").then(({ data }) => setRows(data.requests || [])).catch((e) => toast.error(formatApiError(e)));
   useEffect(() => { load(); }, []);
   const setStatus = async (id, status) => { await api.patch(`/appt-pro/requests/${id}`, { status }); load(); onChange && onChange(); };
   const remove = async (id) => { if (!window.confirm("Talep silinsin mi?")) return; await api.delete(`/appt-pro/requests/${id}`); load(); onChange && onChange(); };
+  const toContract = (r) => navigate("/admin/randevu-olustur", { state: { prefill: r, requestId: r.id } });
 
   return (
     <Card className="border-slate-200" data-testid="requests-list">
@@ -524,6 +526,7 @@ function RequestsTab({ onChange }) {
                     </Select>
                     <Button size="sm" variant="destructive" className="h-8" onClick={() => remove(r.id)} data-testid={`req-del-${r.id}`}><Trash2 size={13} /></Button>
                   </div>
+                  <Button size="sm" className="h-8 bg-slate-900 hover:bg-slate-800 gap-1" onClick={() => toContract(r)} data-testid={`req-to-contract-${r.id}`}><FileText size={13} /> Sözleşmeye Dönüştür</Button>
                 </div>
               </div>
             </div>

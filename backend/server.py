@@ -7380,6 +7380,7 @@ _module_deps = {
     "create_paytr_order": _create_paytr_order,
     "send_email": email_service.send_email,
     "email_configured": email_service.email_configured,
+    "notify_external": _try_send_external_notification,
     "admin_email": os.environ.get("ADMIN_EMAIL", ""),
     "public_app_url": PUBLIC_APP_URL,
     "JWT_SECRET": JWT_SECRET,

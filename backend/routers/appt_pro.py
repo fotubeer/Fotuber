@@ -220,6 +220,12 @@ def get_router(db, deps):
     staff = deps["require_staff_or_admin"]
     new_id = deps["new_id"]
     now_iso = deps["now_iso"]
+    send_email = deps.get("send_email")
+    email_configured = deps.get("email_configured")
+    notify_external = deps.get("notify_external")
+    admin_email = deps.get("admin_email", "")
+    public_app_url = (deps.get("public_app_url") or "https://fotuber.com.tr").rstrip("/")
+    import asyncio
 
     # ── Seeders ──────────────────────────────────────────────────────────
     async def _seed():
@@ -765,6 +771,23 @@ def get_router(db, deps):
             "message": f"{doc['name']} ({doc['phone']}) — {doc['event_type'] or 'Randevu'} · {doc['date'] or ''} {doc['time'] or ''}".strip(),
             "read": False, "created_at": now_iso(),
         })
+        # Admin'e anında e-posta + WhatsApp/SMS bildirimi (yapılandırılmışsa)
+        try:
+            if send_email and email_configured and email_configured() and admin_email:
+                import email_service as _es
+                subject, html, text = _es.appt_request_admin(
+                    doc["name"], doc["phone"], doc["email"], doc["event_type"],
+                    doc["date"], doc["time"], doc["note"], public_app_url + "/admin/randevu-katalogu?tab=requests")
+                asyncio.create_task(send_email(admin_email, subject, html, text))
+        except Exception:
+            pass
+        try:
+            if notify_external:
+                body = (f"{doc['name']} · {doc['phone']}\n"
+                        f"{doc['event_type'] or 'Randevu'} · {doc['date']} {doc['time']}".strip())
+                asyncio.create_task(notify_external("📅 Yeni Randevu Talebi", body))
+        except Exception:
+            pass
         return {"ok": True, "id": doc["id"]}
 
     class RequestUpdateIn(BaseModel):
