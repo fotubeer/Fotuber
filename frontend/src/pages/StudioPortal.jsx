@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { studioApi, setStudioToken } from "@/lib/studioApi";
 import { formatApiError } from "@/lib/api";
+import { isDesktopApp } from "@/components/DesktopGuard";
 
 export default function StudioPortal() {
   const navigate = useNavigate();
@@ -116,11 +117,13 @@ export default function StudioPortal() {
           </Button>
         </form>
 
-        <p className="mt-5 text-center text-xs text-white/40">
-          <Link to="/" className="hover:text-white/70">← Fotuber ana sayfa</Link>
-        </p>
+        {!isDesktopApp() && (
+          <p className="mt-5 text-center text-xs text-white/40">
+            <Link to="/" className="hover:text-white/70">← Fotuber ana sayfa</Link>
+          </p>
+        )}
 
-        <DesktopDownloadButtons className="mt-5" compact />
+        {!isDesktopApp() && <DesktopDownloadButtons className="mt-5" compact />}
       </motion.div>
     </div>
   );

@@ -45,13 +45,20 @@ function createWindow() {
     return { action: "deny" };
   });
 
-  // Uygulamanın kendi origin'i dışına gidilmesini engelle (WhatsApp, PayTR vb. harici tarayıcıda açılır)
+  // Navigasyon kilidi: uygulama YALNIZCA Stüdyo Paneli'nde kalır.
+  // - Farklı origin (WhatsApp, PayTR vb.) → sistem tarayıcısında açılır.
+  // - Aynı origin ama /studyo dışı bir yol → engellenir, /studyo'ya döner.
   mainWindow.webContents.on("will-navigate", (event, url) => {
     try {
-      const target = new URL(url).host;
-      if (target !== config.ALLOWED_ORIGIN) {
+      const u = new URL(url);
+      if (u.host !== config.ALLOWED_ORIGIN) {
         event.preventDefault();
         shell.openExternal(url);
+        return;
+      }
+      if (!u.pathname.startsWith("/studyo")) {
+        event.preventDefault();
+        mainWindow.loadURL(config.APP_URL);
       }
     } catch (_) { /* noop */ }
   });

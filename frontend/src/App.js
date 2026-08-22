@@ -98,6 +98,7 @@ import FotuberMedya from "@/pages/FotuberMedya";
 import AlbumViewer from "@/pages/AlbumViewer";
 import GuestUpload from "@/pages/GuestUpload";
 import CoupleDownload from "@/pages/CoupleDownload";
+import DesktopGuard from "@/components/DesktopGuard";
 
 const P = ({ children }) => <PublicLayout>{children}</PublicLayout>;
 const AdminGuard = ({ children }) => (
@@ -114,6 +115,7 @@ function App() {
         <HelmetProvider>
           <SettingsProvider>
             <AuthProvider>
+            <DesktopGuard />
             <Routes>
               {/* Public */}
               <Route path="/" element={<P><Home /></P>} />
