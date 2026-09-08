@@ -43,7 +43,10 @@ const AdminAIAssistant = () => {
   }, [settings]);
 
   useEffect(() => {
-    api.get("/ai/sessions").then((r) => setSessions(r.data)).catch(() => {});
+    api.get("/ai/sessions").then((r) => {
+      const raw = r.data;
+      setSessions(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.sessions) ? raw.sessions : Array.isArray(raw?.results) ? raw.results : []);
+    }).catch(() => setSessions([]));
   }, []);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));

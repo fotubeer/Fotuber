@@ -32,7 +32,11 @@ const Dashboard = () => {
   useEffect(() => {
     api.get("/reports/summary").then((r) => setS(r.data));
     api.get("/appointments", { params: { status_filter: "pending" } })
-      .then((r) => setRecent(r.data.slice(0, 6)));
+      .then((r) => {
+        const raw = r.data;
+        const list = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.results) ? raw.results : [];
+        setRecent(list.slice(0, 6));
+      }).catch(() => setRecent([]));
   }, []);
 
   return (

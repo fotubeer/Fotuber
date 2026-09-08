@@ -20,11 +20,20 @@ const FotuberMedya = () => {
   const [cat, setCat] = useState(null);
 
   useEffect(() => {
-    api.get("/portfolio/categories").then((r) => setCategories(r.data));
-    api.get("/clients").then((r) => setClients(r.data));
+    api.get("/portfolio/categories").then((r) => {
+      const raw = r.data;
+      setCategories(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.categories) ? raw.categories : Array.isArray(raw?.results) ? raw.results : []);
+    }).catch(() => setCategories([]));
+    api.get("/clients").then((r) => {
+      const raw = r.data;
+      setClients(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.clients) ? raw.clients : Array.isArray(raw?.results) ? raw.results : []);
+    }).catch(() => setClients([]));
   }, []);
   useEffect(() => {
-    api.get("/portfolio", { params: cat ? { category: cat } : {} }).then((r) => setItems(r.data));
+    api.get("/portfolio", { params: cat ? { category: cat } : {} }).then((r) => {
+      const raw = r.data;
+      setItems(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.items) ? raw.items : Array.isArray(raw?.results) ? raw.results : []);
+    }).catch(() => setItems([]));
   }, [cat]);
 
   return (

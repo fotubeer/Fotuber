@@ -34,8 +34,11 @@ const AdminInstagramSlideshow = () => {
   const load = () => {
     setLoading(true);
     api.get("/instagram-posts/all")
-      .then((r) => setPosts(r.data))
-      .catch((e) => toast.error(formatApiError(e)))
+      .then((r) => {
+        const raw = r.data;
+        setPosts(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.posts) ? raw.posts : Array.isArray(raw?.results) ? raw.results : []);
+      })
+      .catch((e) => { toast.error(formatApiError(e)); setPosts([]); })
       .finally(() => setLoading(false));
   };
   useEffect(load, []);

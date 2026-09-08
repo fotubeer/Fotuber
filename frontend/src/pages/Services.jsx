@@ -7,7 +7,10 @@ import { SEO } from "@/components/SEO";
 
 const Services = () => {
   const [services, setServices] = useState([]);
-  useEffect(() => { api.get("/services").then((r) => setServices(r.data)).catch(() => {}); }, []);
+  useEffect(() => { api.get("/services").then((r) => {
+    const raw = r.data;
+    setServices(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.services) ? raw.services : Array.isArray(raw?.results) ? raw.results : []);
+  }).catch(() => setServices([])); }, []);
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-24">

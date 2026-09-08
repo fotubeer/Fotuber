@@ -12,7 +12,10 @@ const Finance = () => {
 
   useEffect(() => {
     api.get("/reports/summary").then((r) => setS(r.data));
-    api.get("/appointments", { params: { status_filter: "approved" } }).then((r) => setAppts(r.data));
+    api.get("/appointments", { params: { status_filter: "approved" } }).then((r) => {
+      const raw = r.data;
+      setAppts(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.results) ? raw.results : []);
+    }).catch(() => setAppts([]));
   }, []);
 
   return (

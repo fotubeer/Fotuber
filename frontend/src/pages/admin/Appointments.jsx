@@ -69,11 +69,17 @@ const AdminAppointments = () => {
   const [detailSaving, setDetailSaving] = useState(false);
   const [newMidPayment, setNewMidPayment] = useState({ amount: "", date: new Date().toISOString().slice(0, 10), method: "cash", note: "" });
 
-  useEffect(() => { api.get("/services").then((r) => setServices(r.data)); }, []);
+  useEffect(() => { api.get("/services").then((r) => {
+    const raw = r.data;
+    setServices(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.services) ? raw.services : Array.isArray(raw?.results) ? raw.results : []);
+  }).catch(() => setServices([])); }, []);
 
   const load = () => {
     api.get("/appointments", { params: { status_filter: status } })
-      .then((r) => setItems(r.data))
+      .then((r) => {
+        const raw = r.data;
+        setItems(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.results) ? raw.results : []);
+      })
       .catch(() => setItems([]));
   };
   useEffect(load, [status]);

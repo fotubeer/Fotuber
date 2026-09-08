@@ -23,13 +23,18 @@ const AdminGallery = () => {
 
   useEffect(() => {
     api.get("/gallery/categories").then((r) => {
-      setCategories(r.data);
-      setForm((f) => ({ ...f, category: r.data[0]?.slug || "" }));
-    });
+      const raw = r.data;
+      const cats = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.categories) ? raw.categories : Array.isArray(raw?.results) ? raw.results : [];
+      setCategories(cats);
+      setForm((f) => ({ ...f, category: cats[0]?.slug || "" }));
+    }).catch(() => setCategories([]));
     load();
   }, []);
 
-  const load = () => api.get("/gallery").then((r) => setItems(r.data));
+  const load = () => api.get("/gallery").then((r) => {
+    const raw = r.data;
+    setItems(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.gallery) ? raw.gallery : Array.isArray(raw?.results) ? raw.results : []);
+  }).catch(() => setItems([]));
 
   const upload = async () => {
     if (!file) { toast.error("Bir dosya seçin"); return; }

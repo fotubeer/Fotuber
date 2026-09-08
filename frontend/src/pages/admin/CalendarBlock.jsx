@@ -27,10 +27,16 @@ const AdminCalendar = () => {
   const dateStr = useMemo(() => isoDate(date), [date]);
 
   const loadSlots = () => {
-    api.get("/availability", { params: { date: dateStr } }).then((r) => setSlots(r.data.slots));
+    api.get("/availability", { params: { date: dateStr } }).then((r) => {
+      const raw = r.data;
+      setSlots(Array.isArray(raw?.slots) ? raw.slots : Array.isArray(raw) ? raw : []);
+    }).catch(() => setSlots([]));
   };
   const loadBlocked = () => {
-    api.get("/blocked-slots", { params: { date_from: dateStr } }).then((r) => setBlocked(r.data));
+    api.get("/blocked-slots", { params: { date_from: dateStr } }).then((r) => {
+      const raw = r.data;
+      setBlocked(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.results) ? raw.results : []);
+    }).catch(() => setBlocked([]));
   };
   const loadApprovedForDate = () => {
     api.get("/appointments", { params: { status_filter: "approved", date_from: dateStr, date_to: dateStr } })
@@ -46,7 +52,8 @@ const AdminCalendar = () => {
     api.get("/appointments", { params: { status_filter: "approved", date_from: isoDate(first), date_to: isoDate(last) } })
       .then((r) => {
         const map = {};
-        r.data.forEach((a) => { map[a.date] = (map[a.date] || 0) + 1; });
+        const list = Array.isArray(r.data) ? r.data : Array.isArray(r.data?.data) ? r.data.data : Array.isArray(r.data?.results) ? r.data.results : [];
+        list.forEach((a) => { map[a.date] = (map[a.date] || 0) + 1; });
         setMonthApprovedMap(map);
       })
       .catch(() => setMonthApprovedMap({}));

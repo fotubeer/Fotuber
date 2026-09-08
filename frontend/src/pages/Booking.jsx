@@ -169,12 +169,18 @@ const Booking = () => {
   const [contractOpen, setContractOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => { api.get("/services").then((r) => setServices(r.data)); }, []);
+  useEffect(() => { api.get("/services").then((r) => {
+    const raw = r.data;
+    setServices(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.services) ? raw.services : Array.isArray(raw?.results) ? raw.results : []);
+  }).catch(() => setServices([])); }, []);
   const dateStr = useMemo(() => isoDate(date), [date]);
   useEffect(() => {
     setTime(null);
     api.get("/availability", { params: { date: dateStr } })
-      .then((r) => setSlots(r.data.slots))
+      .then((r) => {
+        const raw = r.data;
+        setSlots(Array.isArray(raw?.slots) ? raw.slots : Array.isArray(raw) ? raw : []);
+      })
       .catch(() => setSlots([]));
   }, [dateStr]);
 

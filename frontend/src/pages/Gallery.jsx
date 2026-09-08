@@ -9,7 +9,10 @@ const Gallery = () => {
   const [preview, setPreview] = useState(null);
 
   useEffect(() => {
-    api.get("/gallery/categories").then((r) => setCategories(r.data));
+    api.get("/gallery/categories").then((r) => {
+      const raw = r.data;
+      setCategories(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.categories) ? raw.categories : Array.isArray(raw?.results) ? raw.results : []);
+    }).catch(() => setCategories([]));
   }, []);
 
   useEffect(() => {

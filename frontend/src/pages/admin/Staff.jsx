@@ -16,7 +16,10 @@ const Staff = () => {
   const [items, setItems] = useState([]);
   const [editing, setEditing] = useState(null);
 
-  const load = () => api.get("/staff").then((r) => setItems(r.data));
+  const load = () => api.get("/staff").then((r) => {
+    const raw = r.data;
+    setItems(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.staff) ? raw.staff : Array.isArray(raw?.results) ? raw.results : []);
+  }).catch(() => setItems([]));
   useEffect(() => { load(); }, []);
 
   const save = async () => {

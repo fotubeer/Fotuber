@@ -48,7 +48,10 @@ export default function AdminAdBanners() {
   const inputRef = useRef();
 
   const load = () => {
-    api.get("/admin/ad-banners").then((r) => setItems(r.data)).catch(() => {});
+    api.get("/admin/ad-banners").then((r) => {
+      const raw = r.data;
+      setItems(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.banners) ? raw.banners : Array.isArray(raw?.results) ? raw.results : []);
+    }).catch(() => setItems([]));
     api.get("/admin/ad-banners/stats").then((r) => setStats(r.data)).catch(() => {});
   };
   useEffect(() => { load(); }, []);

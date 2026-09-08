@@ -17,7 +17,10 @@ const MyAppointments = () => {
   const [items, setItems] = useState([]);
 
   useEffect(() => {
-    api.get("/appointments/me").then((r) => setItems(r.data)).catch(() => setItems([]));
+    api.get("/appointments/me").then((r) => {
+      const raw = r.data;
+      setItems(Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.results) ? raw.results : []);
+    }).catch(() => setItems([]));
   }, []);
 
   return (
