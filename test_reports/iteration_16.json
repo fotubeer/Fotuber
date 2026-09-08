@@ -1,0 +1,81 @@
+{
+  "summary": "Verified all 4 Vesikalık bug fixes in the real Fotuber repo. Tests performed against the live preview URL with pixel-level canvas.getImageData sampling on [data-testid=canvas-single] (591x709) and [data-testid=canvas-sheet] (1181x1772). Login/nav OK. face-api + @imgly models loaded from CDN successfully. BUG1 (watermark in single middle band tied to wmScale), BUG2(a) (adjustments skip bg after bg-remove), BUG3 (recolor/redeye/sharpen no ReferenceError + keepCrop keeps framing), and BUG4 (dashed gray cut lines spanning full paper) all PASS. BUG2(b) — color-key fallback WITHOUT bg-removal — is fuzzy for non-uniform-corner crops (see rca).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_working": {
+    "auth_and_nav": "POST /api/auth/login 200; /admin/vesikalik loads with [data-testid=admin-vesikalik-title]",
+    "upload_and_auto_detect": "Face detection completes in <5s; detection-status badge shows",
+    "bug1_watermark_middle_band": {
+      "sheet_dims": "1181x1772 (10x15cm @300dpi)",
+      "count=4_layout": "2x2",
+      "bands_wm_scale_14": [4,904,918,940,960,934,889,904,1133,384,59,910,896,960,932,903,820,1079,1168,0],
+      "bands_wm_scale_30": "bands 8,9,10 = 1161,278,278 (thicker band, two bands of watermark)",
+      "bands_wm_scale_6":  "band 10 = 906 (narrow band, band 10 mostly re-contains photos as block shrinks)",
+      "photo_rows_untouched": "photo bands 900-1160 non-white pixels — no watermark spillover; middle band (index ~10) content much lower (59) at wm=14, confirming single centered band",
+      "band_thickness_tied_to_wmScale": true
+    },
+    "bug2a_bg_removed": {
+      "tl_diff": 0, "tr_diff": 0,
+      "bl_diff": 74, "br_diff": 199,
+      "face_diff": 153,
+      "note": "tl/tr (background) perfectly stable; bl/br changed because those crop corners contain the person's shoulders/hair (correctly classified as foreground by imgly mask). Face pixels changed significantly. PASS."
+    },
+    "bug3_recolor_redeye_sharpen": {
+      "recolor_error_toast": 0,
+      "recolor_dims_stable": true,
+      "redeye_dims_stable": true,
+      "sharpen_dims_stable": true,
+      "note": "No 'Renk değiştirme başarısız' toast (ReferenceError fix confirmed). Canvas dims 591x709 preserved across all 3 ops — keepCrop:true works."
+    },
+    "bug4_cut_lines": {
+      "long_col_x_positions_gray_>55%_h": [0, 588, 591, 1179],
+      "long_row_y_positions_gray_>55%_w": [153, 156, 864, 867, 906, 909, 1614, 1617],
+      "interpretation": "Vertical cut lines at x≈0/590/1181 (outer-left, mid divider, outer-right of 2x2 block) each span ~1192px of 1772px height. Horizontal lines at y=155 (top of block), y=864/906 (band edges), y=1616 (bottom of block), each ~795 gray pixels out of 1181 width — matches [2mm,1mm] dash duty cycle (~2/3). Lines span the FULL paper edge-to-edge. PASS."
+    },
+    "regression": {
+      "bg_remove_btn": "Arka Planı Temizle triggers @imgly bg removal; bg-removed-badge appears in ~6s",
+      "bg_revert_btn": "removes badge and restores original",
+      "retouch_dialog": "[data-testid=retouch-dialog] opens",
+      "switch_retouch_present": true,
+      "download_single": "FTB00001_tekli.jpg",
+      "download_sheet": "FTB00002_baski_4li_10x15.jpg"
+    }
+  },
+  "bug2b_observation": {
+    "test_conditions": "auto-bg toggled OFF; fresh upload; adj-brightness 100→140, contrast 100→140, warmth 0→40; portrait1.jpg (face crop where bottom corners of the 591x709 output contain the person, not plain background)",
+    "measured": {
+      "tl_diff_baseline_to_slid": 64,
+      "tr_diff": 37,
+      "bl_diff": 70,
+      "br_diff": 195,
+      "face_diff": 154,
+      "body_diff": 0
+    },
+    "root_cause": "buildColorKeyMask averages the 4 corner pixels of the CROPPED single-canvas. For a portrait face-crop, the BOTTOM corners typically contain the subject (bl=74, br=114), while the TOP corners contain background (tl=231, tr=240). Averaging yields a meaningless midtone (~165), so the color-distance tolerance=60 misclassifies BOTH background AND skin/clothing pixels: (a) top-left/right white bg pixels are treated as FOREGROUND (distance from avg > 60) and get brightness/contrast applied → bg NOT stable (tl 231→255); (b) mid-skin body pixel (211,174,137) is treated as BACKGROUND (distance ≈55 < 60) and is skipped → person actually undertreated in that region.",
+    "impact": "When users skip background removal AND their crop's corners are not a uniform plain background, the İnce Ayar sliders visibly affect the top edges of the preview (visible brightening). BUG2(a) with imgly bg removal is unaffected and works perfectly.",
+    "verdict": "Partial. The requirement says 'roughly stable' for the fallback, but for portrait crops (common case) tl/tr can brighten by 64 units — visible. Consider sampling from a wider padded region OUTSIDE the crop (from image.el at padding), OR using per-corner tolerance (only use corners that agree with each other), OR just always compute fgMask via a lightweight seg model when autoBg is OFF."
+  },
+  "test_report_links": [],
+  "action_items": [
+    "OPTIONAL: Improve buildColorKeyMask for portrait crops — either sample from padded area outside the crop rect (image.el neighborhood), reject corners that disagree by >tol, or fall back to a saliency-based FG mask. Current implementation only works when all 4 corners are a plain color.",
+    "MINOR: A transient 'Model yüklenemedi. İnternet bağlantınızı kontrol edin.' toast appeared once mid-test (visible in the final screenshot near the top-right). Likely runAutoDetect firing on a spec/image transition when face-api models briefly failed to fetch. Non-blocking — recolor/redeye/sharpen still succeeded. Consider suppressing the toast when the models load lazily and a subsequent call succeeds."
+  ],
+  "critical_code_review_comments": [
+    "AdminPassportPhoto.jsx is 929 lines — approaching the 700-line ceiling. Consider extracting drawSingle/drawSheet into /lib/passportDraw.js and the buildColorKeyMask + fgMask logic into /lib/fgMask.js.",
+    "buildColorKeyMask uses a hard-coded tolerance of 60 and only 4 single-pixel corner samples. As documented in bug2b_observation, this is a fragile fallback. Safer: average 3x3 patches at each corner and compute per-corner distance stddev; if stddev is high (bg is not uniform), abort the fallback and skip masking entirely (accept the whole-image filter) rather than mis-mask.",
+    "drawSingle's masked-filter approach is elegant but rebuilds the offscreen canvas + colorKey mask on EVERY slider tick. On 591x709 that's fine, but on 5MP+ source images this could jank. Consider memoizing the color-key mask (only rebuild when crop or image changes, not on every adj change).",
+    "In drawSheet, cut lines: the 'x -= off' and 'x -= gap' branches when c==cols/rows shift the outermost lines slightly INWARD relative to a true paper-edge cut. In this test with gap=0 it collapses to a no-op, but for gap>0 the outermost cut line lands just INSIDE the block, not at the block edge. If the intent is 'cut lines reach paper edges', consider also drawing lines at x=0 and x=pw regardless."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (auth ok)", "frontend": "5/5 bug fixes verified end-to-end; 1 partial (bug2b fallback quality)"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (via /giris)",
+  "seed_data_creation": "None. Test only downloaded 2 JPEG files (FTB00001_tekli.jpg, FTB00002_baski_4li_10x15.jpg) and wrote 2 records to browser IndexedDB (client-side archive, not backend).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Login is at /giris using [data-testid=login-email / login-password / login-submit-btn]. Admin lands on /admin/dashboard then navigate to /admin/vesikalik. Auto-bg toggle is a Radix Switch — read/write via data-state attribute. To read canvas pixels use page.evaluate + getImageData on [data-testid=canvas-single] (591x709 for tr-bio 50x60mm) and [data-testid=canvas-sheet] (1181x1772 for 10x15cm). Native range sliders (adj-*) require dispatching 'input' AND 'change' events after setting value via the native HTMLInputElement setter descriptor. imgly bg-removal + face-api models load from CDN — first call ~5-10s. Watermark PNG upload = portrait2.jpg stand-in. Dashed lines are gray (~130-200 uniform R=G=B ± 15) — filter with rgb-equality + brightness band to isolate from photo pixels.",
+  "rca_of_the_issue": "See bug2b_observation above. The color-key fallback fails on portrait crops with non-uniform corners. All 4 originally reported bugs are fixed and verified; this is a residual quality issue in the fallback path only, not a regression."
+}

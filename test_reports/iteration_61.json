@@ -1,0 +1,27 @@
+{
+  "summary": "Full validation of Fotuber studio payment methods CRUD, client IBAN payment step, studio confirm-payment flow, toplu kod kopyala, admin ad banner management (with dynamic size hint), and homepage footer banner display. All features work end-to-end.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Studio & Client payment flow: full end-to-end verified — provider guide (PayTR, IBAN, Nakit) renders with numbered steps and correct dynamic fields (sg-pay-field-iban/holder/bank). CRUD (create/toggle/edit/delete) all work.",
+    "Client flow: assigning a paid pack in the lightbox → gs-submit → gs-payment-step renders with only ACTIVE payment methods. Selecting IBAN shows gs-pay-manual-info containing the actual IBAN + holder + bank + 'Havaleyi Yaptım' (gs-pay-mark-paid). Clicking mark-paid transitions to gs-success screen with SIP-* order no and status timeline.",
+    "Studio Siparişler tab: order now shows sg-order-paybadge-* ('Onay bekliyor' → after sg-order-confirm-pay-* click → 'Ödendi'). Verified live.",
+    "Toplu Kod Kopyala (sg-order-copy-codes-*): shows toast 'X kod kopyalandı' and copies codes to clipboard (verified via navigator.clipboard.readText).",
+    "Admin /admin/reklamlar: ad-size-hint text changes correctly with BOTH ad-placement and ad-orientation. Existing 'Yaz Kampanyası' banner listed with preview + toggle + delete.",
+    "Homepage footer: ad-banners-home_footer section renders active banner as a clickable button (ad-banner-*) opening target_url — verified in DOM.",
+    "Minor: seeded IBAN payment method 'Havale' ships with active=False AND empty config — expected demo state; a client will not see the IBAN option unless the studio activates it and fills IBAN/holder/bank. This is by design (studio must configure own credentials) but worth mentioning in onboarding copy."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "studio1@test.com/Test1234, admin@fotuber.com.tr/FTB.2024",
+  "seed_data_creation": "Created (and deleted after) test events TEST_PayFlow / TEST_IBANFlow with a paid service pack TEST_ExtraPage (100₺); temporarily set IBAN 'Havale' active + config; restored to Pasif with empty config after tests.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All flows for stüdyoya özel ödeme, admin reklam bannerları, ve toplu kod kopyala verified working. Auto-gateway providers (paytr/iyzico/odeal) not tested (require real merchant creds — per main agent instruction)."
+}

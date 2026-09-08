@@ -1,0 +1,46 @@
+{
+  "summary": "Faz 5-A Askeri Üniforma Kütüphanesi frontend testing — 6/7 assertions PASS. Admin flow (list, upload+instant publish, rename via prompt, delete) 100% working. Studio flow (approved-only list, no admin controls, upload → 'onay bekleniyor' toast, pending persisted in DB) working EXCEPT the request's expectation that uploader sees own pending item with 'Onay bekliyor' badge — backend list_uniforms filters strictly to status='approved' for non-admin, so studio uploader does NOT see own pending in the grid. Regression: size dropdown, digital-download-btn, qr-deliver-btn all render in studio Vesikalik editor.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/studio/uniforms", "issue": "For non-admin studio accounts, endpoint returns ONLY status='approved' items. Review request expected uploader to also see their OWN pending items (with 'Onay bekliyor' badge). Currently pending items are hidden from the uploader after successful submit. Suggested fix in /app/backend/routers/studio.py list_uniforms: else branch should be {'$or':[{'status':'approved'},{'uploaded_by':acc['id']}], 'is_deleted': {'$ne': True}}"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Studio pending upload visibility", "issue": "After studio uploads 'Hava Er', toast says 'Üniforma gönderildi — admin onayı bekleniyor' correctly, and record IS created as pending in DB (admin sees it). But studio's own grid does not display it because backend excludes non-approved from non-admin list. UniformLibrary.jsx already has the rendering logic (yellow 'Onay bekliyor' badge) — the gap is on the backend.", "affected_selectors": ["uniform-grid","uniform-card-<id>"]}
+    ],
+    "design_issues": []
+  },
+  "test_results_matrix": {
+    "admin_list_and_counts": "PASS — /admin/vesikalik → Tekli, uniform-library visible; 2 seed cards (Piyade Er, Jandarma Uzman); header '2 yayında'; is_admin=true; rename+delete controls visible on every card; approve/reject only for pending.",
+    "admin_upload_instant_publish": "PASS — Uploaded tiny PNG as 'Deniz Er' via uniform-toggle-form → uniform-name → uniform-png → uniform-submit. Toast: 'Üniforma yayınlandı'. Card appeared without 'Onay bekliyor' badge. Cards count 2→3.",
+    "admin_rename_via_prompt": "PASS — window.prompt overridden to return 'Deniz Er 2'; uniform-rename-{id} clicked → card name updated to 'Deniz Er 2' after reload.",
+    "admin_delete": "PASS — window.confirm overridden to true; uniform-delete-{id} clicked → card removed; seed data left intact (only Deniz Er 2 deleted).",
+    "studio_list_approved_only_no_admin_ctrls": "PASS — /studyo/vesikalik → uniform-library shows 2 approved cards; ZERO uniform-approve-*/uniform-reject-*/uniform-rename-*/uniform-delete-* elements.",
+    "studio_upload_pending_toast": "PASS — Uploaded 'Hava Er' PNG; toast: 'Üniforma gönderildi — admin onayı bekleniyor'. Form-info text confirms 'Yüklediğiniz üniforma admin onayından sonra tüm panellerde görünür.' Admin GET confirms record persisted as status='pending', uploaded_by studio1.",
+    "studio_sees_own_pending_in_grid": "FAIL — Backend GET /api/studio/uniforms returns only 2 approved items to studio1; pending 'Hava Er' hidden. See backend_issues.minor above.",
+    "regression_editor_controls": "PASS — size-select, digital-download-btn, qr-deliver-btn all present in studio Vesikalik editor. No new JS errors introduced by UniformLibrary. Only pre-existing WebGL/wasm/401 warnings.",
+    "png_image_previews": "PASS — <img src='<BE>/api/studio/uniforms/{id}/file/png'> for seed cards loads (naturalWidth=1 for tiny 1×1 test PNG; loaded=true, no broken image icon)."
+  },
+  "console_errors": "Only pre-existing 401 probing /auth/me and WebGL/wasm warnings from tfjs auto-bg. Zero JS errors caused by UniformLibrary.",
+  "test_report_links": [],
+  "action_items": [
+    "Backend: In /app/backend/routers/studio.py list_uniforms, allow non-admin uploader to also see own pending/rejected items so the 'Onay bekliyor' badge in UniformLibrary.jsx actually surfaces after they submit. Recommended filter for non-admin: {'is_deleted': {'$ne': True}, '$or': [{'status':'approved'}, {'uploaded_by': acc['id']}]}. Note that context_note claimed backend hides pending from studio; if that is the DESIRED behavior, please remove the review-item wording 'appears in their own list' and treat this as passed."
+  ],
+  "critical_code_review_comments": [
+    "UniformLibrary.jsx already assumes the API returns own-pending to the uploader (renders 'Onay bekliyor' badge branch). Backend contract does not match — behavioral drift between UI expectation and API filter.",
+    "img crossOrigin='anonymous' + credentials:'include' file endpoint: works because cookie is same-site preview domain. If deployed to a different origin, canvas taints/CORS could break. Consider a signed short-lived URL for PNG previews.",
+    "doAction uses window.prompt/window.confirm — fine for admin utility but not ideal UX. Consider replacing with a shadcn Dialog on next iteration.",
+    "AdminPassportPhoto.jsx still 1200+ lines and now embeds UniformLibrary — split ripe."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request; auxiliary curl confirms pending record persisted correctly)", "frontend": "89% (8/9 assertions; 1 fails due to backend list-filter gap)"},
+  "test_credentials": "Admin admin@fotuber.com.tr / FTB.2024 ; Studio studio1@test.com / Test1234",
+  "seed_data_creation": "Uploaded then deleted 'Deniz Er' (admin) and 'Hava Er' (studio, pending → deleted by admin curl cleanup). Seed uniforms 'Piyade Er' and 'Jandarma Uzman' left intact.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All Uniform Library UI flows verified against real backend on the preview URL. Only open issue: studio uploader cannot see own pending item — if main agent fixes the backend filter, retest by uploading a studio uniform and asserting uniform-card-<id> with 'Onay bekliyor' text is visible ONLY in the uploader's grid (not in another studio's grid).",
+  "rca of the issue": "Backend /api/studio/uniforms list_uniforms (studio.py:1132-1138) filters non-admin queries with {'status':'approved'} only. There is no OR clause for uploaded_by == current studio id. Consequently, after a studio POSTs a new uniform (status='pending'), the follow-up GET on the same panel returns the item-set without their pending submission, and UniformLibrary.jsx's 'Onay bekliyor' badge branch never gets exercised in the studio panel. Fix is a one-line change to the else branch of that function."
+}

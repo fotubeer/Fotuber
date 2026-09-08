@@ -1,0 +1,27 @@
+{
+  "summary": "Verified the reported Turkish bug fix (PublicLayout header/mobile/footer CTA relabel + retarget) and full backend regression for gallery event create + expiry quota gate. UI (desktop @1920 + mobile @390): data-testid cta-vesikalik-panel text is now 'Stüdyo Paneli' and clicking navigates to /studyo (studio-email visible). The string 'Vesikalık Paneli' no longer appears anywhere in the public header or footer. The footer link is now 'Stüdyo Paneli' → /studyo. Mobile: m-cta-vesikalik-panel reads 'Stüdyo Paneli' and navigates to /studyo. Regression: /studyo login with studio1@test.com/Test1234 lands on /studyo/panel; /studyo/vesikalik renders studio-vesikalik shell; /vesikalik member page still exists (renders Fotuber Vesikalık Firma Paneli login). Backend pytest 3/3 PASS: (a) /api/studio/me returns membership.plan=gold for studio1; (b) POST /api/studio/gallery/events with {name, client_name, client_phone:'05551234567'} returns event with id + client_phone echoed exactly, cleaned up via DELETE; (c) Registered a fresh studio, force-expired via Mongo (trial_end + paid_until in past, plan=trial), then POST /api/studio/gallery/events → HTTP 402 with detail starting '[UPGRADE]'. AI clothing edit NOT triggered. Real PayTR NOT completed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_public_nav_and_event_create.py",
+    "/app/test_reports/pytest/nav_bug_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "PublicLayout.jsx: data-testid still named cta-vesikalik-panel / m-cta-vesikalik-panel even though the copy/target is now 'Stüdyo Paneli' → /studyo. Testids stayed stable to avoid breaking prior scripts, which is fine, but consider renaming to cta-studio-panel / m-cta-studio-panel in a future cleanup for clarity.",
+    "gallery.py create_event correctly applies _studio_state active gate (raises 402 [UPGRADE] when trial+paid_until both in past) AND client_phone is stored & echoed via _event_out — verified end-to-end."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_public_nav_and_event_create.py (new, 3 tests, all pass)"
+  ],
+  "success_rate": {"backend": "100% (3/3)", "frontend": "100% on the bug-fix scope (all 3 CTAs relabeled+retargeted, string removed from nav, regression flows intact)"},
+  "test_credentials": "studio1@test.com / Test1234 (gold, active). Ephemeral expired studio created & deleted during test.",
+  "seed_data_creation": "One TEST_NavBugEvent gallery event created via studio1 for the client_phone assertion, then deleted. One TEST_expired_* studio account registered and force-expired in Mongo, then deleted.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The bug 'preview de hala vesikalık paneli olarak görüyorum' is FIXED. Public CTAs (desktop cta-vesikalik-panel, mobile m-cta-vesikalik-panel, footer link) all say 'Stüdyo Paneli' → /studyo. String 'Vesikalık Paneli' verified absent from public header + footer HTML. Backend gallery.create_event verified to (a) accept & echo client_phone and (b) return HTTP 402 with detail '[UPGRADE]...' when the studio's trial+paid_until are expired. Note: data-testid names still contain 'vesikalik-panel' (unchanged for backward compat) but visible text/target are now Studio. From iter 36: legacy fmtDate '01.01.1970' cosmetic issue in StudioGallery.jsx still present (not in scope of this fix)."
+}

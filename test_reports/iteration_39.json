@@ -1,0 +1,29 @@
+{
+  "summary": "Session AD — end-to-end validation of 3 NEW enhancements on top of Session AC. Backend pytest 5/5 PASS in /app/backend/tests/test_session_ad_tasks.py. (E1) GET /api/venue/report returns {report, count:2} with enriched couple_name ('Ayşe & Mehmet' free, 'Can & Ece' discount 30%), invitation_slug (ayse-mehmet-*, can-ece-*), event_date and used_at. Frontend /salon → login salon1@test.com/Test1234 → /salon/panel (venue-dashboard) shows 3 tabs (venue-tab-codes/report/campaign). 'Kullanım Raporu' tab renders venue-report with 2 rows (venue-report-row-<id>), columns Kod/Tür/Çift/Kullanım/Etkinlik/Davetiye, both couple names visible, venue-report-csv + venue-report-refresh buttons active. (E2) TrDatePicker verified in BOTH locations: /studyo/galeri 'Yeni Etkinlik' modal → sg-event-date is a BUTTON (not native input), opens Turkish shadcn Calendar popover, selecting a day sets label to '27.07.2026' (dd.MM.yyyy). /davetiye-olustur wizard → event-date is a BUTTON, same behavior; live preview even localizes as '27 Temmuz 2026'. (E3) 'Toplu Kampanya' tab shows venue-campaign form with venue-camp-type, venue-camp-numbers, venue-camp-message. Pasted '0532 111 22 33' and '05334445566' → click venue-camp-generate → 2 codes generated via POST /api/venue/codes (SALON-FVZSZV, SALON-HSNPP7), venue-camp-prepared list rendered with rows +905321112233 / +905334445566 (numbers normalized to 90XXXXXXXXXX). Clicking venue-camp-send-0 opens https://wa.me/905321112233?text=<encoded template with kod/link/teklif substituted>. NO Twilio/paid API used — purely client-side wa.me deep links. Codes visible under Kodlar tab as new active codes; stats updated (total 12).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_session_ad_tasks.py",
+    "/app/test_reports/pytest/session_ad.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "VenueDashboard.jsx is now ~420 lines with 3 sub-components (ReportView, CampaignView, Stat) — still readable but approaching the split threshold; consider extracting CampaignView + ReportView into separate files under src/pages/venue/ for future maintainability.",
+    "CampaignView.generate() issues N sequential POST /api/venue/codes calls (one per number). For 100 numbers this is 100 round trips — consider a bulk endpoint POST /api/venue/codes/bulk that accepts an array of {couple_name} entries and returns N codes atomically. Not blocking, but improves UX for larger campaigns.",
+    "TrDatePicker forces onChange(toISO(date)) but does not guard against undefined date (react-day-picker calls onSelect(undefined) when deselecting the same day) — toISO('') returns '' so it's safe today, but adding `if (!date) return;` would prevent accidental clear.",
+    "wa.me template in CampaignView uses INVITE_URL from window.location.origin — fine for preview, but if invitations are meant to be shared with a canonical domain the template should use a configurable base URL from env."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_session_ad_tasks.py (new, 5 tests)"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (all 3 enhancements verified)"},
+  "test_credentials": "salon1@test.com/Test1234 (venue); studio1@test.com/Test1234 (studio); admin@fotuber.com.tr/FTB.2024 — all working.",
+  "seed_data_creation": "Created 4 harmless single-use venue codes during E3 testing (2 via backend tests TEST_AD Camp Ayşe / TEST_AD Camp Zeynep, and 2 via UI campaign TEST_AD Ayşe & Mehmet / TEST_AD Zeynep). All are single-use and unused — safe to leave per problem statement. No invitations were published.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 3 enhancements (venue report / TR datepicker / bulk WhatsApp campaign) are fully functional on preview URL. wa.me deep-link approach cleanly avoids Twilio. Backend enrichment of venue/report via invitations join works. TrDatePicker is reused in two places already — safe to extend to other date fields if needed."
+}

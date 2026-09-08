@@ -1,0 +1,23 @@
+{
+  "summary": "Iter 44 verified 3 new features (Vesikalık 3'lü, Anı Duvarı Silver/Gold packages, Admin free premium). Backend: 8/8 pytest cases PASS in /app/backend/tests/test_iter44.py — admin free premium+photowall invitation publishes with price=0/requires_payment=false; normal member same payload → requires_payment=true, price>0; admin GET /api/studio/me returns membership.plan='gold', modules {vesikalik:true, gallery:true}, design_rights=10,000,000; GET /api/invitations/photowall-tiers returns silver+gold with price+storage_gb; PUT /api/admin/photowall-config saves override (silver 450 / gold 850+60GB) and public tiers reflect immediately (RESET back to 500/10 & 900/50 defaults at end of test as instructed); GET /api/invitations/{iid}/table-qr.pdf returns 200 application/pdf (%PDF magic bytes) for gold, 403 for silver; spam box flow works — POST spam=true hides photo from public list & increments top-level spam_count, spam=false restores. Frontend: /admin/ani-duvari renders 'Anı Duvarı Paketleri' with silver+gold cards, mw-silver-price/mw-gold-price/mw-silver-storage/mw-gold-storage inputs and 'Masa QR' badge on gold; mw-save shows success toast 'Anı Duvarı paket ayarları kaydedildi'. /davetiye-olustur wizard shows all 3 photowall-tier-none/silver/gold cards on the initial features step (no next-clicks needed); selecting gold shows '+900₺' price badge. /admin/vesikalik shows vesikalik-mode-triple; entering triple mode reveals 3 slots each with vt-ai-toggle-{0,1,2} switches (OFF by default) plus the biometric framing dropdowns; vt-process-btn ('3'ünü Aynı Anda İşle') renders. Real bg-removal was NOT triggered per instructions.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter44.py", "/app/test_reports/pytest/iter44.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "TFJS WASM backend fallback in the browser: console shows 'wasm streaming compile failed ... Incorrect response MIME type. Expected application/wasm' and 'expected magic word 00 61 73 6d, found 3c 21 64 6f' — the server is returning the index.html (starts with <!doc) for the requested .wasm asset URL, meaning the SPA fallback catches the wasm path. WebGL is also unsupported in this test env so TFJS has no working backend. This will BREAK real client-side bg-removal for both single and triple vesikalik processing on any device without WebGL. E1 should ensure the WASM assets (tfjs-backend-wasm-*.wasm) are served with the correct MIME/path — likely need to copy them into /public and reference by absolute URL, or configure webpack to output them under /static so the SPA rewrite doesn't swallow the request.",
+    "_strip_studio() in /app/backend/routers/studio.py does NOT expose top-level 'plan' — clients must dig into account.membership.plan. Consider surfacing plan/plan_name at the account root for simpler FE consumption; several places in FE probably already handle this but it caught the initial test.",
+    "InvitationIn schema uses person1/person2 while other album/event endpoints use couple_names — inconsistent naming across invitation-related payloads is a small foot-gun for API consumers."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (admin cookie access_token). Member expired@fotuber.com.tr / Test1234.",
+  "seed_data_creation": "3 test invitations created under admin account (2 gold + 1 silver photowall, published, price=0). 1 test invitation under expired member (requires_payment=true). 1 tiny PNG uploaded to public photowall endpoint then toggled spam on/off. photowall-config PUT to override then RESET to defaults (silver 500/10, gold 900/50).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test file /app/backend/tests/test_iter44.py is reusable — run with `python -m pytest backend/tests/test_iter44.py -v -o 'addopts='` (project pytest.ini injects xdist -n which the base image doesn't support here; override addopts). Test IDs used: mw-silver-price, mw-gold-price, mw-silver-storage, mw-gold-storage, mw-save, photowall-tier-none/silver/gold, vesikalik-mode-triple, vt-ai-toggle-0/1/2, vt-process-btn. Studio/me plan is at account.membership.plan (not account.plan). Invitation POST requires person1 + event_date (NOT couple_names/venue)."
+}

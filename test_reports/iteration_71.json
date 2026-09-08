@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 71 — Fotuber sadeleştirilmiş katalog + public randevu talep + takvim/tatil + dual sözleşme (venue/photo). Backend 10/10 pytest, frontend admin + public E2E doğrulandı.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_appt_pro_iter71.py",
+    "/app/test_reports/pytest/iter71.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "PDF single-page: verified via pypdf both venue and photo variants produce exactly 1 A4 page.",
+    "Photo PDF text does not contain 'Davet Evi' and includes 'Photography' (brand_name_photo).",
+    "public/day-status closed=true for all_day blocks; blocked_ranges returned for time ranges.",
+    "public/requests correctly rejects with 400 when kvkk_accepted=false and when the date is all_day blocked.",
+    "Services kind filter works; 'Aktüel Kamera' seed backfill confirmed on existing DB.",
+    "Backfill of kind on legacy services is done inside _seed() when count>0 — good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_appt_pro_iter71.py"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024",
+  "seed_data_creation": "Test verileri TEST_Iter71 prefix ile üretildi ve teardown'da silindi. Yalnızca contract-settings.kvkk_text test değeriyle güncellendi (restore edilmedi).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_appt_pro_iter71.py yeni özellikleri (kind filter/blocks/public requests/dual clauses/PDF single-page venue+photo) kapsıyor. Frontend E2E doğrulandı: /randevu-al KVKK+success akışı, /admin/randevu-katalogu 6 sekme (cat-tab-services/events/products/requests/blocks/contract), Sözleşme İçeriği'nde ct-clauseset-clauses/ct-clauseset-clauses_photo/ct-kvkk, /admin/randevu-olustur brand-venue/brand-photo manuel seçici + Etkinlikler ve Hizmetler bölümleri.",
+  "rca of the issue": "N/A — tüm senaryolar geçti."
+}

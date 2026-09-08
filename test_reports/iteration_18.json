@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 18 — Verified backend BYOK Gemini key + AI credits endpoints and frontend Vesikalık BYOK UI. Backend: 10/10 pytest cases PASS in /app/backend/tests/test_byok_credits.py — POST /api/auth/login returns JWT, GET /api/vesikalik/ai-credits returns {remaining:25,total:25,own_key:false,masked:null}, GET /api/vesikalik/gemini-key returns {connected:false,masked:null}, POST /api/vesikalik/gemini-key with 'AIzaINVALIDtestkey123' rejected with HTTP 400 (detail includes 'geçersiz gemini anahtarı'), DELETE returns {connected:false}, and all three gemini-key endpoints + ai-credits return 401/403 without token. Frontend: login /giris → /admin/vesikalik loads title testid. In the Profesyonel Stüdyo card the AI credit badge [data-testid=ai-credits-badge] reads 'Kalan: 25/25 kredi' (25 confirmed), BYOK box [data-testid=byok-box] is present with password input [data-testid=gemini-key-input] (type=password), 'Bağla' button [data-testid=gemini-connect-btn], status [data-testid=gemini-status]='Bağlı değil'. AI apply [data-testid=studio-ai-apply] label = 'Kıyafeti Değiştir (AI) — Ücretli' and paid badge [data-testid=studio-paid-badge]='Ücretli'. Legacy free-recolor testids (studio-mode-recolor, studio-recolor-apply, studio-mode-switch) are all absent. Invalid-key flow: entering 'AIzaINVALIDtestkey123' and clicking Bağla triggers the 400 response (visible in console) and the status remains 'Bağlı değil' and credits stay 25/25 — no state corruption. Regression: portrait1.jpg uploads via input#vf; canvas-single (591x709) and canvas-sheet (1535x2126 for TR biometric 6-up on 13x18cm) render with content; retouch-open-btn present; face-api detection completes; toast 'Model yüklenemedi' surfaced transiently as noted in iter_16 (non-blocking).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_byok_credits.py",
+    "/app/test_reports/pytest/iter18_byok.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Sonner toast for the invalid-key rejection was not captured by DOM query selectors (empty text) — the 400 error is visible in console and the UI status stays 'Bağlı değil' so functionality is correct, but consider ensuring toast text persists in DOM long enough for e2e assertions (e.g. duration >= 3s and role=status stable).",
+    "The 'Model yüklenemedi. İnternet bağlantınızı kontrol edin.' toast still appears transiently on face-api model warm-up (noted iter_16); consider suppressing on the first attempt if a retry succeeds.",
+    "PhotoStudio.jsx: masked input for the gemini key uses type=password which hides both while typing AND after connect — for UX, once connected show masked (e.g. AIza…3xyz) as read-only text, not masked password input."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_byok_credits.py"
+  ],
+  "success_rate": { "backend": "100% (10/10 pytest)", "frontend": "100% (all requested testids and behaviours verified)" },
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. No valid Gemini key was available so only the invalid-key rejection path was tested (per review request).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New endpoints under /api/vesikalik/: GET ai-credits (remaining,total,own_key,masked), GET/POST/DELETE gemini-key. POST validates key against Google — invalid returns HTTP 400 with Turkish detail. Auth required (JWT via /api/auth/login). Frontend BYOK box lives in PhotoStudio.jsx on /admin/vesikalik right column. Test file /app/backend/tests/test_byok_credits.py runs in ~2.6s and is safe to re-run (it cleans up own state via DELETE). No real Gemini success path was exercised.",
+  "rca of the issue": "N/A — no bugs found. All BYOK backend + frontend integration behaves per spec."
+}

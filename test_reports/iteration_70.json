@@ -1,0 +1,32 @@
+{
+  "summary": "Regression + new-feature testing for /api/appt-pro iteration 70 (cash-flow integration, PDF, cascade delete, approvals badge, payment method, ?tab=saved). Backend: 6/6 new pytest tests PASS in /app/backend/tests/test_appt_pro_iter70.py (card→income tx, cash→income tx, paid=0→no tx, PDF %PDF header + 6105 bytes, cascade delete removes contract+appointment+transaction, public approve bumps unseen to 1 then /approvals/seen resets to 0). Frontend: Login → Builder /admin/randevu-olustur — sum-total-manual override (typed 5000 → sum-total shows '5.000 ₺'), setting deposit 1500 → sum-remaining='3.500 ₺' (auto = total - deposit), pay-cash/pay-card toggles both toggle to active style (bg-slate-900). Catalog /admin/randevu-katalogu after triggering a real public approval → approvals-badge visible with text '1' on default tab; clicking cat-tab-saved clears it (badge no longer visible). Deep link /admin/randevu-katalogu?tab=saved directly renders contracts-list. Contract view /admin/sozlesme/:id shows all buttons: contract-pdf, contract-whatsapp, contract-copy, contract-qr-toggle, contract-print. contract-pdf click triggers a valid file download (sozlesme-<id>.pdf, 6105 bytes). ContractSheet renders 'Ödeme Şekli' line (Nakit/Kart driven by c.payment_method). All test data cleaned up.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Global (multiple pages)", "issues": ["Recurring SVG console errors: '<circle> attribute cx: Expected length, \"undefined\"' — a chart/avatar SVG on admin dashboard renders with undefined cx/cy. Non-blocking but noisy."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_appt_pro_iter70.py",
+    "/app/backend/tests/test_appt_pro.py",
+    "/app/test_reports/pytest/appt_pro_iter70.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "appt_pro.py create_appt_with_contract: top-level payload.payment_method is written onto the appointment + transaction, but NOT propagated onto the contract document (contract.payment_method comes only from payload.contract.payment_method, defaulting to 'cash' in ContractIn). Frontend currently sends payment_method in both places so it works via UI, but any API client sending only the top-level field will produce a contract that displays 'Nakit' regardless. Recommendation: if payload.payment_method is provided and payload.contract.payment_method is default, mirror it onto the contract to avoid inconsistency between appointment/transaction and contract sheet.",
+    "Sidebar link data-testid ends up as 'admin-nav-randevu-katalogu?tab=saved' (query string in testid). Works but the '?' in a data-testid attribute value is fragile for CSS selectors — consider a stable id like 'admin-nav-sozlesmeler'.",
+    "appt_pro.py public_approve_contract still overwrites approval_status even if already approved (idempotent OK, but consider 409). Existing note from iter69.",
+    "AdminApptCatalog.jsx: leftover contract 'Esra & Emir' visible from previous test runs — earlier iterations did not clean up. Not a bug per se; suggests admin might benefit from a bulk-cleanup or filter for TEST_ contracts."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_appt_pro_iter70.py"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024",
+  "seed_data_creation": "Each backend test creates a contract+appointment (+tx) with TEST_Iter70 prefix and deletes them at end. Frontend test contract (TEST_UI Ayşe & TEST_UI Mehmet) deleted after run. Note: one leftover 'Esra & Emir' contract from an earlier iteration is still in the Sözleşmeler list; not created by this run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All new iter70 features (cash-flow tx integration, cascade delete, PDF, approvals badge + seen, ?tab=saved deep link, payment method toggles, manual total + auto-remaining) verified end-to-end. Regression tests live in /app/backend/tests/test_appt_pro.py (10 tests, iter69) and /app/backend/tests/test_appt_pro_iter70.py (6 tests, iter70) — 16 total, all green. Only substantive follow-up is the minor server-side inconsistency where top-level payment_method isn't mirrored to contract doc when caller omits it in the nested contract (frontend does send it, so UI is fine)."
+}

@@ -1,0 +1,70 @@
+{
+  "name": "fotuber-studio-desktop",
+  "productName": "Fotuber Stüdyo",
+  "version": "1.0.0",
+  "description": "Fotuber Stüdyo Paneli masaüstü uygulaması (Windows & macOS)",
+  "author": "Fotuber",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:all": "electron-builder -mw --publish never"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "tr.com.fotuber.studio",
+    "productName": "Fotuber Stüdyo",
+    "artifactName": "fotuber-studio-${version}-${arch}.${ext}",
+    "afterPack": "build/afterPack.js",
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://example.com/fotuber-updates/"
+      }
+    ],
+    "files": [
+      "main.js",
+      "preload.js",
+      "config.js",
+      "assets/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.photography",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "assets/icon.png"
+    }
+  }
+}

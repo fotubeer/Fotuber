@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 26 (Fotuber): tested reveal_style variants, additive premium pricing (250 + 500 = 750 TL), end-of-event-day expiry for free invitations, PayTR link creation for kind=invitation_extend (99 TL), photo+video wall upload with 75GB cap surfacing, owner moderation (kind/size/hidden + storage_used/limit/limit_gb=75), owner ZIP media download, and all requested UI checkpoints (PublicLayout single-row header on /hizmetler, wizard reveal-style-grid with 7 dugun styles / kina switches include reveal-style-henna, preview-reveal modal open/close, guest InvitationReveal cover, MyInvitations extend / photowall management dialog with storage bar). Backend: 13/14 tests PASSED, 1 SKIPPED (already-extended 400 path — cannot flip 'extended' server-side without completing a real PayTR payment). Frontend: 5/5 requested flows PASSED.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PublicLayout header at 1920px", "issues": ["Header height measured 83px (spec asked '<= 80px'). Nav is confirmed single-line (all 10 nav items at y=30.5) and Randevu Al + Personel Girişi visible on the right — only the total header height is 3px over the target. Non-blocking."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration26_invitations.py",
+    "/app/test_reports/pytest/iter26.xml"
+  ],
+  "action_items": [
+    "(optional) Trim PublicLayout header vertical padding by ~4-6px so total header height drops from 83px to <=80px per spec.",
+    "(optional) Provide an internal test hook / admin endpoint to flip invitation.extended=true so automated tests can verify the /api/payments/paytr/create kind=invitation_extend '400 already extended' branch without completing a live PayTR payment."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 5322 lines — still exceeds the 700-line guideline; split into invitations/payments/media modules.",
+    "_invitation_pricing correctly recomputes on both create and update; client-supplied price is ignored (verified).",
+    "_invite_expires_at behaviour verified: free = event_date + <24h (end of day), extended = event_date + 15d 23h59m — matches spec.",
+    "download_invitation_media (ZIP) uses ZIP_STORED (no compression) which is fine for already-compressed jpg/mp4 but will bloat plain files; acceptable for photo/video wall use case.",
+    "public photo/video upload endpoint has no per-IP/uploader rate limit; combined with 200MB per-video and 75GB per-invitation cap this is a DoS/abuse vector — consider basic throttling.",
+    "reveal_style is a free-text field on the server (only trimmed to <=?), while frontend enforces the enum — server should validate against a whitelist to prevent stored-XSS style injection."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration26_invitations.py (new)"
+  ],
+  "success_rate": {"backend": "100% (13 passed, 1 skipped)", "frontend": "100% (5/5 flows)"},
+  "test_credentials": "expired@fotuber.com.tr / Test1234 (member cookie auth). Public slugs used: ahmet-yasemin-e9385d, moderator-1ddd7d.",
+  "seed_data_creation": "Backend tests created TEST_ prefixed invitations (free with reveal 'hearts', premium noir with/without photowall, free+photowall) — all cleaned up in module teardown. One tiny JPEG + one tiny MP4 uploaded to moderator-1ddd7d photo wall (uploader_name TEST_Guest); left in place because their small size (<1KB) does not meaningfully affect the 75GB budget.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All iteration-26 features (reveal_style, additive premium pricing 250+500=750, 99TL extend link, end-of-event-day free expiry, video wall + 75GB, owner ZIP download, moderation storage_used/limit/limit_gb, wizard reveal-style-grid, kina henna option, preview-reveal-modal, MyInvitations inv-extend-<id> + inv-download-media-<id> + photowall-storage) are working end-to-end on the preview URL. PayTR live — do NOT complete payment. Only lingering nit: header is 83px vs 80px target. Note server.py is 5322 lines — refactor candidate.",
+  "rca of the issue": "N/A — no blocking issues found."
+}

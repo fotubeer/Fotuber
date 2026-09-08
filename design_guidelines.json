@@ -1,0 +1,49 @@
+{
+  "theme": "dark_luxury",
+  "typography": {
+    "brand_name": "font-serif text-2xl xl:text-3xl tracking-tight text-white",
+    "tagline": "text-[9px] xl:text-[10px] tracking-[0.3em] xl:tracking-[0.4em] text-[#d4af37] uppercase",
+    "nav_items_standard": "text-[11.5px] xl:text-[13px] 2xl:text-sm tracking-tight lg:tracking-normal font-medium whitespace-nowrap text-neutral-300 hover:text-white relative",
+    "nav_items_accent": "text-[11.5px] xl:text-[13px] 2xl:text-sm tracking-tight lg:tracking-normal font-medium whitespace-nowrap text-[#d4af37] hover:text-[#e8ca58] drop-shadow-[0_0_8px_rgba(212,175,55,0.3)] relative"
+  },
+  "colors": {
+    "background_header": "bg-[#050505]/85",
+    "border_header": "border-white/5",
+    "accent_gold": "#d4af37",
+    "accent_gold_glow": "drop-shadow-[0_0_8px_rgba(212,175,55,0.4)]",
+    "cta_emerald": "bg-emerald-600 hover:bg-emerald-500 text-white"
+  },
+  "layouts": {
+    "header_container": "sticky top-0 z-50 w-full bg-[#050505]/85 backdrop-blur-2xl border-b border-white/5 transition-colors duration-300",
+    "header_inner": "max-w-[1920px] mx-auto flex items-center justify-between px-4 lg:px-6 xl:px-10 py-3 xl:py-4",
+    "logo_section": "flex items-center gap-3 w-auto min-w-max",
+    "nav_section": "hidden lg:flex items-center justify-center flex-1 mx-2 lg:gap-2 xl:gap-5 2xl:gap-7",
+    "cta_section": "hidden lg:flex items-center gap-3 w-auto min-w-max"
+  },
+  "visual_enhancers": {
+    "hover_underline": "after:content-[''] after:absolute after:w-full after:scale-x-0 after:h-[1px] after:-bottom-1.5 after:left-0 after:bg-[#d4af37] after:origin-center hover:after:scale-x-100 after:transition-transform after:duration-300 after:ease-out",
+    "cta_button_shadow": "shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_25px_rgba(16,185,129,0.4)] transition-shadow duration-300"
+  },
+  "component_path": "/app/frontend/src/components/PublicLayout.jsx",
+  "instructions_to_main_agent": [
+    "Open /app/frontend/src/components/PublicLayout.jsx for editing.",
+    "Update the `<header>` tag classes to `sticky top-0 z-50 w-full bg-[#050505]/85 backdrop-blur-2xl border-b border-white/5 transition-colors duration-300` to implement the dark luxury crystal glass aesthetic.",
+    "Change the inner header wrapper `div` classes from `max-w-7xl mx-auto flex items-center justify-between px-6 py-4` to `max-w-[1920px] mx-auto flex items-center justify-between px-4 lg:px-6 xl:px-10 py-3 xl:py-4`. This edge-to-edge layout prevents cramping and places the logo on the far left.",
+    "Enhance the Logo & Brand Area: Apply `font-serif text-2xl xl:text-3xl tracking-tight text-white` to the brand text. Make the tagline `text-[9px] xl:text-[10px] tracking-[0.3em] xl:tracking-[0.4em] text-[#d4af37] uppercase`. Ensure the logo image uses `w-10 h-10 xl:w-12 xl:h-12 border-[#d4af37]`.",
+    "Solve the 10 Nav Items Wrapping Issue: Update the `<nav>` container classes to `hidden lg:flex items-center justify-center flex-1 mx-2 lg:gap-2.5 xl:gap-5 2xl:gap-7`. This fluid spacing ensures all items fit on one line for screens >=1024px.",
+    "Refine NavLinks (Hover & Font Size): Remove the custom `link-underline` class. For ALL NavLink elements, apply `relative whitespace-nowrap text-[11.5px] xl:text-[13px] 2xl:text-[14px] font-medium tracking-tight lg:tracking-normal transition-colors`. Also apply the new hover underline animation: `after:content-[''] after:absolute after:w-full after:scale-x-0 after:h-[1px] after:-bottom-1.5 after:left-0 after:bg-[#d4af37] after:origin-center hover:after:scale-x-100 after:transition-transform after:duration-300 after:ease-out`.",
+    "Accent vs Standard Links: If `n.accent` is true, apply `text-[#d4af37] hover:text-[#e8ca58] drop-shadow-[0_0_8px_rgba(212,175,55,0.3)]`. If false, apply `text-neutral-300 hover:text-white`.",
+    "Right CTA Section: Ensure the button wrapper is `hidden lg:flex items-center gap-2 xl:gap-3 w-auto min-w-max`. Upgrade the 'Randevu Al' emerald button to `bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-full px-5 xl:px-6 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] transition-all duration-300`.",
+    "Mobile Enhancements: Update the mobile menu dropdown background to `bg-[#050505]/95 backdrop-blur-3xl border-t border-white/5`."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Prioritize using pre-existing components from src/components/ui when applicable.",
+    "Create new components that match the style and conventions of existing components when needed.",
+    "You MUST NOT apply universal transition (e.g., transition: all). Always add transitions for specific properties to avoid breaking transforms.",
+    "You MUST NOT center align the app container in App.css.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur).",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "NEVER use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯 for icons.",
+    "All interactive and key informational elements MUST include a data-testid attribute."
+  ]
+}

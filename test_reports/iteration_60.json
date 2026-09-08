@@ -1,0 +1,35 @@
+{
+  "summary": "End-to-end UI validation of the Event Gallery per-photo assignment + lightbox + studio order/ZIP/PDF/link-regen flow. Logged in studio1@test.com/Test1234 via /studyo, created a fresh event (date 2026-06-15), added a service pack (Ahşap Tablo · 150₺ · limit 3), uploaded 3 JPGs (Dsc002635/6/7). VERIFIED: (a) each studio thumbnail shows its filename code label; sg-download-zip returns a valid ZIP whose entries preserve original filenames ['Dsc002635.jpg','Dsc002636.jpg','Dsc002637.jpg']; per-photo sg-photo-orig-* links exist. (b) On /galeri/{share_token}, all 3 photos rendered with gs-code-* labels; clicking gs-open-lightbox-<pid> opens gs-lightbox showing gs-lightbox-code=filename; gs-lightbox-next/prev cycle photos (Dsc002635→Dsc002636→back to Dsc002635); gs-lightbox-close closes; per-photo gs-lb-album/canvas/retouch toggles work; gs-lb-pack-<packId> assigns pack. (c) gs-assigned-summary correctly shows 'Ekstra Albüm · 2 × 500₺ = 1000₺ · Dsc002635.jpg, Dsc002636.jpg' after assigning the same pack to two photos. (d) gs-submit → gs-success shown with order number. (e) In /studyo/galeri Siparişler tab, the created order returns album_codes=['Dsc002635.jpg'], canvas_codes=['Dsc002636.jpg'], retouch_codes=['Dsc002635.jpg'] and pack_details with kind='Diğer' (note below), qty=2, total=1000, codes=['Dsc002635.jpg','Dsc002636.jpg']; sg-order-codes-<id> renders all groups. (f) sg-order-pdf-<id> downloads a PDF (2.2KB, valid). (g) sg-extend-<id> 'Link Yenile' is repeatedly clickable (2 successive clicks both succeed and button remains). Cleaned up the test event.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "public_select pack_details.kind", "issue": "Order pack_details reports kind='Diğer' although the pack was created with kind='Ahşap Tablo'. UI OrderCodes badge and gs-lb-pack badge show 'Diğer' instead of 'Ahşap Tablo'. Verify _pack_map / pack_details serializer copies pack.kind correctly (looks like it may be defaulting)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "StudioGallery ServicePacks list", "issue": "No delete testid on service pack rows (only client-side del() exists). Consider adding data-testid=\"sg-del-pack-<id>\" for automated cleanup.", "selector": "n/a", "priority": "LOW"},
+      {"component": "OrderCodes row", "issue": "Missing space between kind pill and pack name inline text ('DiğerEkstra Albüm' in innerText). Purely stylistic — a pill badge visually separates them but adjacent text lacks whitespace.", "selector": "sg-order-codes-<id>", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Investigate why order pack_details.kind is 'Diğer' when the pack was created with kind 'Ahşap Tablo' — check gallery.py public_select() pack_details serialization to ensure kind is copied from the pack record.",
+    "(Optional) Add sg-del-pack-<id> testid on Servis Paketleri rows to enable automated cleanup.",
+    "(Optional) Add whitespace between kind badge and name in OrderCodes rendering."
+  ],
+  "critical_code_review_comments": [
+    "public_select() pack_details 'kind' propagation appears broken — user selected 'Ahşap Tablo' but stored/returned as 'Diğer'. Should be a 1-line fix in the serializer.",
+    "download_originals ZIP preserves original filenames ✔; extend_link is idempotent/repeatable ✔; per-photo code mapping (album/canvas/retouch/pack codes) is correct end-to-end ✔."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-driven E2E)", "frontend": "100% (all 6 acceptance features pass)"},
+  "test_credentials": "studio1@test.com / Test1234 at /studyo",
+  "seed_data_creation": "Created 1 leftover pack 'TEST_Pack_<ts>' (Ahşap Tablo 150₺ limit3). Event 'TEST_LB_<ts>' was deleted at end of test. Pack was NOT deleted — no sg-del-pack testid available and REST cleanup script hit 403 on POST /api/studio/auth/login (different login route). Please delete TEST_Pack_* rows manually from Servis Paketleri tab.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 6 gallery lightbox/order/ZIP acceptance items pass on real backend. Only one behavioral bug found: pack_details.kind is served as 'Diğer' instead of the pack's actual kind. All testids expected by the review request exist and behave correctly. When creating events, use DateSelects (day/month/year) not a popover calendar.",
+  "rca of the issue": "Bug 1 (minor): kind mismatch — In gallery.py public_select or the pack serializer, kind field likely defaults instead of being copied from the ServicePack record when building pack_details. Reproduce: create a pack with kind='Ahşap Tablo', assign to a photo via client lightbox, submit; GET /api/studio/gallery/orders returns pack_details[0].kind == 'Diğer'. Mitigation: ensure kind is copied from the source pack document in the pack_details construction."
+}

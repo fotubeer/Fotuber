@@ -1,0 +1,90 @@
+name: Desktop Build (Windows & macOS)
+
+# Fotuber Stüdyo masaüstü uygulamasını (desktop/) Windows .exe ve macOS .dmg olarak derler
+# ve otomatik olarak "desktop-latest" adlı bir GitHub Release'e yükler (herkese açık indirme linki).
+
+on:
+  push:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop-build.yml"
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: "Uygulamanın açacağı adres (boş bırakılırsa config.js varsayılanı kullanılır)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: dist:win
+            artifact: fotuber-studio-windows
+            pattern: |
+              desktop/release/*.exe
+          - os: macos-latest
+            script: dist:mac
+            artifact: fotuber-studio-macos
+            pattern: |
+              desktop/release/*.dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: yarn install --network-timeout 600000
+
+      - name: Build installer
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          FOTUBER_APP_URL: ${{ github.event.inputs.app_url != '' && github.event.inputs.app_url || secrets.FOTUBER_APP_URL }}
+        run: yarn ${{ matrix.script }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.pattern }}
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: List files
+        run: find dist -type f
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-latest
+          name: Fotuber Stüdyo (Masaüstü)
+          body: |
+            Fotuber Stüdyo masaüstü uygulaması — en güncel derleme.
+            Windows: fotuber-studio-*.exe · macOS: fotuber-studio-*.dmg
+          files: |
+            dist/**/*.exe
+            dist/**/*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

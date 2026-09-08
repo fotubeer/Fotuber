@@ -1,0 +1,28 @@
+{
+  "summary": "Iter 47 — Frontend-only validation of (1) global floating StudioChatWidget on /studyo* routes and (2) modernized /studyo/galeri, plus verification that the Ekip page kept personnel management and dropped its embedded chat. Playwright tested end-to-end with studio1@test.com/Test1234 (gold, chat enabled). RESULTS: Login → /studyo/panel ✅. Floating chat-open-btn + studio-chat-widget visible on /studyo/panel and /studyo/galeri and /studyo/ekip ✅. Opening the widget shows chat-input, chat-send-btn, chat-emoji-btn (18-emoji grid opens), chat-file-btn, chat-mic-btn, chat-minimize-btn ✅. Sent text message 'TEST_iter47_<ts>' via chat-input + chat-send-btn — appeared in the message list after poll ✅. Minimize hides panel and returns floating button ✅. Widget correctly HIDDEN on / (home) and /giris ✅. /studyo/galeri: header 'Etkinlik Galerisi' rendered, all 5 tabs (sg-tab-events/packs/orders/reminders/settings) present and switchable, sg-new-event-btn opens role=dialog, 5 existing sg-event-card-* rendered, no console errors from gallery. /studyo/ekip: team-add-form + team-name/team-username/team-password/team-add-btn + team-list all visible; OLD data-testid='team-chat' correctly REMOVED; helper hint explains chat now lives in floating widget. Console 401s are pre-login /studio/chat polls (expected — widget calls poll before user session on some navigations); no runtime JS errors on gallery/panel/ekip.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "StudioChatWidget global", "issues": ["Widget calls /api/studio/chat every 4s even when the studio session token is missing (e.g., after logout while still on /studyo*), producing repeated 401s in console. Consider gating poll on presence of fotuber_studio_token in localStorage before making the request."]},
+      {"screen": "Non-studio pages (/, /giris)", "issues": ["Unrelated recharts warnings: '<circle> cx/cy Expected length, undefined' — pre-existing, not from this task."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "(Optional) Gate StudioChatWidget poll() on presence of studio token to avoid 401 noise when unauthenticated on /studyo/giris."
+  ],
+  "critical_code_review_comments": [
+    "StudioChatWidget.poll runs a 4s interval even if the user is not authenticated — always 401s until login. Cheap fix: read localStorage 'fotuber_studio_token' before poll and early-return if absent.",
+    "beep() creates a new AudioContext on every incoming message; Chrome throttles/warns when not tied to a gesture. Consider lazy-creating one AudioContext at open() and reusing it.",
+    "Desktop Notification permission is requested every time openWidget runs when state is 'default'; fine, but no fallback UX if the user denies — acceptable for MVP."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
+  "test_credentials": "studio1@test.com / Test1234 (gold plan, chat enabled). Token stored in localStorage key 'fotuber_studio_token'.",
+  "seed_data_creation": "One TEST_iter47_<timestamp> chat message posted into the studio1 chat log (harmless string, no PII).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Chat widget mounts globally in App.js and only renders when pathname startsWith '/studyo' AND backend returns enabled:true (plan max_users>=3). data-testids verified: studio-chat-widget, chat-open-btn, chat-unread-badge, chat-input, chat-send-btn, chat-emoji-btn, chat-file-btn, chat-mic-btn, chat-minimize-btn. Gallery data-testids verified: sg-tab-{events,packs,orders,reminders,settings}, sg-new-event-btn, sg-event-card-*, sg-events-empty (empty state), sg-packs-empty, sg-orders-empty. Team page cleaned: team-chat REMOVED; team-add-form + team-list + team-name/username/password/add-btn preserved."
+}

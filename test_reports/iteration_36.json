@@ -1,0 +1,40 @@
+{
+  "summary": "Phase 2 (Etkinlik expiry rules, Ek Link one-time, Sipariş 5-step flow + staff assign, RAW upload flag, watermark/originals settings, PayTR module sales with 20% discount) tested end-to-end. Backend: 14/14 pytest passed across two new files. test_phase2_gallery_expiry_modules.py verified: event create returns link_expires_at≈now+7d & originals_delete_at≈now+14d for gold plan; POST /studio/gallery/events/{id}/extend-link returns ok:true with unchanged originals_delete_at, second call returns HTTP 400 with 'Ek link hakkı zaten kullanıldı'; GET /studio/gallery/order-flow returns 5 steps with labels İnceleniyor/Hazırlanıyor/Baskıda/Kargoda/Tamamlandı; GET/PUT /studio/gallery/settings toggles + persists (gold defaults watermark=true, allow_originals=false; watermark_forced=false); upload-init returns is_raw=true for .nef and false for .jpg; GET /studio/modules/pricing returns discount=20, price=1999.2 for gold (base 2499) since studio1 owns both modules; POST /studio/payments/module/create returned {callback_id, link=https://www.paytr.com/link/..., paytr_link_id} without completing external payment; employee cannot PUT gallery settings (403); /vesikalik/ai-credits auth matrix (no-auth=401, studio=role studio). test_phase2_e2e_flow.py drove the full end-to-end flow: uploaded a small JPG via upload-init/chunk/complete → public GET /gallery/public/{token} returned watermark=true, allow_originals=false, link_expired=false, order_flow with 5 steps, 1 photo; posted client selection → owner /studio/gallery/orders returned new order → owner set status='printing' → public GET now returns order_status='printing' + order_status_label='Baskıda' → owner assigned employee (Ali Usta) via /orders/{id}/assign → employee session (username aliusta / 1234) sees the assigned order in /studio/gallery/orders. Frontend UI on /studyo/galeri (owner) confirms all data-testids render: sg-event-card-<id>, sg-extend-<id>, sg-tab-orders → sg-order-status-<id> + sg-order-assign-<id> (3 each on studio1), sg-tab-settings → sg-set-watermark + sg-set-originals visible & enabled (gold, not forced). /studyo/paketler shows both pkg-module-vesikalik and pkg-module-gallery with crossed-out base prices (499/899/1499/2499₺) and discounted prices (399.2/719.2/1199.2/1999.2₺) plus '%20 indirim uygulandı' badge and Satın Al buttons pkg-buy-<module>-<plan>. Real PayTR payment NOT completed per instructions. AI clothing edit NOT triggered.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "StudioGallery.jsx event card (line 167-169 fmtDate)", "issue": "Legacy events created before Phase 2 have link_expires_at=null and originals_delete_at=null in Mongo. `new Date(null).toLocaleDateString('tr-TR')` renders as '01.01.1970' on the event card ('Link: 01.01.1970' / 'Orijinal silinme: 01.01.1970'). Newer events display the correct dates. Suggested fix: guard fmtDate to return '—' when iso is null/undefined. Non-blocking cosmetic issue only for pre-existing events.", "selector": "[data-testid^='sg-event-card-']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase2_gallery_expiry_modules.py",
+    "/app/backend/tests/test_phase2_e2e_flow.py",
+    "/app/test_reports/pytest/phase2_p2_results.xml",
+    "/app/test_reports/pytest/phase2_e2e_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL LOW: Fix fmtDate in StudioGallery.jsx to render '—' when link_expires_at/originals_delete_at is null (avoid '01.01.1970' for legacy events).",
+    "Pre-existing (from iter 35, NOT re-tested): StudioPortal.jsx login field type='email' still blocks employee username login via UI — backend accepts username; only UI form validation is the blocker."
+  ],
+  "critical_code_review_comments": [
+    "gallery.py extend_link correctly leaves originals_delete_at untouched and marks extra_link_used=true; second call is guarded by 400 — verified by test.",
+    "gallery.py list_orders correctly scopes to employees via _is_owner + _emp_id — employee correctly sees only their assigned order.",
+    "gallery.py get_gallery_settings & set_gallery_settings enforce trial forcing (watermark_forced=true, watermark forced True / allow_originals forced False) — verified via code path (studio1=gold so trial branch not exercised by tests). Also correctly restricts PUT to owner.",
+    "studio.py _module_price applies 20% discount only when the OTHER module is owned — this is correct per spec ('otomatik %20 indirim on the SECOND module').",
+    "studio.py buy_module returns PayTR create_paytr_order result — response uses PayTR helper's shape ({callback_id, link, paytr_link_id}); frontend/tests should expect 'link' field, not 'payment_url'.",
+    "public_event correctly injects watermark, allow_originals, order_status_label, order_flow, link_expired, originals_purged — verified via GET /gallery/public/{token}."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase2_gallery_expiry_modules.py (new, 11 tests)",
+    "/app/backend/tests/test_phase2_e2e_flow.py (new, 3 tests)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "~95% — all Phase 2 testids render (sg-extend, sg-order-status, sg-order-assign, sg-set-watermark, sg-set-originals, pkg-buy-*), discounted pricing shown correctly, only cosmetic legacy-date display bug"},
+  "test_credentials": "studio1@test.com / Test1234 (gold, owns both modules) ; employee aliusta / 1234",
+  "seed_data_creation": "Created 2 TEST_ events per test-module (fixtures) and cleaned up via DELETE /studio/gallery/events/{id} in fixture teardown. 1 test order (from e2e submit) remains on studio1 attached to the TEST event that was deleted — order rows are cascaded via delete_event.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 2 backend is fully green (14/14). The only findings are: (1) legacy events show 01.01.1970 because null dates hit new Date(null) — cosmetic fmtDate guard needed; (2) pre-existing StudioPortal login type='email' bug from iter 35 still not fixed (blocks employee login via UI only). Real PayTR payment intentionally NOT completed. AI-costing endpoints intentionally NOT hit. Studio1 is gold plan with modules.vesikalik=modules.gallery=true, so all discount tests will show discount=20 by default.",
+  "rca of the issue": "Legacy 01.01.1970 render: pre-Phase-2 gallery_events docs in Mongo lack link_expires_at / originals_delete_at fields. Backend _event_out passes the null through; StudioGallery.jsx's fmtDate does `new Date(iso).toLocaleDateString('tr-TR')` where `new Date(null)` yields the Unix epoch (1970-01-01). Fix: `const fmtDate = (iso) => { if (!iso) return '—'; try { return new Date(iso).toLocaleDateString('tr-TR'); } catch { return '—'; } };`"
+}

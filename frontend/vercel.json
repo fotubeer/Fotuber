@@ -1,0 +1,5 @@
+{
+  "installCommand": "yarn install --no-lockfile",
+  "buildCommand": "yarn build",
+  "outputDirectory": "build"
+}

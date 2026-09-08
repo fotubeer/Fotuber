@@ -1,0 +1,24 @@
+{
+  "summary": "E2E validated new features: (1) Admin ad scheduling UI (date inputs + schedule badges) — all 4 states verified: scheduled (future start), expired (past end), live (no dates + active), paused (active toggled off). (2) Public homepage footer filter — only the live 'Yaz Kampanyası' shown; scheduled/expired banners correctly hidden by /api/ad-banners. (3) Admin desktop-downloads page save + persistence on reload. (4) Studio /studyo/panel shows 'Masaüstü Uygulaması' card with Windows/Mac buttons when URLs set (screenshot-confirmed) and card is hidden when both URLs empty (confirmed via DesktopDownloadButtons.jsx logic + backend GET returning empty strings and card selector not found). Backend endpoints (login, ad-banners CRUD w/ schedule_status, public schedule filter, desktop-downloads GET/PUT) all return 200 with expected data.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin dashboard (general)", "issues": ["Recurring Recharts warning: <circle> attribute cx/cy: Expected length, 'undefined' (data likely undefined at first render). Non-blocking but should guard chart data."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Recharts warnings (cx/cy undefined) on admin dashboard — likely missing data guard before rendering charts.",
+    "Multiple 401 network errors observed on studio pages when session is missing — expected but noisy; consider suppressing when unauthenticated."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin: admin@fotuber.com.tr / FTB.2024 ; Studio: studio1@test.com / Test1234",
+  "seed_data_creation": "Created 2 temp ad banners (TEST_SCHEDULED, TEST_EXPIRED) then deleted them. Desktop download URLs restored to https://example.com/Fotuber-Setup.exe & Fotuber.dmg version 1.0.0 for main-agent's convenience.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Features validated end-to-end (admin AdminAdBanners.jsx date inputs & ScheduleBadge, AdminDesktopApp.jsx save persistence, DesktopDownloadButtons.jsx render/hide). Existing live banner 'Yaz Kampanyası' left untouched. Desktop URLs are populated (Windows/Mac example.com URLs, v1.0.0)."
+}

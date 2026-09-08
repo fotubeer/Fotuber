@@ -1,0 +1,32 @@
+{
+  "summary": "Focused backend auth verification for the admin login accessibility bug fix. All 9 tests passed. Both the canonical admin email (admin@fotuber.com.tr) and the newly seeded alias (admin@fotuber.com) authenticate successfully with FTB.2024 and return role=admin with a valid JWT. Wrong password and non-existent email return 401 with the expected Turkish message. Whitespace tolerance and case-insensitivity of the email field are working. /api/auth/me returns the correct user for both variants.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_admin_login_alias.py",
+    "/app/test_reports/pytest/iteration_3_admin_login.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is >1700 lines — consider splitting into routers (auth, appointments, gallery, transactions) for maintainability.",
+    "Alias-admin seed logic could be extracted into a helper (seed_admin(email, password)) to remove duplication between the main and alias branches (lines 380-417).",
+    "Login endpoint returns identical 401 messages for wrong password and missing user (good for security). Keep as-is."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_admin_login_alias.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "Admin main: admin@fotuber.com.tr / FTB.2024 — Admin alias: admin@fotuber.com / FTB.2024 (both work, both role=admin)",
+  "seed_data_creation": "None. Alias admin is auto-seeded by on_startup in server.py.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Auth bug fix verified end-to-end at HTTPS public URL. The alias admin@fotuber.com is created/updated on backend startup with the same FTB.2024 password and role=admin. Both emails share the password but map to different user IDs (each has its own record in db.users). If future refactor removes the alias branch (server.py lines 398-417), the alias login will break — retest this file.",
+  "rca of the issue": "Original bug: user tried admin@fotuber.com but seeded admin email is admin@fotuber.com.tr. Fix: on_startup now also upserts a second user document with email=admin@fotuber.com, same password hash, role=admin. Additionally the login endpoint already applies .strip().lower() to the incoming email, giving whitespace/case tolerance. Verified with 9 assertions covering both success and failure paths."
+}

@@ -1,0 +1,29 @@
+{
+  "summary": "Tested public /vesikalik member auth flow (register/login/logout/me/subscribe), vesikalik access-control (401 without auth, member scoped credits mode with topup), and admin regression at /admin/vesikalik. Backend: 13/13 pytest cases pass. Frontend: full happy path works — register with empty company, editor renders after upload, ai-credits-badge shows 0 credits then updates to 10 after p10 top-up, byok-box + open-topup-btn present, member-status reads 'Deneme', logout returns to auth screen and login re-loads editor. Admin ai-credits-badge shows 'Yönetici · Emergent'.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/vesikalik member-bar", "issues": ["Trial-created toast (top-right) overlaps the fixed member-bar/member-logout button for ~4s after registration; user must wait for toast to clear before logout is clickable in some cases. Consider positioning the toast at top-center or making member-bar z-index above toast."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_member_vesikalik.py",
+    "/app/test_reports/pytest/member_vesikalik.xml"
+  ],
+  "action_items": [
+    "Optional: adjust toast position vs. member-bar to avoid overlap on the top-right corner."
+  ],
+  "critical_code_review_comments": [
+    "server.py is >4000 lines — consider splitting membership/vesikalik routers into dedicated modules for maintainability.",
+    "MemberVesikalik.logout() only calls /auth/logout and clears local state; server-side cookie invalidation appears correct but ensure /auth/logout also clears refresh_token cookie."
+  ],
+  "updated_files": ["/app/backend/tests/test_member_vesikalik.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin: admin@fotuber.com.tr / FTB.2024. Members registered dynamically per run (TEST_member_<uuid>@example.com / TestPass123).",
+  "seed_data_creation": "Two member accounts created dynamically during this run (testmember_<epoch>@example.com and TEST_member_<uuid>@example.com).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest at /app/backend/tests/test_member_vesikalik.py covers member auth + vesikalik access-control end-to-end; run via `pytest backend/tests/test_member_vesikalik.py -v`. Frontend flows use data-testid attrs: member-auth, tab-login/register, reg-name/phone/company, auth-email/password/submit, member-bar/status/logout, ai-credits-badge, byok-box, open-topup-btn, topup-dialog, topup-buy-p10, canvas-single, subscribe-gate/btn. Note UX quirk: post-register success toast overlays member-bar top-right for a few seconds."
+}

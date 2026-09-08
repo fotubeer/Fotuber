@@ -1,0 +1,37 @@
+{
+  "summary": "Tested new additive modules: Stüdyo Paneli (Studio Suite) and Davetiye Tasarım Stüdyosu. Backend: 18/18 pytest tests passed (studio plans/register/login/me + KVKK/duplicate/wrong-password guards, design fonts/templates/CRUD/upload/asset + auth guards, regression on services/admin-login/print-options). Frontend: /studyo portal renders glassmorphism, register flow generates valid FTB-XXXXX code, redirects to /studyo/panel showing Deneme status/Filigran Zorunlu/limits (AI 0, 10 GB, 2 events) and 5 plan cards; logout and login with studio1@test.com/Test1234 both work. /tasarim-studyosu editor loads, all toolbar buttons work (metin/başlık/rect/circle/line), property panel appears, Şablonlar dialog shows 5 templates and loads wedding-classic objects, sample name input works, Kaydet without main-site login correctly shows 'Kaydetmek için üye girişi gerekli' toast and redirects to /giris. Home '/' still loads without pageerrors. No blocking bugs found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/tasarim-studyosu", "issues": [
+        "Console warning: color <input type=color> receives 'rgb(0,0,0)' / '#111' — must be '#rrggbb'. Non-blocking but should normalize the color state to hex before setting the input value.",
+        "Console error: <circle> attribute cx/cy 'undefined' — a lucide/SVG icon prop is undefined somewhere in the editor toolbar/panel. Cosmetic but noisy.",
+        "DialogContent missing aria-describedby/Description on Şablonlar dialog (a11y warning)."
+      ]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_studio_design.py",
+    "/app/test_reports/pytest/studio_design.xml"
+  ],
+  "action_items": [
+    "Optional: normalize color state to '#rrggbb' before setting into <input type=color> in DesignStudio.jsx to remove console warnings.",
+    "Optional: guard SVG icons receiving undefined cx/cy props (minor console error).",
+    "Optional: add DialogDescription/aria-describedby to Şablonlar dialog."
+  ],
+  "critical_code_review_comments": [
+    "studio.py _studio_state returns days_left computed from (ref-now).days plus +1 if seconds>0 → on registration this correctly yields 3, verified by test.",
+    "design_studio.py upload endpoint validates content_type prefix 'image/' (good) and size <=15MB.",
+    "Design projects reuse main-site get_current_user (db.users) as documented — regression untouched.",
+    "Studio JWT: get_current_studio accepts either studio_token/access_token cookie OR Authorization Bearer with role='studio' — behaves correctly (401 on missing, 200 on Bearer)."
+  ],
+  "updated_files": ["/app/backend/tests/test_studio_design.py"],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100% core flows"},
+  "test_credentials": "admin@fotuber.com.tr/FTB.2024 (main-site); studio1@test.com/Test1234 (existing studio); new TEST_studio_*/StudioPass123 accounts created per test run.",
+  "seed_data_creation": "Backend tests create TEST_studio_<ts>@example.com studio accounts and one TEST Design project (deleted at end of CRUD test). Design assets uploaded during test are left in DB (small 1x1 PNG).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Both additive modules are working end-to-end. Studio auth uses separate collection studio_accounts + role='studio' JWT; design projects reuse main-site user auth. FTB regex allows 5 or 6 uppercase alphanumeric chars (fallback branch). Only cosmetic console warnings remain in DesignStudio (color input format + one undefined cx/cy SVG prop)."
+}

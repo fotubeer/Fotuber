@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 25 testing of Fotuber digital invitation module: print-ready PDF (free), premium PayTR gating (200₺ / 750₺), live photo wall, voice recorder. Backend: 34/34 pytest tests passed (print-pdf across 4 sizes x 6 symbols, pricing/gating for free/premium/photowall, PayTR create for premium/free/other-user, photo wall upload/list/get). Frontend: print page /baskiya-hazir-davetiye works end-to-end (palette Mermer + symbol floral selectable, preview updates, download triggers /api/invitations/print-pdf → 200 PDF, top links present). Wizard has voice-recorder, wizard-print-pdf, toggle-photowall, open-template-gallery→tpl-use-noir, premium-price-note showing 200₺ then 750₺, publish button label 'Yayınla ve Öde · 200₺' / '· 750₺'. Guest page /davetiye/premium-demo-foto shows photowall-card, photowall-name and photowall-upload-label on dark noir theme (gold text readable).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/payments/paytr/create (kind=invitation, free invitation)", "issue": "For a free invitation the endpoint returns 400 with message 'Bu davetiye zaten yayında' instead of a more specific 'ücretsiz/ödeme gerekmez' text; still 400 as expected."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "InvitationCreate wizard (person1 field)", "issue": "Expected data-testid 'inv-person1' not found on the person1 input. wizard-print-pdf click did not fire a /api/invitations/print-pdf network request (likely because required fields could not be filled via testid — user probably has to fill via placeholder). Consider adding data-testid=\"inv-person1\" and data-testid=\"inv-event-date\" (event-date input also lacks testid, was filled via generic input[type=date]).", "selector": "[data-testid=\"inv-person1\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration25_invitations.py",
+    "/app/test_reports/pytest/iter25.xml"
+  ],
+  "action_items": [
+    "(Optional) Add data-testid=\"inv-person1\" and data-testid=\"inv-event-date\" on the wizard's person1/date inputs so automated tests can fill them and trigger the wizard-print-pdf network call.",
+    "(Optional) When a free invitation is already auto-published, the PayTR create endpoint could return a clearer message 'Bu davetiye ücretsizdir, ödeme gerekmez.' instead of 'Bu davetiye zaten yayında'."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 5195 lines — exceeds the 700-line guideline and should be split into modules (invitations, payments, admin, media).",
+    "_invitation_pricing correctly recomputes price on the server on create/update — client-supplied price is properly ignored (verified by test).",
+    "Photo wall upload endpoint enforces 10MB and 1000-photo caps but has no per-uploader rate limiting; consider adding basic IP/uploader throttling to prevent abuse on public endpoints.",
+    "Print PDF endpoint has no rate limit either; it can be called anonymously and reportlab rendering is CPU-bound — consider throttling."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration25_invitations.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Fresh members registered on the fly via /api/member/register. Seed: premium-demo-foto (paid noir photowall), ahmet-yasemin-e9385d (free published).",
+  "seed_data_creation": "Backend tests created several TEST_ member accounts and invitations via public register + POST /api/invitations. Photo wall test uploaded a tiny JPEG to premium-demo-foto (uploader_name=TEST_Guest).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 4 new features verified working end-to-end. Only minor gap: wizard person1/event-date inputs lack data-testid attributes; other testids (voice-recorder, voice-record-start, wizard-print-pdf, toggle-photowall, open-template-gallery, tpl-use-<theme>, premium-price-note, print-*) all exist. Container server date is Aug 2026 — use event_date >= 2027 in tests. PayTR link creation returns a real link; do NOT complete payment. Note server.py is 5195 lines — refactor candidate.",
+  "rca of the issue": "N/A — no blocking issues found."
+}

@@ -1,0 +1,26 @@
+{
+  "summary": "FAZ C (Run-of-Show timeline) + FAZ D (add-on services) + Venue Team CHAT (manager<->kiosk with PIN) fully tested end-to-end. Venue chat (manager+kiosk sharing + pin/unpin/delete), timeline builder (add role Garson Şefi, save), kiosk alert (fired immediately after saving item ~2 min ahead for matching role; kiosk-alert-ack dismissed it), kiosk timeline list visible, kiosk chat drawer with pinned block visible from kiosk side, staff msg propagated to manager side, hostess find working (kiosk-result-0 shows 'Ahmet Yılmaz → Masa 5'), Ek Hizmetler CRUD (add + list + 360 Photobooth listed). ONE blocker: /davetiyelerim UI gates admin out (role !== 'member') so couple marketplace venue-services modal cannot be opened from the admin session in UI; however backend endpoints work correctly (GET /api/venue/public/invitation/{iid}/services returns venue + services + selected; admin session has invitations owned as verified via /api/invitations).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "MyInvitations.jsx (couple invitations panel)", "issue": "Admin (role='admin') cannot access /davetiyelerim UI because the load() function checks md.user?.role !== 'member' and treats non-member users as logged-out (shows the member login form). Backend /api/invitations returns the admin's invitations (incl. 'Zeynep & Emre' 7348e22b-...) successfully, but UI blocks display of inv-venue-services-<id> button. This blocks admin-side testing of the couple marketplace VenueServicesModal.", "selector": "[data-testid^='inv-venue-services-']", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "In /app/frontend/src/pages/MyInvitations.jsx (line ~64) allow role in ['member','admin'] (or bypass role check when admin) so admin can access /davetiyelerim and open the VenueServicesModal for its owned invitations. Alternatively expose a dedicated admin route to reach the modal for testing."
+  ],
+  "critical_code_review_comments": [
+    "FloorPlanBuilder timeline role toggle buttons (lines 215-220) have no data-testid; testing role selection requires text-based selectors. Add data-testid like tl-role-<itemId>-<roleKey> for robustness.",
+    "MyInvitations.jsx role gate ('!== \"member\"') hard-blocks admin/staff paths even when backend permits access; consider centralizing role gating."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (skipped per request)", "frontend": "~90% (all flows PASS except admin-side couple marketplace UI due to role gating)" },
+  "seed_data_creation": "Added timeline item 'Pasta Kesimi' ~2min ahead with role 'Garson Şefi' on Hostes Test Plan; added 'TEST Hizmet 6440' service (1500₺) to B2B Test Salonu; sent chat messages ('TEST manager msg ....' pinned, 'TEST staff msg ....').",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Venue Chat + FAZ C timeline + kiosk alert + hostess find + FAZ D services CRUD all verified in UI. To test the couple marketplace VenueServicesModal, either (a) log in with a member account that owns an invitation linked to B2B Test Salonu, or (b) update MyInvitations.jsx to also allow role=='admin' and retest as admin. Backend endpoint GET /api/venue/public/invitation/7348e22b-32b0-404c-a3c4-1a004edb4b6f/services returns venue 'B2B Test Salonu' + services + selected=['a509432f...(360 Photobooth)'].",
+  "rca of the issue": "MyInvitations.jsx `load()` function requires user role to strictly equal 'member' — when admin logs in via /giris, the /api/member/me returns role='admin' so setMe(null) is called, rendering the InvitationLogin form instead of the invitation list. The inv-venue-services-<id> button is inside the invitation card which is never rendered for admin. Mitigation: relax the role check to include 'admin' or add a role-agnostic path when the /api/invitations endpoint successfully returns items."
+}

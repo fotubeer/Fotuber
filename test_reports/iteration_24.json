@@ -1,0 +1,30 @@
+{
+  "summary": "Frontend-only testing of the premium/animated Dijital Davetiye redesign. All 7 requested test flows PASSED. Guest page /davetiye/ahmet-yasemin-e9385d shows the cinematic EnvelopeReveal overlay initially and disappears after ~5s revealing the invitation content with animated motifs, script-font couple names, non-zero countdown (45 gün / 20 saat / etc.), map link, gift/IBAN section. Music FAB correctly absent for this sample (no music). RSVP validation blocks empty submissions with an error toast and succeeds with name+surname. Memory wall entry submits and appears in the list. Home CTA (data-testid=home-invitation-cta) is visible and navigates to /davetiye-olustur. Wizard live desktop preview updates when switching between premium Noir (dark, gold script names visible) and free Sky (light blue) themes with readable text on both. Publish gate opens on publish-btn while logged out; submitting without all three consents (kvkk/sms/email) shows the 'Lütfen tüm izinleri onaylayın' toast and keeps the gate open.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Template gallery Dialog + Mobile preview modal (wizard)", "issues": ["Radix warning: DialogContent requires a DialogTitle for accessibility. Wrap a DialogTitle (or VisuallyHidden) inside the template gallery Dialog to remove the console warning."]},
+      {"screen": "Home page background canvas/svg", "issues": ["Console error: <circle> attribute cx/cy expected length, 'undefined'. Some decorative particle/svg on Home is being rendered before its coordinates are set. Non-blocking but should be fixed to avoid noise."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "(minor) Add a (visually hidden) DialogTitle inside the wizard template-gallery Dialog to silence Radix a11y warning.",
+    "(minor) Fix the Home page decorative SVG <circle> nodes whose cx/cy are 'undefined' on initial render."
+  ],
+  "critical_code_review_comments": [
+    "InvitationCreate.jsx is ~370 lines and still tolerable, but its publish gate + template gallery could be split into small components for maintainability.",
+    "EnvelopeReveal auto-close (3.6s) is a good UX default and correctly disposed via clearTimeout on unmount.",
+    "Consent validation is done both client-side (all three required) — server-side enforcement should be verified by backend tests separately."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (7/7 flows)"},
+  "test_credentials": "Public slug ahmet-yasemin-e9385d used; no login required for the tested flows.",
+  "seed_data_creation": "Submitted one RSVP (Test Guest) and one memory (TestUser: Congrats!) against the sample invitation.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All redesign checkpoints for the animated invitation are working on the preview URL. Two console-only issues remain: Radix DialogTitle a11y warning in the template gallery and undefined cx/cy on Home decorative SVG. If the Home page changes, retest CTA visibility after splash 'ATLA' skip.",
+  "rca of the issue": "No functional issues found."
+}

@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 72 — Talep→Sözleşme dönüştürme + otomatik admin bildirim. Backend 4/4 pytest geçti (1 skipped: email/status endpoint mevcut fakat pytest'te header hatasız çalıştı; opsiyonel). Frontend E2E doğrulandı: RequestsTab'ta req-to-contract-<id> butonu ApptBuilder'a yönlendiriyor; bride-name, ev-date, party-email, admin notu ve etkinlik türü ('Aktüel Kamera' → hizmet seçili, brand-photo aktif) önceden dolu geliyor. Save sonrası backend'de talep status='converted' oluyor. Public request 200 dönüyor, ardışık istekler de 200, background email/notify task exception ile isteği bozmuyor. KVKK ve kapalı-gün regresyonları hâlâ 400.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_appt_pro_iter72.py",
+    "/app/test_reports/pytest/iter72.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ApptBuilder'daki admin notları textarea'sında data-testid yok (örn. 'admin-notes'); test edilebilirlik için eklenebilir. Değer doğru şekilde dolduruluyor, işlevsel bir bug değil.",
+    "appt_pro.py create_request try/except blokları hem send_email hem notify_external için 'pass' ile hataları yutuyor — istek 200 dönmesi garanti; ancak sessiz başarısızlıkları görmek için loglama (logger.warning) eklenmesi tavsiye edilir.",
+    "asyncio.create_task ile fire-and-forget: task exception'ları yakalanmıyor. Production'da 'Task exception was never retrieved' uyarısı çıkabilir; task için done_callback ile logging önerilir."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_appt_pro_iter72.py",
+    "/app/test_reports/iteration_72.json"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024",
+  "seed_data_creation": "TEST_Iter72 prefix ile geçici public request'ler oluşturuldu ve testler sonunda silindi. Kapalı-gün için 2030-11-15 block eklenip silindi.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "iter72 dosyaları: backend/tests/test_appt_pro_iter72.py yeni özellikleri (public/requests 200 + async bildirim, KVKK/kapalı gün regresyon, PATCH status=converted) kapsıyor. Frontend E2E: req-to-contract-<id> → prefill (bride-name/ev-date/party-email/admin notu/brand-photo) → builder-save → PATCH /appt-pro/requests/{id} status=converted zinciri çalışıyor. Twilio yapılandırılmadığından WhatsApp gerçek gönderim yok; sadece notify_external çağrısı arka planda tetikleniyor ve exception 500'e dönüşmüyor.",
+  "rca of the issue": "N/A — tüm senaryolar geçti."
+}

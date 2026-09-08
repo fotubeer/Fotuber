@@ -1,0 +1,59 @@
+{
+  "summary": "Full-stack testing of appointment-overhaul (3 phases) + cinematic IntroSplash. Backend: 14/14 pytest tests pass (30-min public/admin availability, event fields on POST /appointments, admin PATCH with new fields, mid-payment add/remove, walk-in 24h grid). Frontend: Home FOMO banner, discount CTA→/indirim-kodu, and IntroSplash all working (splash renders with data-testid, skip button dismisses, sessionStorage flag 'fotuber_intro_played_v1'='1'). /randevu shows no ₺ prices, all event-type pills present (wedding→[klip,album,tablo,baski,dugun_hikayesi]; engagement_venue→[ikramli,ikramsiz,fotografli,klipli]), 32 public slots from 08:00 to 23:30 (no 07:30, no 00:00). /admin/randevular table has Toplam/Kapora/Kalan columns; row click opens Randevu Detayı modal with Toplam ₺10.000 / Ödenmiş ₺2.000 / Kalan ₺8.000 cards, 2. Telefon, Etkinlik Türü dropdown, event-addon checkboxes and 'Ekle' button for mid-payments. /admin/takvim renders full 24h 30-min slot grid.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_working": {
+    "backend": {
+      "availability_public": "32 slots 08:00–23:30, all 30-min, booked hidden",
+      "availability_admin": "48 slots 00:00–23:30, statuses booked/available",
+      "post_appointments_event_fields": "event_type/event_addons/extra_services_note/phone_2 persist",
+      "post_appointments_slot_validation": "07:00 and 09:15 rejected with 400",
+      "patch_admin_fields": "phone_2/admin_notes/event_type/event_addons update + persist via GET",
+      "patch_reschedule": "14:30 accepted; 14:15 rejected with 400",
+      "mid_payments_add": "admin only; response has mid_payments_total, paid_total, remaining_amount (verified 6500 remaining after deposit 2000 + mid 1500 vs total 10000)",
+      "mid_payments_customer": "403 as expected",
+      "mid_payments_remove": "recalculates remaining to 8000 after removal",
+      "walkin_full_24h": "02:30 accepted; 10:20 rejected"
+    },
+    "frontend": {
+      "intro_splash": "data-testid='fotuber-intro-splash' renders on first Home load; intro-skip-btn dismisses; sessionStorage 'fotuber_intro_played_v1' == '1'",
+      "home_fomo": "'acele edin' text present; fomo-phone-cta + fomo-whatsapp-cta buttons present",
+      "home_discount_cta": "home-discount-cta anchor href='/indirim-kodu' (%10 İndirim Kodu Al)",
+      "booking_no_prices": "0 '₺+digit' matches in /randevu body",
+      "booking_event_pills": "11 event-type pills incl. wedding + engagement_venue; addons render conditionally per type",
+      "booking_slots": "32 30-min slots 08:00–23:30 (no 07:30 or 00:00)",
+      "admin_appts_columns": "Toplam / Kapora / Kalan present in table headers",
+      "admin_appts_detail_modal": "Row-click opens Randevu Detayı with Toplam/Ödenmiş/Kalan cards, 2. Telefon input (05559998888), Etkinlik Türü dropdown, event-addon checkboxes (klip+album checked), and Ekle button for mid-payments",
+      "dialog_primary_button_contrast": "Primary buttons in dialog show rgb(250,250,250) text on rgb(15,23,41) bg — iter14 invisible-primary-button regression appears FIXED",
+      "admin_calendar_full_24h": "admin-slot-00:00 through admin-slot-23:30 render (48 slots); calendar title data-testid present"
+    }
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration15_appointments_phases.py",
+    "/app/test_reports/pytest/iteration_15.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 2000+ lines (based on truncation) — recommend splitting into modules (auth, appointments, gallery, transactions, cash_register, contracts). Approach warned by code review guideline (>700 lines).",
+    "In _try_get_current_user the cookie is checked BEFORE Authorization header. When a testing client (or a user with a stale cookie) sends both a fresh Bearer token and an old cookie, the old cookie wins. Consider Bearer-first preference or explicit precedence rule to avoid subtle auth confusion (this was the root cause of my initial test failures — shared requests.Session with mixed customer+admin cookies overrode Bearer token).",
+    "Public /api/availability response hides booked slots but returns only 'available' items for public. This is intentional per requirement but there is no way for a public user to see 'this slot is taken' — silent hiding may confuse users who saw a slot yesterday and don't find it today. Consider a soft 'unavailable/full' status if UX demands it later.",
+    "Booking.jsx currently uses 11 event types but the requirement only spec-tests wedding & engagement_venue addons — remaining types (bride_party, engagement, kina, nikah, birthday, studio_portrait, podcast, clip, other) either have no addons or unverified addons; ensure they're intentional (they render without addon lists — verified no crash)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration15_appointments_phases.py"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% for tested acceptance criteria"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024",
+  "seed_data_creation": "Created TEST_iter15_* customer + TEST_UI_Admin_Detail walk-in appointment on 2026-09-10 13:30. All test appointments were DELETE-cleaned via admin API at test end.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 3 appointment-phase requirements + Intro Splash validated. If regression testing later: 30-min slot math is inclusive on 23:30 (not 00:00 the next day). Public availability uses PUBLIC_SLOTS (32) and hides booked. Admin uses FULL_SLOTS (48). Mid-payment endpoint response includes derived fields via _enrich_appointment. Detail modal element does NOT have a data-testid='add-mid-payment-btn' — the actual add button is labeled 'Ekle' inside the Ara Ödemeler section; using text='Ekle' or the visible green button in that section is fine.",
+  "rca_of_the_issue": "Not applicable — no unresolved issues found in this iteration."
+}

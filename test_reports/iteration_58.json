@@ -1,0 +1,20 @@
+{
+  "summary": "Verified date-picker bug fix in Studio Gallery 'Yeni Etkinlik' dialog. Studio1 has gallery module access. The three native selects (sg-event-date-day/-month/-year) are rendered as <SELECT> elements with Turkish month labels (Ocak..Aralık) and year range 2025-2030. All three dropdowns are clickable and update state inside the Radix Dialog. Selected 15 / Haziran (6) / 2026, filled 'Test Düğün' + 'Ali Veli', clicked 'Oluştur'. POST /api/studio/gallery/events returned 200 with event_date=\"2026-06-15\" exactly as chosen. Success toast 'Etkinlik oluşturuldu' displayed. New event card 'Test Düğün / Ali Veli' appeared in the grid (event count went 5 -> 6). No console errors related to the flow (only pre-existing 401 on some unrelated /api resource during initial load).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "studio1@test.com / Test1234 (has gallery access, admin fallback not needed)",
+  "seed_data_creation": "Created a 'Test Düğün' gallery event with client 'Ali Veli' and date 2026-06-15 via the UI as part of verification.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Date picker bug fix confirmed. DateSelects component in StudioGallery.jsx works correctly inside the Dialog. Event creation posts YYYY-MM-DD to /api/studio/gallery/events and receives 200. No further action needed for this bug.",
+  "rca of the issue": "Original Radix Popover-based calendar (TrDatePicker) lost pointer/focus inside Radix Dialog. Replaced with three native <select> dropdowns (DateSelects) that assemble YYYY-MM-DD. Native selects don't rely on portal/pointer capture, so they work inside modal contexts. Verified end-to-end."
+}

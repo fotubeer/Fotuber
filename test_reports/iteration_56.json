@@ -1,0 +1,40 @@
+{
+  "summary": "Faz 4 Stüdyo CRM Arşivi — frontend-only E2E on /admin/vesikalik. Login (admin@fotuber.com.tr / FTB.2024) OK → /admin/vesikalik loaded (canvas-single width=591 after upload). auto-bg-toggle switched OFF successfully. crm-name / crm-phone captured 'Mehmet Demir' / '5321112233'. qr-deliver-btn opened qr-modal with qr-canvas; qr-close worked. vesikalik-archive rendered with archive-list items; new delivery appeared as an archive-item-*. Thumbnails loaded via cookie from /api/studio/vesikalik/archive/{id}/file (natural size 591x709 → image/png served, credentials OK). Debounced search filters correctly: 'Mehmet' → 1 match, '532' → 1 match (phone), empty → full list (2 items). archive-relink-{id} opened archive-qr-modal with archive-qr-canvas, closed via archive-qr-close. archive-reprint-{id} triggered file download 'FTB00001.png'. archive-del-{id} with browser confirm removed the record from the list. Regression: uniform-library, icao-check-btn, qr-deliver-btn, digital-download-btn all present, no console pageerrors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results_matrix": {
+    "login_and_nav": "PASS — /giris then /admin/vesikalik (Tekli default).",
+    "auto_bg_toggle_off": "PASS — data-state went checked→unchecked before upload.",
+    "capture_and_deliver": "PASS — crm-name/crm-phone filled; qr-deliver-btn → qr-modal(qr-canvas) → qr-close.",
+    "archive_list_render": "PASS — vesikalik-archive card visible, archive-item-{id} for the just-delivered record present with thumbnail image loading from /api/studio/vesikalik/archive/{id}/file via cookie (naturalWidth=591, naturalHeight=709).",
+    "search_by_name": "PASS — typing 'Mehmet' debounced to 1 result.",
+    "search_by_phone": "PASS — typing '532' debounced to 1 result.",
+    "search_clear": "PASS — empty box returns full list (2 items).",
+    "relink_qr": "PASS — archive-relink-{id} → archive-qr-modal + archive-qr-canvas; archive-qr-close works.",
+    "reprint_download": "PASS — archive-reprint-{id} downloaded FTB00001.png (no error).",
+    "delete_confirm": "PASS — window.confirm dialog accepted, record disappears from DOM.",
+    "regression": "PASS — uniform-library, icao-check-btn, qr-deliver-btn, digital-download-btn all render (count=1 each). No new JS pageerrors."
+  },
+  "notes_for_reviewer": [
+    "The Ahmet Yılmaz / 5559998877 seed record was NOT visible under this admin studio account (search '555' returned 0). archive_list filters by studio_id=acc.id, so the seed must be under a different studio_id than the admin account used here. Not a code bug — seed placement issue only. Adjust the seed's studio_id to admin's account id if you want the reviewer to see it end-to-end.",
+    "Before this test run the archive already contained one legacy 'İsimsiz' record; the delete step only removed the Mehmet Demir record as instructed."
+  ],
+  "critical_code_review_comments": [
+    "VesikalikArchive.jsx is clean (~130 LOC); good separation.",
+    "AdminPassportPhoto.jsx now >1300 LOC — still overdue for a split (UniformLibrary + IcaoPanel + PrintControls + Archive already extracted).",
+    "archive_out embeds thumb_url as a relative path — the frontend correctly prefixes REACT_APP_BACKEND_URL. Consider also returning link_active_until (already exists as expires_at) as a friendlier field name for reprint UX.",
+    "Nice: reprint uses credentialed fetch + blob download rather than window.open, so cookie auth carries. delete uses window.confirm (Turkish); good enough but a shadcn AlertDialog would be more consistent with the rest of the admin UI."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only per request)", "frontend": "100% (10/10 flows verified)"},
+  "test_credentials": "Admin admin@fotuber.com.tr / FTB.2024",
+  "seed_data_creation": "Created a QR delivery for 'Mehmet Demir' / 5321112233 during test then deleted it at the end. One prior 'İsimsiz' legacy record remains (not created by this run).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Faz 4 CRM Archive frontend is fully wired and working: search debounced (~350ms), thumbnails cookie-auth, relink → fresh 24h QR modal, reprint → PNG download, delete → confirm. Only caveat: the backend seed 'Ahmet Yılmaz' (5559998877) is scoped to a studio_id that does not match the admin account used for testing, so it doesn't appear in the admin's archive list. If future testing wants to verify the seed, either log in as the seeded studio account or update the seed's studio_id to the admin's id.",
+  "rca of the issue": "N/A — no defects observed."
+}

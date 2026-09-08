@@ -1,0 +1,27 @@
+{
+  "summary": "Iter 46 — per-module entitlement (trial opens BOTH), yearly savings_pct, admin/member unaffected. BACKEND 5/5 pytest PASS in /app/backend/tests/test_iter46_module_entitlement.py: (1) POST /api/studio/register creates a new studio (TEST_iter46_*@example.com / Test1234, firma_adi, kvkk_consent=true) and returns a token; GET /api/studio/me returns account.modules={vesikalik:true, gallery:true} + entitlement.trial_active=true + entitlement.trial_end populated. (2) POST /api/studio/login for the same account works and /studio/me includes 'entitlement' + 'modules'. (3) GET /api/studio/modules/pricing returns 8 pricing rows (2 modules × 4 plans), every row has savings_pct as int > 0, and base_yearly < base_price*12, alongside base_price + base_yearly. (4) admin@fotuber.com.tr /api/studio/me returns modules {vesikalik:true, gallery:true} (admin-super full access). (5) expired@fotuber.com.tr (member) /api/studio/me returns modules with vesikalik=false AND gallery=false (design-only member branch, unaffected). FRONTEND (Playwright): registered a fresh studio via API, /studyo/panel shows 'studio-trial-banner' with '3 Günlük Deneme Aktif' + 'Hem Vesikalık hem Etkinlik Galerisi açık' copy, both studio-module-vesikalik + studio-module-gallery cards visible, studio-module-packages link visible. /studyo/paketler renders both pkg-module-vesikalik and pkg-module-gallery sections with 8 pkg-buy-* rows. Yearly toggle (pkg-period-yearly) works and shows discounted /yıl prices with strikethrough base_yearly. Clicking a Satın Al button triggers POST /api/studio/payments/module/create → 200 (PayTR link returned; no real payment executed).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/studyo/paketler", "issues": ["Backend returns savings_pct per plan row but the UI does not surface a per-row '%X tasarruf' badge on yearly rows — only a global 'Yıllık · ~2 ay bedava' pill above the toggle. Review request explicitly states 'Yıllık fiyatta % tasarruf gösterilir'. Recommend adding a small '%{savings_pct} tasarruf' badge next to the yearly price on each pkg-*-* row."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter46_module_entitlement.py", "/app/test_reports/pytest/iter46.xml"],
+  "action_items": [
+    "Optional: surface savings_pct as a per-row '%X tasarruf' badge on StudioPackages.jsx yearly rows (data is already in API response)."
+  ],
+  "critical_code_review_comments": [
+    "_module_entitlement grandfathering branch requires 'not mu' (no module_until at all) alongside legacy_active + legacy_mods flag; if a legacy paid_until account ever gets a partial module_until entry, all other modules on that account lose grandfather status. Consider evaluating grandfather per-module independently of whether other modules were purchased.",
+    "get_current_studio injects live modules onto acc; downstream endpoints that mutate acc should be careful — the returned dict is a per-request snapshot, not the DB row.",
+    "StudioPackages.jsx has no explicit loading/error state handling for /api/studio/modules/pricing (relies on empty list). Minor."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter46_module_entitlement.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (/api/auth/login); expired@fotuber.com.tr / Test1234 (/api/member/login); Fresh studio created dynamically via /api/studio/register (TEST_iter46_*@example.com / Test1234).",
+  "seed_data_creation": "Created 2 disposable studio accounts during testing (TEST_iter46_*@example.com and testp46_*@example.com). Both are trial accounts and will expire naturally; no cleanup needed but they persist in studio_accounts collection.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run backend tests: `cd /app && python -m pytest backend/tests/test_iter46_module_entitlement.py -v -o addopts=`. pytest.ini injects xdist -n which needs override. Backend URL is read from /app/frontend/.env (REACT_APP_BACKEND_URL) since env var may not be exported in shell. Frontend testids: studio-trial-banner, studio-module-vesikalik, studio-module-gallery, studio-module-packages on /studyo/panel; studio-packages, pkg-period-monthly/yearly, pkg-module-vesikalik/gallery, pkg-{module}-{plan}, pkg-buy-{module}-{plan} on /studyo/paketler."
+}

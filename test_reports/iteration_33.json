@@ -1,0 +1,25 @@
+{
+  "summary": "Frontend-only testing of 3 additive features (Merkezi Bildirimler, Altın Saat AI Mekan, Vesikalık 3'lü Arşiv İndir). All flows work end-to-end. Admin login OK; /admin/bildirimler renders compose form + list; creating a KRİTİK notification with title 'Duyuru {firma_adi}', firma 'Acme Studyo' correctly substitutes to 'Duyuru Acme Studyo' with amber firma tag + red KRİTİK badge; filter tabs (all/critical/general) filter list; per-row 'Okundu' button marks the row read with reader name; notification bell renders in admin header with popover + 'Tümünü Gör' link to /admin/bildirimler; Altın Saat /altin-saat public AI Mekan Önerisi returns 5 spots with distance_km badges and Yol Tarifi maps links within ~15s; Vesikalık mode switch → 3'lü İşleme loads triple view; 'Arşivi İndir (ZIP)' button (data-testid vt-archive-zip-btn) is clickable, shows busy 'Hazırlanıyor…' state and completes without error toast (existing archived items).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "NON-BLOCKING: Review request document referenced data-testid 'vesikalik-archive-zip-btn' for the ZIP button, but the actual implementation uses 'vt-archive-zip-btn'. Functionality works — but if the requested testid is desired for external test contracts, add an alias or rename to match spec. All other vt-* testids on the triple page also don't match the 'vesikalik-*' prefix implied in the request."
+  ],
+  "critical_code_review_comments": [
+    "VesikalikTriple.downloadArchiveZip iterates archive with sequential await fetch — fine for small archives (max 20) but could be Promise.all for parallelism.",
+    "NotificationBell reads unread count from state during effect closure (stale on first tick); minor UX only — new-toast heuristic may miss occasional alerts.",
+    "GoldenHour.fetchAiSpots swallows all errors silently (setAiSpots([]) with no toast) — a user clicking 'Yapay Zekâ ile Mekan Öner' during Gemini failure has no feedback."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100%"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024",
+  "seed_data_creation": "Created a test notification: title='Duyuru {firma_adi}' → substituted to 'Duyuru Acme Studyo', severity=critical, firma_adi='Acme Studyo'. Marked as read during the test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All three additive features work as specified. Only nit: review request testid 'vesikalik-archive-zip-btn' doesn't match code testid 'vt-archive-zip-btn' (also applies to other vt-* testids on triple view like vt-process-btn, vt-slot-*, etc.). Both notification test rows created during testing remain in DB (severity=critical, firma_adi='Acme Studyo'). AI spots call took ~10-15s and returned 5 spots."
+}

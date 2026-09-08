@@ -1,0 +1,36 @@
+{
+  "summary": "Frontend testing for Fotuber Vesikalık Faz 1 B2B additions (size library military entries, custom size, digital download, kombin layout wizard). All 7 review items PASS on /admin/vesikalik as admin with 0 console errors. Existing bg-removal/biometric flow buttons remain and no regression observed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_results": {
+    "size_library_military_entries": "PASS - Both dropdown options present: 'Türkiye — Askeri Kimlik (2.5×3.2 cm)' and 'Türkiye — Askeri Kimlik (297×378 px · dijital)'. Selecting the digital one shows note 'yalnızca dijital indirilir' and DISABLES download-sheet-btn AND quick-print-btn (both is_disabled=True).",
+    "custom_size_add_and_remove": "PASS - Expanded custom-spec-panel, filled label='Test Ebat', w=30, h=40, dpi=300, clicked custom-spec-add. Entry added to dropdown, auto-selected as 'Test Ebat (30×40mm · 300dpi)', custom-spec-remove link appeared. Clicking remove deletes entry, custom-spec-remove disappears, and select falls back to 'Türkiye — Biyometrik (50×60mm)' (tr-bio).",
+    "canvas_render_after_upload": "PASS - With auto-bg OFF and plain JPG uploaded via #vf, canvas-single = 591×709, canvas-sheet = 1535×2126 (non-zero).",
+    "digital_download": "PASS - digital-download-btn triggered file download 'FTB00001_dijital.jpg' without any JS error.",
+    "regression_sheet_download": "PASS - download-sheet-btn triggered 'FTB00001_baski_6li_13x18.jpg'.",
+    "regression_quick_print": "PASS - quick-print-btn triggered toast 'Baskı penceresi açıldı'.",
+    "auto_detect_button_exists": "PASS - auto-detect-btn present in DOM.",
+    "kombin_layout": "PASS - layout-mode-kombin activates combo-builder. combo-add creates combo-item-0 and combo-item-1. Configured item-0 = Türkiye — Biyometrik (count=2), item-1 = Türkiye — Vesikalık (count=2). canvas-sheet redrew (1535×2126) with the combined layout showing both sizes + cut marks (verified visually in screenshot).",
+    "combo_margin_slider": "PASS - Setting combo-margin to 5 redrew without any new console errors.",
+    "combo_print": "PASS - combo-print-btn triggered success toast 'Kombin baskı penceresi açıldı' with no exception.",
+    "back_to_standart": "PASS - Switching to layout-mode-standart returned normal sheet (canvas-sheet = 1535×2126).",
+    "watermark_regression": "PASS - watermark-upload accepts PNG and strip controls (wm-align-left, wm-move-center, wm-move-up etc.) rendered; clicks executed without exception."
+  },
+  "console_errors": "0 during entire flow (only pre-login /auth/me 401s and WebGL/wasm warnings from bg-removal init, unrelated).",
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AdminPassportPhoto.jsx is now 1229 lines — combo/digital-export code is tightly coupled to sheet-drawing state. Consider extracting Combo builder, custom-spec form, and digital export into small hooks/components for maintainability.",
+    "In addCustomSpec, spec codes are derived from label; ensure sanitization prevents duplicate codes with different labels (currently saveCustomSpec dedupes by code, which is fine, but two labels normalizing to same code would silently overwrite).",
+    "auto-bg-toggle defaults to ON, forcing ~40MB model download on entry (pre-existing note from iter 51). Not part of this scope but user-hostile on slow networks.",
+    "In combo-spec dropdown (line 966) SelectItem shows only s.label (no dimensions) while primary select-spec shows label + dimensions. Consider unifying labels for consistency."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend only)", "frontend": "100% (13/13 assertions)"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None (custom spec added and removed within test).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All Faz 1 B2B additions (military size entries, custom size localStorage, digital download exactPx+maxKb, Kombin combo layout with print) verified end-to-end via Playwright with 0 console errors. Existing bg-removal/biometric flow buttons still present; regression on sheet-download + quick-print + watermark controls confirmed clean.",
+  "rca of the issue": "N/A — all validations passed."
+}

@@ -1,0 +1,35 @@
+{
+  "summary": "Phase 2 (Employee Mgmt, Team Chat, Firm Archive metadata + reprint, Triple type+count) tested. Backend: 10/10 pytest passed in test_phase2_studio_team_chat.py — owner /me returns account.current_user.is_owner=true, employee /me returns is_owner=false + name='Ali Usta' + firma_adi='Test Stüdyo'; GET /studio/employees returns 2/10 (gold, max_users=10); POST /studio/employees creates emp, PATCH deactivate + login as inactive returns 401/403, POST reset-password 200, DELETE 200 & row gone; /studio/chat GET (owner enabled=true), POST message persists and appears in list, employee session also sees the message; no-auth on /studio/chat returns 401; regression /vesikalik/ai-credits: no-auth=401, studio role=studio. Frontend: /studyo/ekip as owner (studio1) shows team-usage '2/10 kullanıcı', team-add-form + team-list, added a temp employee, toggled active, deleted (row removed), sent chat message via chat-input/chat-send and it appeared in chat-messages. Employee context (aliusta) verified via API-set cookie: dashboard studio-module-team card visible; /studyo/ekip shows chat-input but team-add-form ABSENT (as required), and employee sees owner's chat messages. Vesikalik Triple view (/studyo/vesikalik → 3'lü İşleme): all vt-spec-0/1/2, vt-count-0/1/2, and vt-process-btn render; vt-batch-print-btn + vt-archive-zip-btn correctly hidden until at least one result exists (archive was empty on test account so 'Arşiv boş.' shown — reprint button code path confirmed via code review of VesikalikTriple.jsx line 246). AI clothing edit (vt-process-btn) NOT triggered per instructions.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "StudioPortal.jsx login form", "issue": "Employee login is blocked by browser HTML5 validation. The email field is <Input type='email' required> so entering username 'aliusta' triggers 'Please include an @ in the email address' and the form never submits. Backend accepts username in the email field (verified via API), but the UI login flow for employees is broken. Fix: change type='email' to type='text' (and drop the Mail icon rename), or add noValidate to the form.", "selector": "[data-testid='studio-email']", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase2_studio_team_chat.py",
+    "/app/test_reports/pytest/phase2_results.xml"
+  ],
+  "action_items": [
+    "Fix StudioPortal.jsx: change studio-email input type from 'email' to 'text' (or add form noValidate) so employees can log in with a plain username per spec ('put the username in the email field').",
+    "Optional: suppress benign 401 console noise on /studyo/* pages (main-site axios calls notifications/bell endpoints that don't accept studio_token) — non-blocking, flagged in iter 34 as well."
+  ],
+  "critical_code_review_comments": [
+    "StudioPortal login field uses type='email' + required — incompatible with employee username login. This is the biggest gap of Phase 2 UI.",
+    "vesikalik_archive_list in server.py returns up to 30 (`to_list(30)`) while the spec says 'last 20'. The frontend Firma Arşivi label already says '(son 20, firma geneli)'. Consider capping to 20 for consistency.",
+    "STUDIO_PLANS check in POST /studio/employees uses `(1 + count) >= max_users` — this is correct (owner counts as 1), but the error message '(paket limit)' is only surfaced as 403; make sure the frontend team-add-btn shows the toast (StudioTeam.jsx does display detail — ok).",
+    "Team chat gating: chat_enabled requires max_users >= 3. Trial/basic (max_users=1) will get enabled:false — was not exercised in this iteration because studio1 is gold; verified only via code path."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase2_studio_team_chat.py (new, 10 tests, all passing)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "~90% — all listed data-testids render and owner flows work end-to-end; employee UI login is blocked by the type='email' bug (bypassed via API-set cookie to verify downstream behavior)"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 ; studio1@test.com / Test1234 (FTB-P34JX, gold, max_users=10) ; employee 'aliusta' / '1234'",
+  "seed_data_creation": "Temp chat messages TEST_msg_*/TEST_unread_*/UI_TEST_* posted by studio1 owner. Temp employees (TEST_Emp / testemp_*/ uitest*) were cleaned up (deleted) at end of each test — pre-seeded 'aliusta' left intact.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Only remaining action is the studio-email input type fix. Backend Phase-2 flows are all green. When retesting: use test_phase2_studio_team_chat.py (pytest ... -o addopts=''), then verify UI employee login works with plain 'aliusta' (no @). Vesikalík Triple archive UI (reprint button + metadata rendering) still needs a functional visual test with at least one archive entry — that requires running vt-process-btn once (Emergent credits) OR seeding a vesikalik_archive doc directly in Mongo for a non-costly check.",
+  "rca of the issue": "StudioPortal login uses HTML5 email validation on the shared login/register form. When employees enter their username (non-email) in the email field, the browser rejects submission before the app can call /api/studio/login. Fix: switch to type='text' or add noValidate to the form; backend already supports both email and username identifiers."
+}

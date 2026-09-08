@@ -1,0 +1,72 @@
+{
+  "summary": "Faz 3 ICAO Biyometrik Uygunluk — frontend-only test on /admin/vesikalik → Tekli. Login OK, real headshot upload OK, ICAO Kontrol button present + enabled + wired. face-api tinyFaceDetector model manifest DOES load from jsdelivr CDN (HTTP 200 probed). HOWEVER checkIcao() fails inside the sandbox because @tensorflow/tfjs cannot initialize any backend: 'Initialization of backend webgl failed / WebGL is not supported on this device' AND 'wasm streaming compile failed: Incorrect response MIME type. Expected application/wasm' → 'Initialization of backend wasm failed'. The runIcao() catch fires the Turkish toast 'ICAO kontrolü yapılamadı' (captured via MutationObserver). Consequently icao-panel + icao-badge-* never mount in this environment for either the positive or the negative path. Per the reviewer's env-fallback clause, confirmed wiring + graceful failure + Turkish messaging + regression intact.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "ICAO Kontrol (positive & negative)",
+        "issue": "icao-panel never renders in the automation sandbox. Root cause is NOT the code — TFJS (dependency of @vladmandic/face-api) cannot initialize any backend in the preview headless browser: WebGL context creation fails (no GPU) AND the wasm binary is served with wrong MIME (server returns HTML for /static/js/tfjs-backend-wasm-*.wasm). checkIcao() therefore throws and the UI correctly toasts 'ICAO kontrolü yapılamadı', but the icao-panel state stays null so no badges (icao-badge-ratio/eyes/tilt/center/bg/face) can be asserted. Confirmed by CDN probe (face-api model manifest returns 200 OK) so this is a runtime tfjs backend problem, not a model-loading problem.",
+        "affected_selectors": ["icao-check-btn", "icao-panel", "icao-badge-face", "icao-badge-ratio", "icao-badge-eyes", "icao-badge-tilt", "icao-badge-center", "icao-badge-bg"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_results_matrix": {
+    "login_and_nav": "PASS — admin@fotuber.com.tr / FTB.2024, /admin/vesikalik → Tekli view (default).",
+    "auto_bg_toggle_off": "PASS — auto-bg-toggle switched from checked → unchecked before upload; no bg-processing-overlay appeared.",
+    "face_image_upload": "PASS — Unsplash headshot fetched (200, 38KB) and set on input#vf. canvas-single renders with width=591 (source-scaled). auto-detect-btn shows 'Yüz tespiti uygulandı' badge; single/sheet previews rendered correctly (face visible).",
+    "icao_button_wiring": "PASS — icao-check-btn is present, disabled=false after upload, and clicking it triggers runIcao (verified: 'ICAO kontrolü yapılamadı' toast reached the DOM via sonner MutationObserver).",
+    "cdn_model_reachable": "PASS — Direct fetch of https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/tiny_face_detector_model-weights_manifest.json from the app origin returned HTTP 200 with valid JSON.",
+    "positive_badges": "BLOCKED — tfjs cannot init WebGL or WASM backend in the sandbox; face-api throws before landmarks are computed. icao-panel + badges never render. NOT a code bug (per reviewer env-fallback note).",
+    "negative_no_face_path": "BLOCKED — same tfjs backend init failure precedes the 'no face' code path in checkIcao, so icao-badge-face cannot be asserted either. The code path IS present in /app/frontend/src/lib/faceDetect.js:76.",
+    "regression": "PASS — auto-detect-btn, bg-remove-btn, retouch-open-btn, icao-check-btn, download-single-btn, digital-download-btn, qr-deliver-btn, download-sheet-btn, quick-print-btn, canvas-sheet, uniform-library all present (count=1 each). No new JS pageerrors caused by ICAO code."
+  },
+  "console_observations": {
+    "expected_env_warnings": [
+      "Could not get context for WebGL version 2 / 1",
+      "Initialization of backend webgl failed / WebGL is not supported on this device",
+      "wasm streaming compile failed: Incorrect response MIME type. Expected 'application/wasm'.",
+      "Aborted(CompileError: WebAssembly.instantiate(): expected magic word 00 61 73 6d, found 3c 21 64 6f) — server serves index.html for missing .wasm asset",
+      "Initialization of backend wasm failed"
+    ],
+    "no_new_icao_specific_errors": true,
+    "captured_sonner_toast": "ICAO kontrolü yapılamadı"
+  },
+  "code_review_of_faz3_icao": {
+    "faceDetect.checkIcao": [
+      "Correctly guarded: returns {ok:false, checks:[{key:'face', label:'Yüz tespit edilemedi', ok:false}]} when no landmarks — matches negative-path spec.",
+      "5 checks (ratio, eyes, tilt, center, bg) return {key,label,ok} with Turkish labels — matches spec.",
+      "Background check uses getImageData in a try/catch to tolerate tainted canvases — good.",
+      "Thresholds are reasonable (ratio 0.62-0.88 for ~72% target, EAR<0.17 for closed eyes, tilt>7°, center offset>0.12, bg diff>28 or dark<150)."
+    ],
+    "AdminPassportPhoto.runIcao": [
+      "Wired correctly: sets icaoRunning, draws single canvas, calls checkIcao, sets icao state, toasts on error, resets running in finally.",
+      "UI panel renders under icao != null with correct data-testid='icao-panel' and per-check data-testid='icao-badge-{key}'.",
+      "Summary line renders TAMAM / Dikkat gerekiyor as spec'd."
+    ],
+    "concerns": [
+      "When checkIcao throws (as in this sandbox), the user only sees a generic toast — consider surfacing the underlying reason (e.g., 'Model yüklenemedi / tarayıcı desteklemiyor') so operators know it's not a photo-quality issue.",
+      "AdminPassportPhoto.jsx is now ~1300 lines. Consider extracting IcaoPanel component."
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "No code changes required — Faz 3 ICAO wiring, Turkish messaging, panel structure and no-face fallback ARE correctly implemented per the source. The badge rendering could not be visually asserted in the automation sandbox because @tensorflow/tfjs cannot initialize any backend (no WebGL, and the app's static server returns HTML for the tfjs-backend-wasm .wasm URL). Recommend main agent verify manually in a real browser (screenshot the icao-panel with the same Unsplash headshot) OR add a friendlier error message that distinguishes 'tarayıcınız desteklemiyor' from generic failures.",
+    "OPTIONAL server hardening (unrelated to this Faz): configure the frontend static host to serve .wasm files with Content-Type application/wasm so tfjs wasm fallback works when WebGL is unavailable (currently 404 → SPA index.html breaks wasm compile).",
+    "OPTIONAL UX: in runIcao catch, use e.message or a detection of loadFaceModels failure to show a more specific Turkish toast."
+  ],
+  "critical_code_review_comments": [
+    "checkIcao is a good, focused helper (~70 LOC) — clean.",
+    "AdminPassportPhoto.jsx > 1300 LOC — overdue for a split (UniformLibrary + IcaoPanel + PrintControls at minimum).",
+    "runIcao's error toast is too generic; when tfjs backend init fails users can't self-diagnose."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only)", "frontend": "Wiring+regression 100% (5/5), badge visual assertion BLOCKED by sandbox tfjs backend absence (0/2)"},
+  "test_credentials": "Admin admin@fotuber.com.tr / FTB.2024",
+  "seed_data_creation": "None (no artefacts left).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The Faz 3 ICAO feature CANNOT be visually verified in this automation preview because face-api's tfjs runtime requires WebGL or a properly-served WASM binary — neither is available here. The model files themselves DO load (probed 200 OK). Wiring, button state, error toast Turkish text, panel data-testids in source, and full regression are verified. If retesting, either (a) run manually in a real Chromium with WebGL, or (b) mock @vladmandic/face-api via jest/playwright script injection to force a resolved detection result, or (c) fix static server MIME so tfjs-backend-wasm can init. Otherwise the icao-panel will always fail to render in this env, regardless of code correctness.",
+  "rca of the issue": "checkIcao(canvasEl) → loadFaceModels() → faceapi.nets.tinyFaceDetector.loadFromUri(CDN). Manifest fetch works (200). Then faceapi.detectSingleFace(canvasEl, TinyFaceDetectorOptions).withFaceLandmarks() runs the model, which requires a tfjs backend. Sandbox chromium: (1) WebGL context creation returns null → 'WebGL is not supported on this device' → webgl backend rejected. (2) tfjs-backend-wasm requests /static/js/tfjs-backend-wasm-*.wasm; the frontend static server returns index.html (HTML, not application/wasm) → WebAssembly.instantiate CompileError → wasm backend rejected. No backend available → tfjs makeTensor throws → checkIcao rejects → runIcao catch shows 'ICAO kontrolü yapılamadı' toast. React state icao stays null → icao-panel never mounts → no badges available for assertion. This is an environment limitation, not a Faz-3 code defect."
+}

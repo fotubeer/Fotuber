@@ -1,0 +1,70 @@
+{
+  "summary": "Backend-only testing of the two new large features (Photo Selection Albums + Guest QR Uploads), plus regression checks on product options, cash-register discrepancy, and settings persistence. 32/32 explicit assertions passed; 1 xfailed test documents a genuine bug in the ZIP download endpoint (Content-Disposition rejects non-latin-1 chars in event names).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/admin/guest-events/{eid}/download-zip",
+        "issue": "Returns 500 UnicodeEncodeError when event.name contains non-latin-1 chars (e.g. Turkish ğ, ü, ş). Root cause in server.py:2634-2638 — `fname` is put into `Content-Disposition: filename=\"...\"` without RFC 5987 encoding. Since guest events are Turkish weddings, this will hit real users. Fix: use `filename*=UTF-8''<url-encoded>` (urllib.parse.quote) and/or transliterate/ASCII-fallback the plain `filename=` param — mirror the pattern already used in transactions/export.xlsx.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/cash-register/discrepancy",
+        "issue": "Response key is `days` (list of per-day rows) but the review request/spec calls it `rows`. Either rename in backend or update the frontend/spec. Also `days_with_diff` currently returns *the same full row objects* filtered by |diff|>0.01 — the name suggests just a count/list of dates and could confuse consumers."
+      },
+      {
+        "endpoint": "PATCH /api/admin/photo-albums/{aid}",
+        "issue": "`update_photo_album` filters out None fields but still writes empty strings back (notes, event_date). Also uses `PhotoAlbumIn` which requires couple_names min_length=2 — so a partial PATCH must always resend couple_names or 422s. Consider a PhotoAlbumUpdate model with all-optional fields."
+      },
+      {
+        "endpoint": "POST /api/admin/product-options and PATCH /api/admin/product-options/{oid}",
+        "issue": "PATCH uses `payload.model_dump()` (no exclude_unset) so it fully overwrites `active`, `sort_order`, etc. with defaults when the client only sends `name` — silent data loss risk."
+      },
+      {
+        "endpoint": "POST /api/photo-albums/{token}/selections",
+        "issue": "No `is_locked` toggle exposed in admin API (endpoint checks it but there is no PATCH that flips it). `selection_deadline` field is stored but never auto-locks. Result: the field looks functional but is inert."
+      },
+      {
+        "endpoint": "POST /api/admin/photo-albums/{aid}/photos",
+        "issue": "When individual `put_object` calls raise, the loop `continue`s silently — the client gets `added < len(files)` with no per-file error list. Consider returning a `failed` array for the UI to surface partial-upload failures on a 1500-photo drop."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_new_features.py",
+    "/app/test_reports/pytest/iteration_7.xml"
+  ],
+  "action_items": [
+    "HIGH: Fix Content-Disposition header in GET /api/admin/guest-events/{eid}/download-zip to RFC 5987 encode the filename so Turkish event names (ğ, ü, ş, ç, ö, ı) don't 500. Test `TestGuestEventTurkishZipBug` is currently xfail — flip to xpass after fix.",
+    "Decide naming for discrepancy response: either rename `days` → `rows` in backend to match spec or update the frontend consumers to read `days`.",
+    "Introduce a separate PhotoAlbumUpdate model with all-optional fields so PATCH doesn't require couple_names each time; likewise add exclude_unset=True in product-options PATCH.",
+    "Expose PATCH endpoint to lock/unlock a photo album (is_locked) and/or a cron to auto-lock past selection_deadline — otherwise those fields do nothing."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 2788 lines — well past the 700-line guideline. Photo-albums (~300 lines), guest-events (~200 lines), product-options, cash-register, transactions/export etc. should each move to /app/backend/routers/*.py.",
+    "PIL, io, secrets, zipfile are imported *inside* the 'Photo Selection Albums' section (line 2197-2200) instead of the module top. Move to top of file to fail-fast on missing deps and shave per-request import time.",
+    "download_event_zip loads all uploads (to_list(5000)) and builds the full ZIP in memory (buf = BytesIO). For a 200MB-per-user × N-guests event this will OOM the worker. Consider streaming with StreamingResponse + zipfile writing directly to an async stream.",
+    "get_current_user calls db.users.find_one on every request — no caching. High-frequency endpoints (album photo file downloads under 1500-image thumbnail grids) will hammer Mongo per thumbnail. Consider embedding minimal user info in the JWT payload (name/phone/email) and only hitting DB when the token is close to expiry, or cache with a short TTL.",
+    "photo_selections is deleted+re-inserted on every submit (public_submit_selections lines 2440-2462). Under a burst this is racy — two concurrent submits from the same user could both delete each other's rows before insert. Wrap in a single findOneAndReplace on an aggregation doc, or use a Mongo transaction.",
+    "Public /guest-events/{token} correctly hides created_by/upload_token/etc. — good. But /photo-albums/{token} returns the full album dict via `album` (line 2400) including created_by/created_by_name — internal admin identifiers leaked to any authenticated customer. Consider stripping those before returning.",
+    "_resize_photo_for_preview catches every Exception and returns raw bytes — a corrupt/HEIC file silently uploads at full size. Better: return a placeholder or 400 with a clear error.",
+    "No max-size on album photo upload (only album cap of 1500 count). A single 100MB photo file will be fully read into memory before resize. Enforce `content_length` or a `max_bytes` streaming guard.",
+    "Cleanup task _cleanup_expired_uploads sleeps 3600s but has no jitter, no lock — two workers under supervisor could double-delete. Consider a Mongo advisory lock or a scheduled leader-only task."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_features.py (new)"
+  ],
+  "success_rate": {"backend": "100% of executed assertions (32/32 pass, 1 xfail documenting a real bug)", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024 (from /app/memory/test_credentials.md). Temp customer TEST_<uuid>@example.com auto-created via /api/auth/register per xdist worker.",
+  "seed_data_creation": "All test data is TEST_-prefixed and cleaned up in-suite: photo albums + photos + selections deleted at end of TestPhotoAlbums, guest events + uploads deleted at end of TestGuestEvents (including the Turkish-name repro event), product options deleted in test_99_cleanup. Test customer users are NOT deleted (no user-delete API exposed) but are prefixed TEST_ for easy identification.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Test file /app/backend/tests/test_new_features.py covers the full new-feature surface end-to-end and is idempotent — safe to rerun as regression. Runs in ~7s under xdist. The one xfail (TestGuestEventTurkishZipBug) will auto-flip to xpass once the Content-Disposition RFC-5987 fix ships; consider changing xfail to a hard pass then. Frontend UI for the new album selector grid and QR guest upload landing page was NOT tested here.",
+  "rca of the issue": "Content-Disposition download-zip 500 — Starlette Response encodes headers as latin-1 (RFC 7230 requirement). server.py builds `filename=\"{ev.name}_{event_date}.zip\"` and passes it straight into Response headers. Any codepoint outside U+0000..U+00FF (Turkish ğ = U+011F, ü = U+00FC is fine actually, but ğ, ş, İ, ı are not) raises UnicodeEncodeError at Response.__init__ → 500. Mitigation: (a) urllib.parse.quote(fname) + `filename*=UTF-8''<quoted>` for modern clients; (b) transliterate to ASCII for the plain filename= fallback (e.g. unidecode or a manual ğ→g, ü→u map). Reproduction: create guest event with name='TEST_Düğün 2026', upload one file, GET /api/admin/guest-events/{eid}/download-zip → 500; same with ASCII name → 200."
+}

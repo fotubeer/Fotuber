@@ -1,0 +1,31 @@
+{
+  "summary": "Faz 2 QR Delivery + MAXKB-only-military fix fully verified end-to-end on /admin/vesikalik as admin. All 6 review items PASS.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_results": {
+    "login_and_setup": "PASS - Logged in admin@fotuber.com.tr, /admin/vesikalik, switched to Tekli, turned OFF auto-bg-toggle (data-state: checked -> unchecked). Uploaded plain JPG via #vf, canvas-single rendered width=591.",
+    "qr_deliver_modal": "PASS - Click qr-deliver-btn -> qr-modal opens with qr-canvas, qr-url = 'https://fotuber-photo-repair.preview.emergentagent.com/api/v/zGi-RKhvOete' matches <BACKEND>/api/v/<token>. qr-copy button present.",
+    "public_link_unauth": "PASS - New browser context (no auth) hits qr-url -> HTTP 200 HTML with 'İndir' text + <img> preview. GET qr-url/file -> HTTP 200, content-type image/png.",
+    "qr_modal_close": "PASS - qr-close clicked, qr-modal count=0.",
+    "maxkb_only_military_non_military": "PASS - Selecting 'Türkiye — Biyometrik (50×60mm)' spec, digital-download-btn downloads 'FTB00001_dijital.png' (full-quality PNG). download-sheet-btn and quick-print-btn ENABLED.",
+    "maxkb_only_military_military": "PASS - Selecting 'Türkiye — Askeri Kimlik (297×378 px · dijital)' spec, digital-download-btn label = 'Dijital İndir (297×378px)', downloads 'FTB00001_dijital.jpg' (compressed). download-sheet-btn + quick-print-btn DISABLED.",
+    "regression_quick_print": "PASS - Back on normal biyometrik spec, quick-print-btn triggered toast 'Baskı penceresi açıldı' (visible in screenshot).",
+    "regression_kombin": "PASS - layout-mode-kombin activates combo-builder and combo-print-btn (Kombin Baskı) renders."
+  },
+  "console_errors": "Only 2 harmless 401s from pre-login /auth/me probing. WebGL/wasm warnings are expected (auto-bg off). Zero JS errors during QR delivery or downloads.",
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AdminPassportPhoto.jsx still >1200 lines; consider extracting QR delivery modal + digital-export helpers into a dedicated hook/component.",
+    "qr-url is rendered as truncated text (truncate flex-1) but full value is preserved in textContent — good for tests. For customers, consider adding a title/tooltip so hovering shows the full link.",
+    "Public page (GET /api/v/{token}) served by backend — ensure it sets Cache-Control: no-store on the HTML so 24h expiry is respected client-side (not verified this round)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend only this round; deliver+public already curl-verified)", "frontend": "100% (8/8 assertions)"},
+  "test_credentials": "admin@fotuber.com.tr / FTB.2024",
+  "seed_data_creation": "One vesikalik_deliveries row created via qr-deliver-btn (token zGi-RKhvOete, 24h TTL).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "QR delivery flow (single tekli only) verified: modal, QR canvas, public URL resolves unauth (HTML + /file streams image/png). Digital download logic: PNG full-quality for all non-military; JPG maxKb only when spec has maxKb/exactPx (military). Sheet + quick-print buttons correctly disabled on military digital-only spec. Kombin + quick-print regressions still clean.",
+  "rca of the issue": "N/A — all validations passed."
+}

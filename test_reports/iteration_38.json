@@ -1,0 +1,34 @@
+{
+  "summary": "Session AC — end-to-end validation of 3 additive tasks (Stüdyo Paneli reminders, Super Admin Studio Plans, Venue portal + invitation redemption). Backend pytest 10/10 PASS in /app/backend/tests/test_session_ac_tasks.py. Frontend Playwright flows all confirmed on the preview URL: (T1) /studyo/galeri → sg-tab-reminders visible, sg-reminders panel renders with empty state 'Şu an yaklaşan süre bitişi yok.'; sg-new-event-btn opens modal with sg-event-phone + sg-event-email inputs; creating 'TEST_AC_UIEvent' with phone+email succeeded (toast 'Etkinlik oluşturuldu', card visible in list) and was cleaned up via DELETE /api/studio/gallery/events. (T2) /admin/studyo-fiyatlar → admin-studio-plans panel visible with 5 cards (trial/basic/bronze/silver/gold) each showing asp-save-{planId}, discount block with asp-discount-input + asp-discount-save. Edited basic price to 520 (toast 'Basic güncellendi', GET re-shows 520) then RESET to 499. Discount PUT tested via API (22→20). Live pricing restored. (T3) /salon → venue-portal visible; login as salon1@test.com → /salon/panel (venue-dashboard) with 4 stat cards (venue-stat-total/active/used/free), venue-generator card, code list. Generated free code SALON-Z7CP8J (toast '1 kod üretildi', appears in list with 'Ücretsiz'+'Aktif' badge, venue-wa-{id} share button and copy). GET /api/venue/code/SALON-Z7CP8J returned {valid:true, code_type:'free', venue_name:'Test Balo Salonu'}. Discount 25% code creation validated via backend. Public invalid code returned valid:false / 400. (T3e) /davetiye-olustur → venue-code-input + venue-code-apply present; entered SALON-Z7CP8J + click Uygula → success toast 'Test Balo Salonu: ücretsiz davetiye kodu geçerli!' + venue-code-applied text '✓ Test Balo Salonu · Ücretsiz davetiye uygulandı.'. publish-btn label was 'Davetiyeyi Yayınla' (no PayTR wording).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/studyo/galeri Yeni Etkinlik modal", "issues": ["Date picker uses native browser input (mm/dd/yyyy) instead of a shadcn/localized Calendar component — cosmetic/UX, TR users expect dd.mm.yyyy"]},
+      {"screen": "/davetiye-olustur", "issues": ["Native <input type='date'> also used here (mm/dd/yyyy). Same cosmetic issue."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_session_ac_tasks.py",
+    "/app/test_reports/pytest/session_ac.xml"
+  ],
+  "action_items": [
+    "(Optional cosmetic) Consider replacing native date inputs with a localized (dd.mm.yyyy) Calendar component in StudioGallery 'Yeni Etkinlik' and InvitationCreate wizard.",
+    "(Optional) Venue /stats does not expose a plain 'free' key — backend returns free_used/discount_used. Frontend maps venue-stat-free correctly from another field, so this is only a naming inconsistency."
+  ],
+  "critical_code_review_comments": [
+    "backend/routers/venue.py stats endpoint: returns free_used/discount_used but the review-request UI testid is 'venue-stat-free'. Frontend already renders venue-stat-free by deriving from another field — kept naming inconsistency is minor but worth cleanup for API/UI parity.",
+    "AdminStudioPlans data-testid pattern is asp-{field}-{plan} (e.g. asp-basic-price) while save button is asp-save-{plan}. Inconsistent ordering — consider standardizing to asp-{plan}-{field} everywhere.",
+    "Studio Gallery + Invitation wizard use native <input type='date'>. Localize with shadcn Calendar for Turkish UX."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_session_ac_tasks.py (new, 10 tests)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% for the 3 task acceptance criteria"},
+  "test_credentials": "studio1@test.com/Test1234; admin@fotuber.com.tr/FTB.2024; salon1@test.com/Test1234 — all live and working.",
+  "seed_data_creation": "Created 1 gallery event TEST_AC_UIEvent (studio1) — deleted after test. Created 1 venue free code SALON-Z7CP8J via UI and consumed it in invitation-apply test (still 'active' on the wizard, but not published so it remains active in DB). No other persistent side effects. Admin basic price was set to 520 then reset back to 499 as required. second_module_discount touched to 22 then reset to 20.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 3 tasks pass acceptance. Native date pickers still used in Studio 'Yeni Etkinlik' modal + Invitation wizard — cosmetic-only. If retesting redemption end-to-end (published for 0₺), you must first pick a premium theme (e.g. Noir) in the wizard before applying a fresh free venue code; the publish button will then need member auth to publish (skip PayTR). Reminder: reset admin basic price to 499 and second_module_discount to 20 after any admin plan edits."
+}
