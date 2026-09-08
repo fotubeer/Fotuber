@@ -37,8 +37,24 @@ const Home = () => {
   const discountActive = settings?.discount_active !== false;
 
   useEffect(() => {
-    api.get("/services").then((r) => setServices(r.data)).catch(() => {});
-    api.get("/gallery").then((r) => setGallery(r.data.slice(0, 6))).catch(() => {});
+    api.get("/services").then((r) => {
+      const raw = r.data;
+      const list = Array.isArray(raw) ? raw
+        : Array.isArray(raw?.data) ? raw.data
+        : Array.isArray(raw?.services) ? raw.services
+        : Array.isArray(raw?.results) ? raw.results
+        : [];
+      setServices(list);
+    }).catch(() => {});
+    api.get("/gallery").then((r) => {
+      const raw = r.data;
+      const list = Array.isArray(raw) ? raw
+        : Array.isArray(raw?.data) ? raw.data
+        : Array.isArray(raw?.gallery) ? raw.gallery
+        : Array.isArray(raw?.results) ? raw.results
+        : [];
+      setGallery(list.slice(0, 6));
+    }).catch(() => {});
   }, []);
 
   return (
